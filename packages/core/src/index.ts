@@ -9,3 +9,4 @@ export * from "./scanner.js";
 export * from "./skills-sh-client.js";
 export * from "./types.js";
 export * from "./validator.js";
+export * from "./watcher.js";
