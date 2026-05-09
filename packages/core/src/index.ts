@@ -5,5 +5,6 @@ export * from "./file-ops.js";
 export * from "./metadata-store.js";
 export * from "./paths.js";
 export * from "./scanner.js";
+export * from "./skills-sh-client.js";
 export * from "./types.js";
 export * from "./validator.js";
