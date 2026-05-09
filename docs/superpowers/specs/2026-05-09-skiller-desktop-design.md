@@ -19,7 +19,7 @@ The project is a monorepo:
 The UI project is initialized with:
 
 ```sh
-pnpm dlx shadcn@latest init --preset b43eDchzk --base base --template vite --monorepo --pointer
+pnpm dlx shadcn@latest init --preset b1zSxU --base base --template vite --monorepo --pointer
 ```
 
 ## Local Library
