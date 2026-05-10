@@ -1,4 +1,5 @@
 import { BrowserWindow, Tray, app } from "electron";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startBackgroundJobs } from "./background.js";
@@ -9,6 +10,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let tray: Tray | null = null;
 let cleanupItems: Array<{ stop: () => void }> = [];
+
+function rendererHtmlPath(): string {
+  const builtRenderer = join(__dirname, "../renderer/index.html");
+  if (existsSync(builtRenderer)) {
+    return builtRenderer;
+  }
+
+  return join(__dirname, "../../src/renderer/index.html");
+}
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -24,7 +34,7 @@ function createWindow(): BrowserWindow {
   if (process.env.VITE_DEV_SERVER_URL) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    void window.loadFile(join(__dirname, "../renderer/index.html"));
+    void window.loadFile(rendererHtmlPath());
   }
 
   return window;
@@ -34,7 +44,7 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   const window = createWindow();
   tray = createTray(window);
-  cleanupItems = startBackgroundJobs();
+  cleanupItems = startBackgroundJobs(window);
 });
 
 app.on("before-quit", () => {
