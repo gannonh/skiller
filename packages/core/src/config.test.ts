@@ -67,4 +67,13 @@ describe("config", () => {
       keepAllSkillsUpdated: true
     });
   });
+
+  it("rejects blank and relative library paths when saving config", async () => {
+    const configPath = path.join(tmp, "skiller", "config.json");
+
+    await expect(saveConfig({ libraryPath: "" }, { configPath })).rejects.toThrow("Library path cannot be blank");
+    await expect(saveConfig({ libraryPath: "skiller" }, { configPath })).rejects.toThrow(
+      "Library path must be absolute or start with ~/"
+    );
+  });
 });

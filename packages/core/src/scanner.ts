@@ -84,6 +84,10 @@ async function findMetadataByRealLibraryPath(records: SkillMetadata[], libraryPa
 }
 
 export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsResult> {
+  if (!path.isAbsolute(input.libraryPath)) {
+    throw new Error("Library path must be absolute before scanning targets");
+  }
+
   const store = new MetadataStore(input.libraryPath);
   const records = await store.list();
   const imported: SkillMetadata[] = [];

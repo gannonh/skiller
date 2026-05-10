@@ -31,6 +31,18 @@ afterEach(async () => {
 });
 
 describe("scanTargets", () => {
+  it("rejects relative library paths before scanning targets", async () => {
+    const target = path.join(tmp, "target");
+    const skill = path.join(target, "example");
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+
+    await expect(scanTargets({ libraryPath: "relative-library", targetDirectories: [target] })).rejects.toThrow(
+      "Library path must be absolute before scanning targets"
+    );
+    expect((await fs.lstat(skill)).isDirectory()).toBe(true);
+  });
+
   it("imports real skill folders and replaces them with symlinks", async () => {
     const target = path.join(tmp, "target");
     const library = path.join(tmp, "library");

@@ -51,6 +51,16 @@ export function normalizeConfig(input: Partial<SkillerConfig>): SkillerConfig {
   };
 }
 
+function assertValidLibraryPath(libraryPath: string): void {
+  if (libraryPath.trim().length === 0) {
+    throw new Error("Library path cannot be blank");
+  }
+
+  if (!libraryPath.startsWith("~/") && !path.isAbsolute(libraryPath)) {
+    throw new Error("Library path must be absolute or start with ~/");
+  }
+}
+
 export async function loadConfig(options: ConfigPersistenceOptions = {}): Promise<SkillerConfig> {
   const configPath = options.configPath ?? defaultConfigPath();
 
@@ -65,6 +75,10 @@ export async function saveConfig(
   input: Partial<SkillerConfig>,
   options: ConfigPersistenceOptions = {}
 ): Promise<SkillerConfig> {
+  if (input.libraryPath !== undefined) {
+    assertValidLibraryPath(input.libraryPath);
+  }
+
   const configPath = options.configPath ?? defaultConfigPath();
   const current = (await fs.pathExists(configPath)) ? await fs.readJson(configPath) : {};
   const update = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
