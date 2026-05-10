@@ -1,0 +1,30 @@
+{
+  "name": "@skiller/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "pnpm run build && sh -c 'pnpm run dev:renderer & VITE_PID=$!; trap \"kill -TERM -$VITE_PID 2>/dev/null || true\" EXIT INT TERM; until curl -fsS http://127.0.0.1:5173 >/dev/null 2>&1; do sleep 0.2; done; VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .'",
+    "dev:renderer": "vite --host 127.0.0.1",
+    "build": "tsc -b ../../packages/core tsconfig.json --force && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@skiller/core": "workspace:*",
+    "@vitejs/plugin-react": "^4.3.0",
+    "@workspace/ui": "workspace:^",
+    "electron": "^35.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "sonner": "^2.0.7",
+    "vite": "^6.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3"
+  }
+}

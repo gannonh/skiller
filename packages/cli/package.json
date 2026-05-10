@@ -1,0 +1,22 @@
+{
+  "name": "@skiller/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "skiller": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b ../core tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@skiller/core": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}
