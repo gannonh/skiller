@@ -13,18 +13,20 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@hugeicons/core-free-icons": "^4.1.2",
+    "@hugeicons/react": "^1.1.6",
     "@skiller/core": "workspace:*",
     "@vitejs/plugin-react": "^4.3.0",
     "@workspace/ui": "workspace:^",
     "electron": "^35.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "sonner": "^2.0.7",
     "vite": "^6.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",
     "@types/react": "^19.2.10",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "tailwindcss": "^4.1.18"
   }
 }

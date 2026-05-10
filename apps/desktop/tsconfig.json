@@ -4,7 +4,13 @@
     "jsx": "react-jsx",
     "outDir": "dist",
     "rootDir": "src",
-    "composite": true
+    "composite": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/renderer/*"],
+      "@workspace/ui/*": ["../../packages/ui/src/*"],
+      "@skiller/core": ["../../packages/core/src/index.ts"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.cts"],
   "references": [{ "path": "../../packages/core" }]

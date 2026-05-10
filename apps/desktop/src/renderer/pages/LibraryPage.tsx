@@ -51,7 +51,7 @@ export function LibraryPage() {
         {!error ? (
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">{skills.length} master skills</Badge>
-            {invalidSkills.length > 0 ? <Badge variant="warning">{invalidSkills.length} invalid</Badge> : null}
+            {invalidSkills.length > 0 ? <Badge variant="destructive">{invalidSkills.length} invalid</Badge> : null}
           </div>
         ) : null}
         {error ? null : isLoading ? (
@@ -76,7 +76,7 @@ export function LibraryPage() {
                     {skill.validation?.valid ? (
                       <Badge variant="outline">valid</Badge>
                     ) : (
-                      <Badge variant="warning">invalid</Badge>
+                      <Badge variant="destructive">invalid</Badge>
                     )}
                   </TableCell>
                   <TableCell>{skill.enabledTargets.length}</TableCell>
