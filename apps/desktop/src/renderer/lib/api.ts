@@ -1,4 +1,4 @@
-import type { ScanTargetsResult } from "@skiller/core";
+import type { ScanTargetsResult, SkillerConfig } from "@skiller/core";
 
 export type LeaderboardType = "all-time" | "trending" | "hot";
 
@@ -32,11 +32,28 @@ export interface ScanError {
   message: string;
 }
 
+export type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated">>;
+
+export interface UpdateCheckSkill {
+  id: string;
+  name: string;
+}
+
+export interface UpdateCheckResult {
+  checkedAt: string;
+  considered: UpdateCheckSkill[];
+  available: UpdateCheckSkill[];
+  updated: UpdateCheckSkill[];
+}
+
 export type RemoveListener = () => void;
 
 export interface SkillerApi {
   listLibrary: () => Promise<SkillMetadata[]>;
   scanTargets: () => Promise<ScanTargetsResult>;
+  getConfig: () => Promise<SkillerConfig>;
+  saveConfig: (config: ConfigUpdate) => Promise<SkillerConfig>;
+  checkUpdates: () => Promise<UpdateCheckResult>;
   leaderboard: (type: LeaderboardType) => Promise<{ skills: DiscoverSkill[] }>;
   search: (query: string) => Promise<{ skills: DiscoverSkill[] }>;
   onCheckUpdates: (callback: () => void) => RemoveListener;
