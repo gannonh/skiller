@@ -11,6 +11,7 @@ export function defaultTargetDirectories(): string[] {
 }
 
 export function expandHome(path: string, home = process.env.HOME ?? ""): string {
+  if (!home) return path;
   if (path === "~") return home;
   if (path.startsWith("~/")) return `${home}/${path.slice(2)}`;
   return path;

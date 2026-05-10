@@ -24,8 +24,21 @@ describe("installLocalSkill", () => {
     const metadata = await installLocalSkill({ sourcePath: source, libraryPath: library });
 
     expect(metadata.id).toBe("local");
+    expect(metadata.name).toBe("local");
     expect(metadata.source.type).toBe("local");
     await expect(fs.pathExists(path.join(library, "local", "SKILL.md"))).resolves.toBe(true);
+  });
+
+  it("preserves the parsed display name in metadata", async () => {
+    const source = path.join(tmp, "source");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(source);
+    await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: My Amazing Skill\ndescription: Local.\n---\n");
+
+    const metadata = await installLocalSkill({ sourcePath: source, libraryPath: library });
+
+    expect(metadata.id).toBe("my-amazing-skill");
+    expect(metadata.name).toBe("My Amazing Skill");
   });
 
   it("slugs path traversal names before copying into the library", async () => {

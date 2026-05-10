@@ -49,7 +49,13 @@ export async function startBackgroundJobs(
 
   runScan();
 
-  const watcher = deps.watchTargetDirectories({ targetDirectories: expandedTargets }, runScan);
+  // Target directory watchers are created from startup config; each scan reloads current config.
+  const watcher = deps.watchTargetDirectories({ targetDirectories: expandedTargets }, runScan, (error) => {
+    console.error("Target watcher failed", error);
+    window.webContents.send("background:scan-error", {
+      message: error instanceof Error ? error.message : String(error)
+    });
+  });
   const runUpdateCheck = () => {
     void deps
       .checkDesktopUpdates()

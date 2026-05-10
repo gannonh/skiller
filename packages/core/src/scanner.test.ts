@@ -82,6 +82,20 @@ describe("scanTargets", () => {
     expect(result.imported.map((metadata) => metadata.id)).toEqual(["empty-frontmatter"]);
   });
 
+  it("normalizes dot-only frontmatter names to a safe library id", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(target, "dot-name");
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: .\ndescription: Dot.\n---\n");
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result.imported.map((metadata) => metadata.id)).toEqual(["skill"]);
+    expect(await fs.pathExists(path.join(library, "skill", "SKILL.md"))).toBe(true);
+    expect(await fs.pathExists(path.join(library, "SKILL.md"))).toBe(false);
+  });
+
   it("imports duplicate basenames with distinct declared names into distinct library paths", async () => {
     const firstTarget = path.join(tmp, "first-target");
     const secondTarget = path.join(tmp, "second-target");
@@ -155,12 +169,60 @@ describe("scanTargets", () => {
 
     const readdir = vi.spyOn(fs, "readdir").mockResolvedValueOnce(["missing-skill"] as never);
 
-    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+    try {
+      const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
 
-    expect(result.imported).toHaveLength(0);
-    expect(result.enabled).toHaveLength(0);
-    expect(result.errors).toHaveLength(0);
-    readdir.mockRestore();
+      expect(result.imported).toHaveLength(0);
+      expect(result.enabled).toHaveLength(0);
+      expect(result.errors).toHaveLength(0);
+    } finally {
+      readdir.mockRestore();
+    }
+  });
+
+  it("skips target directories removed between existence and readdir checks", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(target);
+    const readdir = vi.spyOn(fs, "readdir").mockRejectedValueOnce(Object.assign(new Error("missing"), { code: "ENOENT" }));
+
+    try {
+      const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+      expect(result).toEqual({ imported: [], enabled: [], errors: [] });
+    } finally {
+      readdir.mockRestore();
+    }
+  });
+
+  it("reports target directory readdir failures", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(target);
+    const readdir = vi.spyOn(fs, "readdir").mockRejectedValueOnce(new Error("readdir failed"));
+
+    try {
+      const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+      expect(result.errors).toEqual([{ path: target, message: "readdir failed" }]);
+    } finally {
+      readdir.mockRestore();
+    }
+  });
+
+  it("stringifies non-Error target directory readdir failures", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(target);
+    const readdir = vi.spyOn(fs, "readdir").mockRejectedValueOnce("readdir failed");
+
+    try {
+      const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+      expect(result.errors).toEqual([{ path: target, message: "readdir failed" }]);
+    } finally {
+      readdir.mockRestore();
+    }
   });
 
   it("skips broken target symlinks", async () => {
@@ -250,6 +312,21 @@ describe("scanTargets", () => {
     expect(result.imported).toHaveLength(0);
     expect(result.errors).toEqual([{ path: skill, message: "symlink failed" }]);
     expect(saved).toHaveLength(0);
+    expect(await fs.pathExists(path.join(library, "example"))).toBe(false);
+  });
+
+  it("deduplicates configured target directories during scans and reconciliation", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(target, "example");
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target, target] });
+    const saved = await new MetadataStore(library).list();
+
+    expect(result.imported.map((metadata) => metadata.id)).toEqual(["example"]);
+    expect(saved[0]?.enabledTargets).toEqual([target]);
   });
 
   it("records existing target symlinks to library skills as enabled", async () => {

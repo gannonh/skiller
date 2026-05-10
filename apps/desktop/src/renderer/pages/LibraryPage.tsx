@@ -12,14 +12,25 @@ export function LibraryPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+
     void skillerApi
       .listLibrary()
       .then((result) => {
+        if (!mounted) return;
         setSkills(result);
         setError(null);
       })
-      .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : String(caught)))
-      .finally(() => setIsLoading(false));
+      .catch((caught: unknown) => {
+        if (mounted) setError(caught instanceof Error ? caught.message : String(caught));
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
@@ -37,11 +48,13 @@ export function LibraryPage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{skills.length} master skills</Badge>
-          {invalidSkills.length > 0 ? <Badge variant="warning">{invalidSkills.length} invalid</Badge> : null}
-        </div>
-        {isLoading ? (
+        {!error ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{skills.length} master skills</Badge>
+            {invalidSkills.length > 0 ? <Badge variant="warning">{invalidSkills.length} invalid</Badge> : null}
+          </div>
+        ) : null}
+        {error ? null : isLoading ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />

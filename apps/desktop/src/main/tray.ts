@@ -13,7 +13,13 @@ export function createTray(window: BrowserWindow): Tray {
   tray.setToolTip("Skiller");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Show Skiller", click: () => window.show() },
+      {
+        label: "Show Skiller",
+        click: () => {
+          window.show();
+          window.focus();
+        }
+      },
       { label: "Check for Updates", click: () => window.webContents.send("action:check-updates") },
       { type: "separator" },
       { label: "Quit", click: () => app.quit() }

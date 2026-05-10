@@ -7,7 +7,7 @@ import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import { skillerApi, type DiscoverSkill, type LeaderboardType } from "../lib/api.js";
 
-function skillText(skill: DiscoverSkill, keys: string[], fallback: string): string {
+function skillText(skill: DiscoverSkill, keys: Array<keyof DiscoverSkill>, fallback: string): string {
   for (const key of keys) {
     const value = skill[key];
     if (typeof value === "string" && value.length > 0) return value;
@@ -24,15 +24,26 @@ export function DiscoverPage() {
   const [status, setStatus] = useState("Trending skills from skills.sh");
 
   useEffect(() => {
+    let mounted = true;
+
     setIsLoading(true);
     void skillerApi
       .leaderboard(leaderboardType)
       .then((result) => {
+        if (!mounted) return;
         setSkills(result.skills);
         setStatus(`${leaderboardType} leaderboard`);
       })
-      .catch((caught: unknown) => setStatus(caught instanceof Error ? caught.message : String(caught)))
-      .finally(() => setIsLoading(false));
+      .catch((caught: unknown) => {
+        if (mounted) setStatus(caught instanceof Error ? caught.message : String(caught));
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, [leaderboardType]);
 
   const rows = useMemo(() => skills.slice(0, 10), [skills]);
@@ -42,13 +53,15 @@ export function DiscoverPage() {
     const trimmed = query.trim();
     setIsLoading(true);
     const request = trimmed ? skillerApi.search(trimmed) : skillerApi.leaderboard(leaderboardType);
-    await request
-      .then((result) => {
-        setSkills(result.skills);
-        setStatus(trimmed ? `Search results for ${trimmed}` : `${leaderboardType} leaderboard`);
-      })
-      .catch((caught: unknown) => setStatus(caught instanceof Error ? caught.message : String(caught)))
-      .finally(() => setIsLoading(false));
+    try {
+      const result = await request;
+      setSkills(result.skills);
+      setStatus(trimmed ? `Search results for ${trimmed}` : `${leaderboardType} leaderboard`);
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (

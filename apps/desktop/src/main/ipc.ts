@@ -5,6 +5,8 @@ import { checkDesktopUpdates } from "./update-check.js";
 
 type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated">>;
 
+const skillsShClient = new SkillsShClient();
+
 export function registerIpcHandlers(): void {
   ipcMain.handle("library:list", async () => {
     const config = await loadConfig();
@@ -35,10 +37,10 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("discover:leaderboard", async (_event, type: "all-time" | "trending" | "hot") => {
-    return new SkillsShClient().leaderboard(type);
+    return skillsShClient.leaderboard(type);
   });
 
   ipcMain.handle("discover:search", async (_event, query: string) => {
-    return new SkillsShClient().search(query);
+    return skillsShClient.search(query);
   });
 }

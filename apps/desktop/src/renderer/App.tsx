@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { Button } from "@workspace/ui/components/button";
 import { Separator } from "@workspace/ui/components/separator";
 import {
@@ -32,8 +32,17 @@ const pages: Array<{ id: Page; label: string }> = [
   { id: "settings", label: "Settings" },
 ];
 
+const pageComponents: Record<Page, ComponentType> = {
+  library: LibraryPage,
+  discover: DiscoverPage,
+  targets: TargetsPage,
+  updates: UpdatesPage,
+  settings: SettingsPage,
+};
+
 export function App() {
   const [page, setPage] = useState<Page>("library");
+  const ActivePage = pageComponents[page];
 
   return (
     <TooltipProvider>
@@ -65,11 +74,7 @@ export function App() {
         </Sidebar>
         <SidebarInset>
           <main className="min-h-svh bg-background p-6 text-foreground">
-            {page === "library" && <LibraryPage />}
-            {page === "discover" && <DiscoverPage />}
-            {page === "targets" && <TargetsPage />}
-            {page === "updates" && <UpdatesPage />}
-            {page === "settings" && <SettingsPage />}
+            <ActivePage />
           </main>
         </SidebarInset>
         <Toaster />

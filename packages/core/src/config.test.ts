@@ -70,11 +70,11 @@ describe("config", () => {
     expect(expandHome("~/skiller")).toBe("/Users/from-env/skiller");
   });
 
-  it("uses an empty fallback when HOME is unavailable", () => {
+  it("leaves home-relative paths unchanged when HOME is unavailable", () => {
     vi.unstubAllEnvs();
     delete process.env.HOME;
 
-    expect(expandHome("~/skiller")).toBe("/skiller");
+    expect(expandHome("~/skiller")).toBe("~/skiller");
   });
 
   it("uses explicit, macOS, Windows, and XDG default config paths", () => {

@@ -263,7 +263,8 @@ describe("checkForSkillUpdates", () => {
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://api.github.com/repos/example/skill/commits/main",
       expect.objectContaining({
-        headers: expect.objectContaining({ "User-Agent": "skiller" })
+        headers: expect.objectContaining({ "User-Agent": "skiller" }),
+        signal: expect.any(AbortSignal)
       })
     );
   });

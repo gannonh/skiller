@@ -26,16 +26,15 @@ export function SettingsPage() {
     event.preventDefault();
     setIsSaving(true);
     setStatus("Saving settings");
-    await skillerApi
-      .saveConfig({ libraryPath })
-      .then((config) => {
-        setLibraryPath(config.libraryPath);
-        setStatus("Settings saved");
-      })
-      .catch((caught: unknown) => {
-        setStatus(caught instanceof Error ? caught.message : String(caught));
-      })
-      .finally(() => setIsSaving(false));
+    try {
+      const config = await skillerApi.saveConfig({ libraryPath });
+      setLibraryPath(config.libraryPath);
+      setStatus("Settings saved");
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (

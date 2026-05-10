@@ -39,7 +39,7 @@ describe("validateSkill", () => {
   it("warns when the skill path is missing", async () => {
     const result = await validateSkill(path.join(fixtures, "does-not-exist"));
     expect(result.valid).toBe(false);
-    expect(result.issues[0]?.code).toBe("missing-skill-md");
+    expect(result.issues[0]?.code).toBe("missing-skill-path");
   });
 
   it("warns when the skill path is a file", async () => {

@@ -6,6 +6,13 @@ import { Button } from "@workspace/ui/components/button"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Cancel01Icon } from "@hugeicons/core-free-icons"
 
+const closeButtonPosition = {
+  right: "top-3 right-3",
+  left: "top-3 left-3",
+  top: "top-3 right-3",
+  bottom: "top-3 right-3",
+}
+
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
 }
@@ -64,7 +71,7 @@ function SheetContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-3 right-3"
+                className={cn("absolute", closeButtonPosition[side])}
                 size="icon-sm"
               />
             }

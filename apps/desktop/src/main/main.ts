@@ -56,5 +56,6 @@ app.on("before-quit", () => {
     item.stop();
   }
   cleanupItems = [];
+  tray?.destroy();
   tray = null;
 });

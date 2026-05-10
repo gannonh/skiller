@@ -26,7 +26,7 @@ export async function validateSkill(skillPath: string): Promise<ValidationResult
   if (!statExists) {
     return {
       valid: false,
-      issues: [issue("missing-skill-md", "Skill directory must contain SKILL.md.", "SKILL.md")]
+      issues: [issue("missing-skill-path", "Skill path does not exist.")]
     };
   }
 

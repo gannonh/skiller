@@ -9,6 +9,7 @@ export function UpdatesPage() {
   const [keepUpdated, setKeepUpdated] = useState(false);
   const [status, setStatus] = useState("Loading update settings");
   const [isChecking, setIsChecking] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     void skillerApi
@@ -27,35 +28,38 @@ export function UpdatesPage() {
   }, []);
 
   async function changeKeepUpdated(checked: boolean) {
+    if (isSaving) return;
+
     setKeepUpdated(checked);
+    setIsSaving(true);
     setStatus("Saving update settings");
-    await skillerApi
-      .saveConfig({ keepAllSkillsUpdated: checked })
-      .then((config) => {
-        setKeepUpdated(config.keepAllSkillsUpdated);
-        setStatus("Update settings saved");
-      })
-      .catch((caught: unknown) => {
-        setKeepUpdated(!checked);
-        setStatus(caught instanceof Error ? caught.message : String(caught));
-      });
+    try {
+      const config = await skillerApi.saveConfig({ keepAllSkillsUpdated: checked });
+      setKeepUpdated(config.keepAllSkillsUpdated);
+      setStatus("Update settings saved");
+    } catch (caught) {
+      setKeepUpdated(!checked);
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function checkUpdates() {
     setIsChecking(true);
     setStatus("Checking for updates");
-    await skillerApi
-      .checkUpdates()
-      .then((result) => {
-        const checkedAt = new Date(result.checkedAt).toLocaleString();
-        setStatus(
-          `Checked ${result.considered.length} skills at ${checkedAt}: ${result.available.length} available, ${result.updated.length} updated`
-        );
-      })
-      .catch((caught: unknown) => {
-        setStatus(caught instanceof Error ? caught.message : String(caught));
-      })
-      .finally(() => setIsChecking(false));
+    try {
+      const result = await skillerApi.checkUpdates();
+      const parsedCheckedAt = new Date(result.checkedAt);
+      const checkedAt = Number.isNaN(parsedCheckedAt.getTime()) ? "unknown time" : parsedCheckedAt.toLocaleString();
+      setStatus(
+        `Checked ${result.considered.length} skills at ${checkedAt}: ${result.available.length} available, ${result.updated.length} updated`
+      );
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsChecking(false);
+    }
   }
 
   return (
@@ -66,7 +70,7 @@ export function UpdatesPage() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
-          <Switch id="keep-all-updated" checked={keepUpdated} onCheckedChange={changeKeepUpdated} />
+          <Switch id="keep-all-updated" checked={keepUpdated} onCheckedChange={changeKeepUpdated} disabled={isSaving} />
           <label htmlFor="keep-all-updated" className="text-sm">
             Keep all skills updated
           </label>

@@ -4,7 +4,8 @@ import type { SkillerConfig } from "./types.js";
 
 export function watchTargetDirectories(
   config: Pick<SkillerConfig, "targetDirectories">,
-  onChange: () => void
+  onChange: () => void,
+  onError?: (error: unknown) => void
 ): FSWatcher {
   return chokidar
     .watch(config.targetDirectories, {
@@ -16,7 +17,8 @@ export function watchTargetDirectories(
     .on("unlinkDir", onChange)
     .on("change", onChange)
     .on("add", onChange)
-    .on("unlink", onChange);
+    .on("unlink", onChange)
+    .on("error", (error) => onError?.(error));
 }
 
 export function createUpdateInterval(

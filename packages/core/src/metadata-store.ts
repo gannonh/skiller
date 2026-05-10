@@ -32,13 +32,19 @@ export class MetadataStore {
     const dirExists = await fs.pathExists(this.libraryPath);
     if (!dirExists) return [];
 
-    const entries = await fs.readdir(this.libraryPath);
+    const entries = await fs.readdir(this.libraryPath, { withFileTypes: true });
     const records: SkillMetadata[] = [];
 
     for (const entry of entries) {
-      const file = path.join(this.libraryPath, entry, METADATA_FILE);
+      if (!entry.isDirectory() || entry.name === ".staging") continue;
+
+      const file = path.join(this.libraryPath, entry.name, METADATA_FILE);
       if (await fs.pathExists(file)) {
-        records.push(await fs.readJson(file));
+        try {
+          records.push(await fs.readJson(file));
+        } catch {
+          continue;
+        }
       }
     }
 

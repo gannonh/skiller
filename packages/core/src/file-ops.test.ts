@@ -128,4 +128,22 @@ describe("file operations", () => {
     await expect(replaceWithSymlink(target, source)).rejects.toThrow("cleanup failed");
     await expect(fs.readFile(path.join(target, "SKILL.md"), "utf8")).resolves.toBe("target");
   });
+
+  it("preserves the original failure when rollback also fails", async () => {
+    const source = path.join(tmp, "master");
+    const target = path.join(tmp, "target");
+    const originalMove = fs.move;
+    await fs.ensureDir(source);
+    await fs.ensureDir(target);
+    await fs.writeFile(path.join(target, "SKILL.md"), "target");
+    vi.spyOn(fs, "symlink").mockRejectedValueOnce(new Error("symlink failed"));
+    vi.spyOn(fs, "move")
+      .mockImplementationOnce(originalMove)
+      .mockRejectedValueOnce(new Error("rollback failed"));
+
+    await expect(replaceWithSymlink(target, source)).rejects.toMatchObject({
+      message: "replaceWithSymlink failed and rollback failed",
+      errors: [expect.objectContaining({ message: "symlink failed" }), expect.objectContaining({ message: "rollback failed" })]
+    });
+  });
 });

@@ -78,15 +78,18 @@ export async function resolveGithubRemoteCommit(source: SkillSource): Promise<st
   const repository = parseGithubRepository(source.githubUrl);
   if (!repository) return null;
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
   const response = await fetch(
     `https://api.github.com/repos/${repository.owner}/${repository.repo}/commits/${encodeURIComponent(source.ref)}`,
     {
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "skiller"
-      }
+      },
+      signal: controller.signal
     }
-  );
+  ).finally(() => clearTimeout(timer));
 
   if (!response.ok) {
     throw new Error(`GitHub update check failed: ${response.status} ${response.statusText}`);

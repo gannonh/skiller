@@ -97,11 +97,16 @@ export async function replaceWithSymlink(targetPath: string, masterPath: string)
     symlinkCreated = true;
     await fs.remove(backup);
   } catch (error) {
-    if (symlinkCreated) {
-      await fs.remove(targetPath);
+    try {
+      if (symlinkCreated) {
+        await fs.remove(targetPath);
+      }
+
+      await fs.move(backup, targetPath);
+    } catch (restoreError) {
+      throw new AggregateError([error, restoreError], "replaceWithSymlink failed and rollback failed");
     }
 
-    await fs.move(backup, targetPath);
     throw error;
   }
 }

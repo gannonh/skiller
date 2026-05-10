@@ -95,6 +95,7 @@ describe("background jobs", () => {
   it("sends scan and update errors to the renderer", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const close = vi.fn();
+    let onWatcherError: ((error: unknown) => void) | undefined;
     const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
     const { startBackgroundJobs } = await import("../src/main/background.js");
 
@@ -104,7 +105,10 @@ describe("background jobs", () => {
       scanTargets: vi.fn(async () => {
         throw new Error("scan failed");
       }),
-      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      watchTargetDirectories: vi.fn((_config, _onChange, onError) => {
+        onWatcherError = onError;
+        return { close } as never;
+      }),
       createUpdateInterval: (_schedule, callback) => {
         callback();
         return setInterval(() => undefined, 60_000);
@@ -114,8 +118,12 @@ describe("background jobs", () => {
       })
     });
 
+    onWatcherError?.(new Error("watch failed"));
+    onWatcherError?.("watch failed again");
     await vi.waitFor(() => {
       expect(window.webContents.send).toHaveBeenCalledWith("background:scan-error", { message: "scan failed" });
+      expect(window.webContents.send).toHaveBeenCalledWith("background:scan-error", { message: "watch failed" });
+      expect(window.webContents.send).toHaveBeenCalledWith("background:scan-error", { message: "watch failed again" });
       expect(window.webContents.send).toHaveBeenCalledWith("background:update-error", { message: "update failed" });
     });
 

@@ -75,4 +75,18 @@ describe("MetadataStore", () => {
     );
     expect(await fs.pathExists(path.join(outsidePath, "skiller.metadata.json"))).toBe(false);
   });
+
+  it("skips corrupt metadata files while listing the library", async () => {
+    const libraryPath = await makeTempDir();
+    const validPath = path.join(libraryPath, "valid");
+    const corruptPath = path.join(libraryPath, "corrupt");
+    const store = new MetadataStore(libraryPath);
+    const metadata = metadataFor(validPath);
+
+    await store.save(metadata);
+    await fs.ensureDir(corruptPath);
+    await fs.writeFile(path.join(corruptPath, "skiller.metadata.json"), "{");
+
+    expect(await store.list()).toEqual([metadata]);
+  });
 });

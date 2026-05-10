@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@skiller/core": "workspace:*",
-    "commander": "^12.1.0",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
     "tsx": "^4.19.0"
   }
 }

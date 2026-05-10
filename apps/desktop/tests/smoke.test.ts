@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { checkDesktopUpdates } from "../src/main/update-check.js";
 
 describe("desktop smoke", () => {
-  it("has a test harness", () => {
-    expect(true).toBe(true);
+  it("loads desktop update wiring", () => {
+    expect(checkDesktopUpdates).toEqual(expect.any(Function));
   });
 });

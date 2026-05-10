@@ -29,18 +29,17 @@ export function TargetsPage() {
     setIsScanning(true);
     setStatus("Scanning");
     setError(null);
-    await skillerApi
-      .scanTargets()
-      .then((result) => {
-        const changed = result.imported.length + result.enabled.length;
-        setStatus(`Scan complete: ${changed} changes, ${result.errors.length} errors`);
-        setError(result.errors[0]?.message ?? null);
-      })
-      .catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : String(caught));
-        setStatus("Scan failed");
-      })
-      .finally(() => setIsScanning(false));
+    try {
+      const result = await skillerApi.scanTargets();
+      const changed = result.imported.length + result.enabled.length;
+      setStatus(`Scan complete: ${changed} changes, ${result.errors.length} errors`);
+      setError(result.errors[0]?.message ?? null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+      setStatus("Scan failed");
+    } finally {
+      setIsScanning(false);
+    }
   }
 
   return (

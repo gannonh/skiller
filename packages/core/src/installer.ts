@@ -52,14 +52,15 @@ async function uniqueSkillId(libraryPath: string, slug: string): Promise<string>
 
 export async function installLocalSkill(input: InstallLocalSkillInput): Promise<SkillMetadata> {
   const skillMd = await fs.readFile(path.join(input.sourcePath, "SKILL.md"), "utf8");
-  const slug = slugifySkillId(parseSkillName(skillMd, path.basename(input.sourcePath)));
+  const displayName = parseSkillName(skillMd, path.basename(input.sourcePath));
+  const slug = slugifySkillId(displayName);
   const id = await uniqueSkillId(input.libraryPath, slug);
   const librarySkillPath = await copySkillToLibrary(input.sourcePath, input.libraryPath, id);
   const validation = await validateSkill(librarySkillPath);
 
   const metadata: SkillMetadata = {
     id,
-    name: id,
+    name: displayName,
     libraryPath: librarySkillPath,
     source: { type: "local" },
     installedAt: new Date().toISOString(),

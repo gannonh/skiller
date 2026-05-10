@@ -17,12 +17,18 @@ export interface ScanTargetsResult {
   errors: Array<{ path: string; message: string }>;
 }
 
-function slugFromPath(skillPath: string): string {
-  return path.basename(skillPath).toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+function normalizeSkillId(value: string): string {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^[.-]+|[.-]+$/g, "") || "skill"
+  );
 }
 
-function normalizeSkillId(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+function slugFromPath(skillPath: string): string {
+  return normalizeSkillId(path.basename(skillPath));
 }
 
 function isMissingPathError(error: unknown): boolean {
@@ -130,7 +136,8 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
   const imported: SkillMetadata[] = [];
   const enabled: SkillMetadata[] = [];
   const errors: Array<{ path: string; message: string }> = [];
-  const configuredTargets = new Set(input.targetDirectories);
+  const uniqueTargetDirectories = [...new Set(input.targetDirectories)];
+  const configuredTargets = new Set(uniqueTargetDirectories);
   const observedEnabledTargets = new Map(records.map((record) => [record.id, new Set<string>()]));
 
   function markEnabled(metadata: SkillMetadata, targetDir: string): void {
@@ -144,11 +151,18 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
     targets.add(targetDir);
   }
 
-  for (const targetDir of input.targetDirectories) {
+  for (const targetDir of uniqueTargetDirectories) {
     if (!(await fs.pathExists(targetDir))) continue;
     if (await isUnsafeTargetDirectory(targetDir, input.libraryPath)) continue;
 
-    const entries = await fs.readdir(targetDir);
+    let entries: string[];
+    try {
+      entries = await fs.readdir(targetDir);
+    } catch (error) {
+      if (isMissingPathError(error)) continue;
+      errors.push({ path: targetDir, message: error instanceof Error ? error.message : String(error) });
+      continue;
+    }
 
     for (const entry of entries) {
       const targetSkillPath = path.join(targetDir, entry);
@@ -178,24 +192,34 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
         const id = await uniqueSkillId(input.libraryPath, declaredId);
         const librarySkillPath = await copySkillToLibrary(targetSkillPath, input.libraryPath, id);
-        const validation = await validateSkill(librarySkillPath);
-        const metadata: SkillMetadata = {
-          id,
-          name: id,
-          libraryPath: librarySkillPath,
-          source: { type: "unknown" },
-          installedAt: new Date().toISOString(),
-          contentHash: await hashDirectory(librarySkillPath),
-          keepUpdated: false,
-          validation,
-          enabledTargets: [targetDir],
-        };
+        let linked = false;
 
-        await replaceWithSymlink(targetSkillPath, librarySkillPath);
-        await store.save(metadata);
-        records.push(metadata);
-        markEnabled(metadata, targetDir);
-        imported.push(metadata);
+        try {
+          const validation = await validateSkill(librarySkillPath);
+          const metadata: SkillMetadata = {
+            id,
+            name: id,
+            libraryPath: librarySkillPath,
+            source: { type: "unknown" },
+            installedAt: new Date().toISOString(),
+            contentHash: await hashDirectory(librarySkillPath),
+            keepUpdated: false,
+            validation,
+            enabledTargets: [targetDir],
+          };
+
+          await replaceWithSymlink(targetSkillPath, librarySkillPath);
+          linked = true;
+          await store.save(metadata);
+          records.push(metadata);
+          markEnabled(metadata, targetDir);
+          imported.push(metadata);
+        } catch (error) {
+          if (!linked) {
+            await fs.remove(librarySkillPath);
+          }
+          throw error;
+        }
       } catch (error) {
         if (isMissingPathError(error)) continue;
         errors.push({ path: targetSkillPath, message: error instanceof Error ? error.message : String(error) });
@@ -205,7 +229,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
   for (const record of records) {
     const preservedTargets = record.enabledTargets.filter((targetDir) => !configuredTargets.has(targetDir));
-    const observedTargets = input.targetDirectories.filter((targetDir) => observedEnabledTargets.get(record.id)?.has(targetDir));
+    const observedTargets = uniqueTargetDirectories.filter((targetDir) => observedEnabledTargets.get(record.id)?.has(targetDir));
     const nextTargets = [...preservedTargets, ...observedTargets];
 
     if (!arraysEqual(record.enabledTargets, nextTargets)) {

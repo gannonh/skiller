@@ -3,6 +3,15 @@ import { createProgram, runCli } from "./index.js";
 import { printResult } from "./output.js";
 
 describe("cli", () => {
+  it("prints null for undefined JSON results", () => {
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    printResult(undefined, true);
+
+    expect(write).toHaveBeenCalledWith("null\n");
+    write.mockRestore();
+  });
+
   it("prints invalid and sets exit code for invalid skills", async () => {
     const printResult = vi.fn();
     const setExitCode = vi.fn();
