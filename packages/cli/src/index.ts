@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+import { Argument, Command } from "commander";
 import { pathToFileURL } from "node:url";
 import {
   MetadataStore,
   SKILLER_VERSION,
+  SkillsShClient,
   defaultConfig,
   expandHome,
   installLocalSkill,
@@ -12,6 +13,13 @@ import {
 } from "@skiller/core";
 import { printResult } from "./output.js";
 
+type LeaderboardType = "all-time" | "trending" | "hot";
+
+interface DiscoverClient {
+  search(query: string): Promise<{ skills: Array<Record<string, unknown>> }>;
+  leaderboard(type: LeaderboardType): Promise<{ skills: Array<Record<string, unknown>> }>;
+}
+
 interface CliDependencies {
   metadataStore: typeof MetadataStore;
   defaultConfig: typeof defaultConfig;
@@ -19,6 +27,7 @@ interface CliDependencies {
   installLocalSkill: typeof installLocalSkill;
   scanTargets: typeof scanTargets;
   validateSkill: typeof validateSkill;
+  skillsShClient: () => DiscoverClient;
   printResult: typeof printResult;
   setExitCode: (code: number) => void;
 }
@@ -31,11 +40,27 @@ function defaultDependencies(): CliDependencies {
     installLocalSkill,
     scanTargets,
     validateSkill,
+    skillsShClient: () => new SkillsShClient(),
     printResult,
     setExitCode: (code) => {
       process.exitCode = code;
     }
   };
+}
+
+function formatSkillList(skills: Array<Record<string, unknown>>): string {
+  return skills
+    .map((skill) => {
+      const name = skill.name;
+      if (typeof name === "string" && name.length > 0) return name;
+
+      const id = skill.id;
+      if (typeof id === "string" && id.length > 0) return id;
+
+      return null;
+    })
+    .filter((value): value is string => value !== null)
+    .join("\n");
 }
 
 export function createProgram(dependencies: Partial<CliDependencies> = {}): Command {
@@ -89,6 +114,32 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
     .action(async (skill: string | undefined, options: { json?: boolean }) => {
       const result = { updated: [], skill: skill ?? null };
       deps.printResult(options.json ? result : "no updates applied", Boolean(options.json));
+    });
+
+  const discover = program.command("discover").description("Discover skills from skills.sh");
+
+  discover
+    .command("search")
+    .description("Search skills.sh")
+    .argument("<query>")
+    .option("--json", "print JSON")
+    .action(async (query: string, options: { json?: boolean }) => {
+      const result = await deps.skillsShClient().search(query);
+      deps.printResult(options.json ? result : formatSkillList(result.skills), Boolean(options.json));
+    });
+
+  discover
+    .command("leaderboard")
+    .description("Show a skills.sh leaderboard")
+    .addArgument(
+      new Argument("[type]", "leaderboard type")
+        .choices(["all-time", "trending", "hot"])
+        .default("trending")
+    )
+    .option("--json", "print JSON")
+    .action(async (type: LeaderboardType, options: { json?: boolean }) => {
+      const result = await deps.skillsShClient().leaderboard(type);
+      deps.printResult(options.json ? result : formatSkillList(result.skills), Boolean(options.json));
     });
 
   return program;

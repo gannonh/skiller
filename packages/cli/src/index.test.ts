@@ -54,4 +54,67 @@ describe("cli", () => {
     });
     expect(printResult).toHaveBeenCalledWith("imported 0 skills", false);
   });
+
+  it("searches discover results with a mocked skills.sh client", async () => {
+    const printResult = vi.fn();
+    const search = vi.fn(async () => ({
+      skills: [
+        { id: "agent-browser", name: "Agent Browser" },
+        { id: "skill-writer" }
+      ]
+    }));
+    const program = createProgram({
+      printResult,
+      skillsShClient: () => ({ search, leaderboard: vi.fn() })
+    });
+
+    await program.parseAsync(["node", "skiller", "discover", "search", "browser"]);
+
+    expect(search).toHaveBeenCalledWith("browser");
+    expect(printResult).toHaveBeenCalledWith("Agent Browser\nskill-writer", false);
+  });
+
+  it("prints discover search JSON without stringifying twice", async () => {
+    const printResult = vi.fn();
+    const result = { skills: [{ id: "agent-browser", name: "Agent Browser" }] };
+    const program = createProgram({
+      printResult,
+      skillsShClient: () => ({ search: vi.fn(async () => result), leaderboard: vi.fn() })
+    });
+
+    await program.parseAsync(["node", "skiller", "discover", "search", "browser", "--json"]);
+
+    expect(printResult).toHaveBeenCalledWith(result, true);
+  });
+
+  it("loads the trending discover leaderboard by default", async () => {
+    const printResult = vi.fn();
+    const leaderboard = vi.fn(async () => ({
+      skills: [{ id: "hot-skill", name: "Hot Skill" }]
+    }));
+    const program = createProgram({
+      printResult,
+      skillsShClient: () => ({ search: vi.fn(), leaderboard })
+    });
+
+    await program.parseAsync(["node", "skiller", "discover", "leaderboard"]);
+
+    expect(leaderboard).toHaveBeenCalledWith("trending");
+    expect(printResult).toHaveBeenCalledWith("Hot Skill", false);
+  });
+
+  it("loads a selected discover leaderboard as JSON", async () => {
+    const printResult = vi.fn();
+    const result = { skills: [{ id: "classic-skill", name: "Classic Skill" }] };
+    const leaderboard = vi.fn(async () => result);
+    const program = createProgram({
+      printResult,
+      skillsShClient: () => ({ search: vi.fn(), leaderboard })
+    });
+
+    await program.parseAsync(["node", "skiller", "discover", "leaderboard", "all-time", "--json"]);
+
+    expect(leaderboard).toHaveBeenCalledWith("all-time");
+    expect(printResult).toHaveBeenCalledWith(result, true);
+  });
 });
