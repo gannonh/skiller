@@ -93,7 +93,7 @@ describe("config", () => {
     vi.stubEnv("XDG_CONFIG_HOME", path.join(tmp, "xdg"));
     expect(defaultConfigPath()).toBe(path.join(tmp, "xdg", "skiller", "config.json"));
 
-    vi.unstubAllEnvs();
+    delete process.env.XDG_CONFIG_HOME;
     expect(defaultConfigPath()).toBe(path.join(os.homedir(), ".config", "skiller", "config.json"));
   });
 
