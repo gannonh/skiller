@@ -37,6 +37,13 @@ export type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllS
 export interface UpdateCheckSkill {
   id: string;
   name: string;
+  currentCommit?: string;
+  remoteCommit?: string;
+}
+
+export interface UpdateCheckError {
+  id?: string;
+  message: string;
 }
 
 export interface UpdateCheckResult {
@@ -44,6 +51,7 @@ export interface UpdateCheckResult {
   considered: UpdateCheckSkill[];
   available: UpdateCheckSkill[];
   updated: UpdateCheckSkill[];
+  errors: UpdateCheckError[];
 }
 
 export type RemoveListener = () => void;

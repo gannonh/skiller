@@ -1,7 +1,7 @@
 import { ipcMain } from "electron";
 import { MetadataStore, SkillsShClient, expandHome, loadConfig, saveConfig, scanTargets } from "@skiller/core";
 import type { SkillerConfig } from "@skiller/core";
-import { createUpdateCheckResult } from "./update-check.js";
+import { checkDesktopUpdates } from "./update-check.js";
 
 type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated">>;
 
@@ -31,10 +31,7 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("updates:check", async () => {
-    const config = await loadConfig();
-    const skills = await new MetadataStore(expandHome(config.libraryPath)).list();
-
-    return createUpdateCheckResult(skills, config.keepAllSkillsUpdated);
+    return checkDesktopUpdates();
   });
 
   ipcMain.handle("discover:leaderboard", async (_event, type: "all-time" | "trending" | "hot") => {

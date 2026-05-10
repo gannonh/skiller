@@ -5,9 +5,10 @@ import {
   MetadataStore,
   SKILLER_VERSION,
   SkillsShClient,
-  defaultConfig,
+  checkForSkillUpdates,
   expandHome,
   installLocalSkill,
+  loadConfig,
   scanTargets,
   validateSkill
 } from "@skiller/core";
@@ -22,7 +23,8 @@ interface DiscoverClient {
 
 interface CliDependencies {
   metadataStore: typeof MetadataStore;
-  defaultConfig: typeof defaultConfig;
+  loadConfig: typeof loadConfig;
+  checkForSkillUpdates: typeof checkForSkillUpdates;
   expandHome: typeof expandHome;
   installLocalSkill: typeof installLocalSkill;
   scanTargets: typeof scanTargets;
@@ -35,7 +37,8 @@ interface CliDependencies {
 function defaultDependencies(): CliDependencies {
   return {
     metadataStore: MetadataStore,
-    defaultConfig,
+    loadConfig,
+    checkForSkillUpdates,
     expandHome,
     installLocalSkill,
     scanTargets,
@@ -46,6 +49,12 @@ function defaultDependencies(): CliDependencies {
       process.exitCode = code;
     }
   };
+}
+
+function formatUpdateSummary(result: Awaited<ReturnType<typeof checkForSkillUpdates>>): string {
+  const skillLabel = result.considered.length === 1 ? "skill" : "skills";
+  const updateLabel = result.available.length === 1 ? "update" : "updates";
+  return `checked ${result.considered.length} ${skillLabel}, ${result.available.length} ${updateLabel} available, ${result.updated.length} updated`;
 }
 
 function formatSkillList(skills: Array<Record<string, unknown>>): string {
@@ -83,13 +92,13 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
     .command("list")
     .option("--json", "print JSON")
     .action(async (options: { json?: boolean }) => {
-      const config = deps.defaultConfig();
+      const config = await deps.loadConfig();
       const skills = await new deps.metadataStore(deps.expandHome(config.libraryPath)).list();
       deps.printResult(options.json ? skills : skills.map((skill) => skill.name).join("\n"), Boolean(options.json));
     });
 
   program.command("scan").option("--json", "print JSON").action(async (options: { json?: boolean }) => {
-    const config = deps.defaultConfig();
+    const config = await deps.loadConfig();
     const result = await deps.scanTargets({
       libraryPath: deps.expandHome(config.libraryPath),
       targetDirectories: config.targetDirectories.map((target) => deps.expandHome(target))
@@ -102,7 +111,7 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
     .argument("<path>")
     .option("--json", "print JSON")
     .action(async (sourcePath: string, options: { json?: boolean }) => {
-      const config = deps.defaultConfig();
+      const config = await deps.loadConfig();
       const metadata = await deps.installLocalSkill({ sourcePath, libraryPath: deps.expandHome(config.libraryPath) });
       deps.printResult(options.json ? metadata : `installed ${metadata.name}`, Boolean(options.json));
     });
@@ -112,8 +121,13 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
     .argument("[skill]")
     .option("--json", "print JSON")
     .action(async (skill: string | undefined, options: { json?: boolean }) => {
-      const result = { updated: [], skill: skill ?? null };
-      deps.printResult(options.json ? result : "no updates applied", Boolean(options.json));
+      const config = await deps.loadConfig();
+      const result = await deps.checkForSkillUpdates({
+        libraryPath: deps.expandHome(config.libraryPath),
+        config,
+        skillId: skill
+      });
+      deps.printResult(options.json ? result : formatUpdateSummary(result), Boolean(options.json));
     });
 
   const discover = program.command("discover").description("Discover skills from skills.sh");
