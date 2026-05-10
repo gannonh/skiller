@@ -31,12 +31,15 @@ describe("config", () => {
     expect(defaultTargetDirectories()).toEqual([
       "~/.agents/skills",
       "~/.claude/skills",
-      "~/.codex/skills",
       "~/.cursor/skills",
       "~/.pi/agent/skills",
       "~/.gemini/skills",
       "~/.copilot/skills"
     ]);
+  });
+
+  it("defaults all targets to enabled target records", () => {
+    expect(defaultConfig().targets).toEqual(defaultTargetDirectories().map((targetPath) => ({ path: targetPath, enabled: true })));
   });
 
   it("normalizes empty config values", () => {
@@ -47,11 +50,11 @@ describe("config", () => {
     expect(
       normalizeConfig({
         updateSchedule: { intervalHours: 6 },
-        targetDirectories: ["~/custom-skills"]
+        targets: [{ path: "~/custom-skills", enabled: false }]
       })
     ).toMatchObject({
       updateSchedule: { intervalHours: 6 },
-      targetDirectories: ["~/custom-skills"]
+      targets: [{ path: "~/custom-skills", enabled: false }]
     });
   });
 

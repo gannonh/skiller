@@ -27,7 +27,7 @@ export function defaultConfigPath(): string {
 export function defaultConfig(): SkillerConfig {
   return {
     libraryPath: "~/skiller",
-    targetDirectories: defaultTargetDirectories(),
+    targets: defaultTargetDirectories().map((targetPath) => ({ path: targetPath, enabled: true })),
     updateSchedule: { intervalHours: 24 },
     keepAllSkillsUpdated: false,
     launchAtLogin: false,
@@ -44,10 +44,7 @@ export function normalizeConfig(input: Partial<SkillerConfig>): SkillerConfig {
       ...defaults.updateSchedule,
       ...input.updateSchedule
     },
-    targetDirectories:
-      input.targetDirectories && input.targetDirectories.length > 0
-        ? input.targetDirectories
-        : defaults.targetDirectories
+    targets: input.targets && input.targets.length > 0 ? input.targets : defaults.targets
   };
 }
 

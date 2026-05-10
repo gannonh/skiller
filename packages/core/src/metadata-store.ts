@@ -25,6 +25,13 @@ function isPathInside(parentPath: string, childPath: string): boolean {
   return relativePath !== "" && !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
 }
 
+function normalizeMetadata(metadata: SkillMetadata): SkillMetadata {
+  return {
+    ...metadata,
+    enabled: typeof metadata.enabled === "boolean" ? metadata.enabled : true
+  };
+}
+
 export class MetadataStore {
   constructor(private readonly libraryPath: string) {}
 
@@ -41,7 +48,7 @@ export class MetadataStore {
       const file = path.join(this.libraryPath, entry.name, METADATA_FILE);
       if (await fs.pathExists(file)) {
         try {
-          records.push(await fs.readJson(file));
+          records.push(normalizeMetadata(await fs.readJson(file)));
         } catch {
           continue;
         }

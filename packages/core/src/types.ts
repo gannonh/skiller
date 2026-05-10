@@ -30,13 +30,18 @@ export interface SkillMetadata {
   lastCheckedAt?: string;
   contentHash?: string;
   keepUpdated: boolean;
+  enabled: boolean;
   validation: ValidationResult;
-  enabledTargets: string[];
+}
+
+export interface TargetConfig {
+  path: string;
+  enabled: boolean;
 }
 
 export interface SkillerConfig {
   libraryPath: string;
-  targetDirectories: string[];
+  targets: TargetConfig[];
   updateSchedule: {
     intervalHours: number;
   };

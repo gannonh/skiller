@@ -3,17 +3,23 @@ import path from "node:path";
 import YAML from "yaml";
 import { copySkillToLibrary, hashDirectory, replaceWithSymlink } from "./file-ops.js";
 import { MetadataStore } from "./metadata-store.js";
-import type { SkillMetadata } from "./types.js";
+import type { SkillMetadata, TargetConfig } from "./types.js";
 import { validateSkill } from "./validator.js";
 
 export interface ScanTargetsInput {
   libraryPath: string;
-  targetDirectories: string[];
+  targets: TargetConfig[];
+}
+
+export interface TargetSkillChange {
+  skillId: string;
+  targetPath: string;
 }
 
 export interface ScanTargetsResult {
   imported: SkillMetadata[];
-  enabled: SkillMetadata[];
+  enabled: TargetSkillChange[];
+  disabled: TargetSkillChange[];
   errors: Array<{ path: string; message: string }>;
 }
 
@@ -122,8 +128,21 @@ function findMetadataById(records: SkillMetadata[], id: string): SkillMetadata |
   return records.find((record) => record.id === id);
 }
 
-function arraysEqual(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+function uniqueTargets(targets: TargetConfig[]): TargetConfig[] {
+  const seen = new Set<string>();
+  const unique: TargetConfig[] = [];
+
+  for (const target of targets) {
+    if (seen.has(target.path)) continue;
+    seen.add(target.path);
+    unique.push(target);
+  }
+
+  return unique;
+}
+
+function changeKey(skillId: string, targetPath: string): string {
+  return `${skillId}\0${targetPath}`;
 }
 
 export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsResult> {
@@ -134,24 +153,72 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
   const store = new MetadataStore(input.libraryPath);
   const records = await store.list();
   const imported: SkillMetadata[] = [];
-  const enabled: SkillMetadata[] = [];
+  const enabled: TargetSkillChange[] = [];
+  const disabled: TargetSkillChange[] = [];
   const errors: Array<{ path: string; message: string }> = [];
-  const uniqueTargetDirectories = [...new Set(input.targetDirectories)];
-  const configuredTargets = new Set(uniqueTargetDirectories);
-  const observedEnabledTargets = new Map(records.map((record) => [record.id, new Set<string>()]));
+  const targets = uniqueTargets(input.targets);
+  const enabledChangeKeys = new Set<string>();
+  const disabledChangeKeys = new Set<string>();
 
   function markEnabled(metadata: SkillMetadata, targetDir: string): void {
-    let targets = observedEnabledTargets.get(metadata.id);
+    const key = changeKey(metadata.id, targetDir);
+    if (enabledChangeKeys.has(key)) return;
 
-    if (!targets) {
-      targets = new Set();
-      observedEnabledTargets.set(metadata.id, targets);
-    }
-
-    targets.add(targetDir);
+    enabledChangeKeys.add(key);
+    enabled.push({ skillId: metadata.id, targetPath: targetDir });
   }
 
-  for (const targetDir of uniqueTargetDirectories) {
+  function markDisabled(metadata: SkillMetadata, targetDir: string): void {
+    const key = changeKey(metadata.id, targetDir);
+    if (disabledChangeKeys.has(key)) return;
+
+    disabledChangeKeys.add(key);
+    disabled.push({ skillId: metadata.id, targetPath: targetDir });
+  }
+
+  async function removeManagedSymlink(targetSkillPath: string, targetDir: string): Promise<void> {
+    let stat;
+
+    try {
+      stat = await fs.lstat(targetSkillPath);
+    } catch (error) {
+      if (isMissingPathError(error)) return;
+      throw error;
+    }
+
+    if (!stat.isSymbolicLink()) return;
+
+    const metadata = await findMetadataByRealLibraryPath(records, targetSkillPath);
+    if (!metadata) return;
+
+    await fs.remove(targetSkillPath);
+    markDisabled(metadata, targetDir);
+  }
+
+  async function ensureManagedSymlink(metadata: SkillMetadata, targetDir: string): Promise<void> {
+    const targetSkillPath = path.join(targetDir, metadata.id);
+
+    try {
+      const stat = await fs.lstat(targetSkillPath);
+
+      if (stat.isSymbolicLink()) {
+        const existingMetadata = await findMetadataByRealLibraryPath(records, targetSkillPath);
+        if (existingMetadata?.id === metadata.id) {
+          markEnabled(metadata, targetDir);
+          return;
+        }
+      }
+
+      return;
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+    }
+
+    await fs.symlink(metadata.libraryPath, targetSkillPath, "dir");
+    markEnabled(metadata, targetDir);
+  }
+
+  for (const { path: targetDir, enabled: targetEnabled } of targets) {
     if (!(await fs.pathExists(targetDir))) continue;
     if (await isUnsafeTargetDirectory(targetDir, input.libraryPath)) continue;
 
@@ -164,29 +231,23 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
       continue;
     }
 
+    if (!targetEnabled) continue;
+
     for (const entry of entries) {
       const targetSkillPath = path.join(targetDir, entry);
 
       try {
         const stat = await fs.lstat(targetSkillPath);
-        if (stat.isSymbolicLink()) {
-          const metadata = await findMetadataByRealLibraryPath(records, targetSkillPath);
-
-          if (!metadata) continue;
-
-          markEnabled(metadata, targetDir);
-          enabled.push(metadata);
-          continue;
-        }
+        if (stat.isSymbolicLink()) continue;
         if (!(await isSkillDirectory(targetSkillPath))) continue;
 
         const declaredId = await skillIdFromSkillPath(targetSkillPath);
         const existingMetadata = findMetadataById(records, declaredId);
 
         if (existingMetadata) {
+          if (!existingMetadata.enabled) continue;
           await replaceWithSymlink(targetSkillPath, existingMetadata.libraryPath);
           markEnabled(existingMetadata, targetDir);
-          enabled.push(existingMetadata);
           continue;
         }
 
@@ -205,7 +266,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
             contentHash: await hashDirectory(librarySkillPath),
             keepUpdated: false,
             validation,
-            enabledTargets: [targetDir],
+            enabled: true
           };
 
           await replaceWithSymlink(targetSkillPath, librarySkillPath);
@@ -227,16 +288,55 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
     }
   }
 
-  for (const record of records) {
-    const preservedTargets = record.enabledTargets.filter((targetDir) => !configuredTargets.has(targetDir));
-    const observedTargets = uniqueTargetDirectories.filter((targetDir) => observedEnabledTargets.get(record.id)?.has(targetDir));
-    const nextTargets = [...preservedTargets, ...observedTargets];
+  for (const { path: targetDir, enabled: targetEnabled } of targets) {
+    if (!(await fs.pathExists(targetDir))) continue;
+    if (await isUnsafeTargetDirectory(targetDir, input.libraryPath)) continue;
 
-    if (!arraysEqual(record.enabledTargets, nextTargets)) {
-      record.enabledTargets = nextTargets;
-      await store.save(record);
+    let entries: string[];
+    try {
+      entries = await fs.readdir(targetDir);
+    } catch (error) {
+      if (isMissingPathError(error)) continue;
+      errors.push({ path: targetDir, message: error instanceof Error ? error.message : String(error) });
+      continue;
+    }
+
+    for (const entry of entries) {
+      const targetSkillPath = path.join(targetDir, entry);
+
+      try {
+        const stat = await fs.lstat(targetSkillPath);
+        if (!stat.isSymbolicLink()) continue;
+
+        const metadata = await findMetadataByRealLibraryPath(records, targetSkillPath);
+        if (!metadata) continue;
+
+        if (!targetEnabled || !metadata.enabled) {
+          await removeManagedSymlink(targetSkillPath, targetDir);
+        }
+      } catch (error) {
+        if (isMissingPathError(error)) continue;
+        errors.push({ path: targetSkillPath, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    if (!targetEnabled) continue;
+
+    for (const record of records) {
+      if (!record.enabled) continue;
+      if (!(await fs.pathExists(record.libraryPath))) continue;
+
+      try {
+        await ensureManagedSymlink(record, targetDir);
+      } catch (error) {
+        if (isMissingPathError(error)) continue;
+        errors.push({
+          path: path.join(targetDir, record.id),
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
     }
   }
 
-  return { imported, enabled, errors };
+  return { imported, enabled, disabled, errors };
 }

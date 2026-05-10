@@ -67,13 +67,13 @@ describe("cli", () => {
 
   it("runs scan with expanded default paths", async () => {
     const printResult = vi.fn();
-    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], errors: [] }));
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
     const program = createProgram({
       printResult,
       scanTargets,
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
-        targetDirectories: ["~/.codex/skills"],
+        targets: [{ path: "~/.agents/skills", enabled: true }],
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -86,7 +86,7 @@ describe("cli", () => {
 
     expect(scanTargets).toHaveBeenCalledWith({
       libraryPath: "/home/test/persisted-skiller",
-      targetDirectories: ["/home/test/.codex/skills"]
+      targets: [{ path: "/home/test/.agents/skills", enabled: true }]
     });
     expect(printResult).toHaveBeenCalledWith("imported 0 skills", false);
   });
@@ -103,7 +103,7 @@ describe("cli", () => {
       metadataStore: metadataStore as never,
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
-        targetDirectories: [],
+        targets: [],
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -129,7 +129,7 @@ describe("cli", () => {
       metadataStore: metadataStore as never,
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
-        targetDirectories: [],
+        targets: [],
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -151,7 +151,7 @@ describe("cli", () => {
       installLocalSkill: installLocalSkill as never,
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
-        targetDirectories: [],
+        targets: [],
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -177,7 +177,7 @@ describe("cli", () => {
       installLocalSkill: vi.fn(async () => metadata) as never,
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
-        targetDirectories: [],
+        targets: [],
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -202,7 +202,7 @@ describe("cli", () => {
     }));
     const config = {
       libraryPath: "~/persisted-skiller",
-      targetDirectories: [],
+      targets: [],
       updateSchedule: { intervalHours: 24 },
       keepAllSkillsUpdated: false,
       launchAtLogin: false,
@@ -239,7 +239,7 @@ describe("cli", () => {
     };
     const config = {
       libraryPath: "~/persisted-skiller",
-      targetDirectories: [],
+      targets: [],
       updateSchedule: { intervalHours: 24 },
       keepAllSkillsUpdated: false,
       launchAtLogin: false,
@@ -261,13 +261,13 @@ describe("cli", () => {
 
   it("prints scan results as JSON", async () => {
     const printResult = vi.fn();
-    const result = { imported: [], enabled: [], errors: [] };
+    const result = { imported: [], enabled: [], disabled: [], errors: [] };
     const program = createProgram({
       printResult,
       scanTargets: vi.fn(async () => result),
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
-        targetDirectories: ["~/.codex/skills"],
+        targets: [{ path: "~/.agents/skills", enabled: true }],
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,

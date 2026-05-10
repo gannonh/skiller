@@ -1,4 +1,4 @@
-import type { ScanTargetsResult, SkillerConfig } from "@skiller/core";
+import type { ScanTargetsResult, SkillerConfig, TargetConfig } from "@skiller/core";
 
 export type LeaderboardType = "all-time" | "trending" | "hot";
 
@@ -31,8 +31,8 @@ export interface SkillMetadata {
   installedAt: string;
   lastCheckedAt?: string;
   keepUpdated: boolean;
+  enabled: boolean;
   validation: ValidationResult;
-  enabledTargets: string[];
 }
 
 export type DiscoverSkill = Record<string, unknown>;
@@ -41,7 +41,7 @@ export interface ScanError {
   message: string;
 }
 
-export type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated">>;
+export type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets">>;
 
 export interface UpdateCheckSkill {
   id: string;
@@ -67,7 +67,9 @@ export type RemoveListener = () => void;
 
 export interface SkillerApi {
   listLibrary: () => Promise<SkillMetadata[]>;
+  setSkillEnabled: (skillId: string, enabled: boolean) => Promise<SkillMetadata[]>;
   scanTargets: () => Promise<ScanTargetsResult>;
+  saveTargets: (targets: TargetConfig[]) => Promise<SkillerConfig>;
   getConfig: () => Promise<SkillerConfig>;
   saveConfig: (config: ConfigUpdate) => Promise<SkillerConfig>;
   checkUpdates: () => Promise<UpdateCheckResult>;
@@ -92,8 +94,8 @@ const fallbackSkills: SkillMetadata[] = [
     source: { type: "local" },
     installedAt: new Date().toISOString(),
     keepUpdated: false,
+    enabled: true,
     validation: { valid: true, issues: [] },
-    enabledTargets: ["~/.codex/skills"]
   }
 ];
 
@@ -107,14 +109,13 @@ const fallbackDiscoverSkills: DiscoverSkill[] = [
 function createBrowserPreviewApi(): SkillerApi {
   let config: SkillerConfig = {
     libraryPath: "~/skiller",
-    targetDirectories: [
-      "~/.agents/skills",
-      "~/.claude/skills",
-      "~/.codex/skills",
-      "~/.cursor/skills",
-      "~/.pi/agent/skills",
-      "~/.gemini/skills",
-      "~/.copilot/skills"
+    targets: [
+      { path: "~/.agents/skills", enabled: true },
+      { path: "~/.claude/skills", enabled: true },
+      { path: "~/.cursor/skills", enabled: true },
+      { path: "~/.pi/agent/skills", enabled: true },
+      { path: "~/.gemini/skills", enabled: true },
+      { path: "~/.copilot/skills", enabled: true }
     ],
     updateSchedule: { intervalHours: 24 },
     keepAllSkillsUpdated: false,
@@ -124,7 +125,16 @@ function createBrowserPreviewApi(): SkillerApi {
 
   return {
     listLibrary: async () => fallbackSkills,
-    scanTargets: async () => ({ imported: [], enabled: fallbackSkills, errors: [] }),
+    setSkillEnabled: async (skillId, enabled) => {
+      const skill = fallbackSkills.find((candidate) => candidate.id === skillId);
+      if (skill) skill.enabled = enabled;
+      return fallbackSkills;
+    },
+    scanTargets: async () => ({ imported: [], enabled: [], disabled: [], errors: [] }),
+    saveTargets: async (targets) => {
+      config = { ...config, targets };
+      return config;
+    },
     getConfig: async () => config,
     saveConfig: async (update) => {
       if (update.libraryPath !== undefined && update.libraryPath.trim() !== "" && !update.libraryPath.startsWith("/") && !update.libraryPath.startsWith("~/")) {

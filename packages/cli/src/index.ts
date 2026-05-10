@@ -101,7 +101,7 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
     const config = await deps.loadConfig();
     const result = await deps.scanTargets({
       libraryPath: deps.expandHome(config.libraryPath),
-      targetDirectories: config.targetDirectories.map((target) => deps.expandHome(target))
+      targets: config.targets.map((target) => ({ ...target, path: deps.expandHome(target.path) }))
     });
     deps.printResult(options.json ? result : `imported ${result.imported.length} skills`, Boolean(options.json));
   });

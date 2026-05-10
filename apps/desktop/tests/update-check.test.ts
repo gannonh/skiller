@@ -15,7 +15,7 @@ describe("desktop update checks", () => {
   it("delegates update checks to the shared core updater", async () => {
     const config: SkillerConfig = {
       libraryPath: "~/persisted-skiller",
-      targetDirectories: [],
+      targets: [],
       updateSchedule: { intervalHours: 24 },
       keepAllSkillsUpdated: true,
       launchAtLogin: false,

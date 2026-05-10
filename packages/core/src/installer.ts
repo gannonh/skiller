@@ -66,8 +66,8 @@ export async function installLocalSkill(input: InstallLocalSkillInput): Promise<
     installedAt: new Date().toISOString(),
     contentHash: await hashDirectory(librarySkillPath),
     keepUpdated: false,
-    validation,
-    enabledTargets: []
+    enabled: true,
+    validation
   };
 
   await new MetadataStore(input.libraryPath).save(metadata);

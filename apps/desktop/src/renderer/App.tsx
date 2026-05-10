@@ -34,9 +34,9 @@ type Page = "library" | "discover" | "targets" | "updates" | "settings";
 
 const pages: Array<{ id: Page; label: string; icon: typeof BookOpenIcon }> = [
   { id: "library", label: "Library", icon: BookOpenIcon },
-  { id: "discover", label: "Discover", icon: DiscoverSquareIcon },
   { id: "targets", label: "Targets", icon: FolderTreeIcon },
   { id: "updates", label: "Updates", icon: ArrowReloadHorizontalIcon },
+  { id: "discover", label: "Discover", icon: DiscoverSquareIcon },
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 

@@ -2,7 +2,6 @@ export function defaultTargetDirectories(): string[] {
   return [
     "~/.agents/skills",
     "~/.claude/skills",
-    "~/.codex/skills",
     "~/.cursor/skills",
     "~/.pi/agent/skills",
     "~/.gemini/skills",

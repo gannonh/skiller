@@ -4,7 +4,7 @@ import type { SkillerConfig } from "@skiller/core";
 
 const config: SkillerConfig = {
   libraryPath: "~/persisted-skiller",
-  targetDirectories: ["~/skills"],
+  targets: [{ path: "~/skills", enabled: true }],
   updateSchedule: { intervalHours: 1 },
   keepAllSkillsUpdated: false,
   launchAtLogin: false,
@@ -33,7 +33,7 @@ describe("background jobs", () => {
     const jobs = await startBackgroundJobs(window, {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
-      scanTargets: vi.fn(async () => ({ imported: [], enabled: [], errors: [] })),
+      scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
       watchTargetDirectories: vi.fn(() => ({ close }) as never),
       createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
       checkDesktopUpdates
@@ -54,10 +54,10 @@ describe("background jobs", () => {
     const updatedConfig: SkillerConfig = {
       ...config,
       libraryPath: "~/updated-skiller",
-      targetDirectories: ["~/updated-skills"]
+      targets: [{ path: "~/updated-skills", enabled: true }]
     };
     const loadConfig = vi.fn().mockResolvedValueOnce(config).mockResolvedValueOnce(config).mockResolvedValueOnce(updatedConfig);
-    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], errors: [] }));
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
     const close = vi.fn();
     let onChange: (() => void) | undefined;
     const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
@@ -82,11 +82,11 @@ describe("background jobs", () => {
 
     expect(scanTargets).toHaveBeenNthCalledWith(1, {
       libraryPath: "/home/test/persisted-skiller",
-      targetDirectories: ["/home/test/skills"]
+      targets: [{ path: "/home/test/skills", enabled: true }]
     });
     expect(scanTargets).toHaveBeenNthCalledWith(2, {
       libraryPath: "/home/test/updated-skiller",
-      targetDirectories: ["/home/test/updated-skills"]
+      targets: [{ path: "/home/test/updated-skills", enabled: true }]
     });
 
     jobs.forEach((job) => job.stop());

@@ -16,7 +16,7 @@ function metadataFor(libraryPath: string): SkillMetadata {
     installedAt: "2026-05-09T00:00:00.000Z",
     keepUpdated: false,
     validation: { valid: true, issues: [] },
-    enabledTargets: []
+    enabled: true
   };
 }
 
@@ -40,6 +40,25 @@ describe("MetadataStore", () => {
     await store.save(metadata);
 
     expect(await store.list()).toEqual([metadata]);
+  });
+
+  it("defaults stored metadata without enabled to enabled", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await fs.ensureDir(skillPath);
+    await fs.writeJson(path.join(skillPath, "skiller.metadata.json"), {
+      id: "example-skill",
+      name: "Example Skill",
+      libraryPath: skillPath,
+      source: { type: "local" },
+      installedAt: "2026-05-09T00:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] }
+    });
+
+    expect(await store.list()).toEqual([metadataFor(skillPath)]);
   });
 
   it("rejects metadata paths outside the configured library", async () => {

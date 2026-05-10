@@ -5,8 +5,8 @@ test("renders the library from the browser preview API", async ({ page }) => {
 
   await expect(page.getByText("Installed master skills")).toBeVisible();
   await expect(page.getByText("1 master skills")).toBeVisible();
-  await expect(page.getByRole("cell", { name: "example-skill" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: "1", exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "example-skill", exact: true })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Enabled" })).toBeVisible();
 });
 
 test("shows configured target directories and refreshes scans", async ({ page }) => {
@@ -17,9 +17,9 @@ test("shows configured target directories and refreshes scans", async ({ page })
   await expect(page.getByText("~/.agents/skills")).toBeVisible();
   await expect(page.getByText("~/.claude/skills")).toBeVisible();
 
-  await page.getByRole("button", { name: "Refresh Scan" }).click();
+  await page.getByRole("button", { name: "Sync Targets" }).click();
 
-  await expect(page.getByText("Scan complete: 1 changes, 0 errors")).toBeVisible();
+  await expect(page.getByText("Sync complete: 0 changes, 0 errors")).toBeVisible();
 });
 
 test("validates settings paths in browser preview mode", async ({ page }) => {
