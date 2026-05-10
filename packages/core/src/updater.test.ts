@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MetadataStore } from "./metadata-store.js";
-import { checkForSkillUpdates } from "./updater.js";
+import { checkForSkillUpdates, resolveGithubRemoteCommit } from "./updater.js";
 import type { SkillMetadata, SkillerConfig } from "./types.js";
 
 const tempDirs: string[] = [];
@@ -47,6 +47,7 @@ function metadataFor(
 describe("checkForSkillUpdates", () => {
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => fs.remove(dir)));
+    vi.unstubAllGlobals();
   });
 
   it("checks keep-updated skills and stamps only considered metadata", async () => {
@@ -128,5 +129,54 @@ describe("checkForSkillUpdates", () => {
     });
 
     expect(result.considered.map((skill) => skill.id).sort()).toEqual(["first", "second"]);
+  });
+
+  it("resolves github commits through the GitHub API by default", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ sha: "def456" })));
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await expect(
+      resolveGithubRemoteCommit({
+        type: "github",
+        githubUrl: "https://github.com/example/skill.git",
+        ref: "main",
+        commit: "abc123"
+      })
+    ).resolves.toBe("def456");
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.github.com/repos/example/skill/commits/main",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "User-Agent": "skiller" })
+      })
+    );
+  });
+
+  it("uses the default github resolver during update checks", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+    await store.save(
+      metadataFor(libraryPath, "github-skill", true, {
+        type: "github",
+        githubUrl: "https://github.com/example/skill",
+        ref: "main",
+        commit: "abc123"
+      })
+    );
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ sha: "def456" }))));
+
+    const result = await checkForSkillUpdates({
+      libraryPath,
+      config: configFor(libraryPath),
+      now: () => checkedAt
+    });
+
+    expect(result.available).toEqual([
+      {
+        id: "github-skill",
+        name: "github-skill",
+        currentCommit: "abc123",
+        remoteCommit: "def456"
+      }
+    ]);
   });
 });

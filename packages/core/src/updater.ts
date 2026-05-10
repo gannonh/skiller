@@ -36,6 +36,13 @@ export interface CheckForSkillUpdatesInput {
   stampLastCheckedAt?: boolean;
 }
 
+function parseGithubRepository(githubUrl: string): { owner: string; repo: string } | null {
+  const match = githubUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#?]+?)(?:\.git)?(?:[/#?].*)?$/);
+  if (!match) return null;
+
+  return { owner: match[1], repo: match[2] };
+}
+
 function shouldConsiderSkill(metadata: SkillMetadata, config: SkillerConfig, skillId?: string): boolean {
   if (skillId) return metadata.id === skillId || metadata.name === skillId;
   return config.keepAllSkillsUpdated || metadata.keepUpdated;
@@ -65,6 +72,30 @@ function hasResolvableGithubSource(source: SkillSource): source is SkillSource &
   );
 }
 
+export async function resolveGithubRemoteCommit(source: SkillSource): Promise<string | null> {
+  if (!hasResolvableGithubSource(source)) return null;
+
+  const repository = parseGithubRepository(source.githubUrl);
+  if (!repository) return null;
+
+  const response = await fetch(
+    `https://api.github.com/repos/${repository.owner}/${repository.repo}/commits/${encodeURIComponent(source.ref)}`,
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "skiller"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`GitHub update check failed: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as { sha?: unknown };
+  return typeof payload.sha === "string" && payload.sha.length > 0 ? payload.sha : null;
+}
+
 export async function checkForSkillUpdates(input: CheckForSkillUpdatesInput): Promise<UpdateCheckResult> {
   const checkedAt = (input.now ?? (() => new Date()))().toISOString();
   const store = input.metadataStore ?? new MetadataStore(input.libraryPath);
@@ -73,11 +104,12 @@ export async function checkForSkillUpdates(input: CheckForSkillUpdatesInput): Pr
   const considered = selected.map(toUpdateCheckSkill);
   const available: UpdateCheckSkill[] = [];
   const errors: UpdateCheckError[] = [];
+  const remoteResolver = input.remoteResolver ?? resolveGithubRemoteCommit;
 
   for (const metadata of selected) {
-    if (hasResolvableGithubSource(metadata.source) && input.remoteResolver) {
+    if (hasResolvableGithubSource(metadata.source)) {
       try {
-        const remoteCommit = await input.remoteResolver(metadata.source, metadata);
+        const remoteCommit = await remoteResolver(metadata.source, metadata);
         if (remoteCommit && remoteCommit !== metadata.source.commit) {
           available.push({
             id: metadata.id,
