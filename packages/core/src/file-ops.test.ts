@@ -17,8 +17,9 @@ afterEach(async () => {
 describe("file operations", () => {
   it("hashes directory content deterministically", async () => {
     const skill = path.join(tmp, "skill");
-    await fs.ensureDir(skill);
+    await fs.ensureDir(path.join(skill, "references"));
     await fs.writeFile(path.join(skill, "SKILL.md"), "hello");
+    await fs.writeFile(path.join(skill, "references", "note.md"), "nested");
 
     await expect(hashDirectory(skill)).resolves.toMatch(/^[a-f0-9]{64}$/);
   });

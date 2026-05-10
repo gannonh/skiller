@@ -14,6 +14,7 @@ const config: SkillerConfig = {
 describe("background jobs", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("runs update checks on the background interval", async () => {
@@ -75,7 +76,9 @@ describe("background jobs", () => {
     });
 
     onChange?.();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let index = 0; index < 5; index += 1) {
+      await Promise.resolve();
+    }
 
     expect(scanTargets).toHaveBeenNthCalledWith(1, {
       libraryPath: "/home/test/persisted-skiller",
@@ -84,6 +87,66 @@ describe("background jobs", () => {
     expect(scanTargets).toHaveBeenNthCalledWith(2, {
       libraryPath: "/home/test/updated-skiller",
       targetDirectories: ["/home/test/updated-skills"]
+    });
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("sends scan and update errors to the renderer", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const close = vi.fn();
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      scanTargets: vi.fn(async () => {
+        throw new Error("scan failed");
+      }),
+      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      createUpdateInterval: (_schedule, callback) => {
+        callback();
+        return setInterval(() => undefined, 60_000);
+      },
+      checkDesktopUpdates: vi.fn(async () => {
+        throw "update failed";
+      })
+    });
+
+    await vi.waitFor(() => {
+      expect(window.webContents.send).toHaveBeenCalledWith("background:scan-error", { message: "scan failed" });
+      expect(window.webContents.send).toHaveBeenCalledWith("background:update-error", { message: "update failed" });
+    });
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("normalizes alternate scan and update error types", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const close = vi.fn();
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      scanTargets: vi.fn(async () => {
+        throw "scan failed";
+      }),
+      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      createUpdateInterval: (_schedule, callback) => {
+        callback();
+        return setInterval(() => undefined, 60_000);
+      },
+      checkDesktopUpdates: vi.fn(async () => {
+        throw new Error("update failed");
+      })
+    });
+
+    await vi.waitFor(() => {
+      expect(window.webContents.send).toHaveBeenCalledWith("background:scan-error", { message: "scan failed" });
+      expect(window.webContents.send).toHaveBeenCalledWith("background:update-error", { message: "update failed" });
     });
 
     jobs.forEach((job) => job.stop());

@@ -163,6 +163,7 @@ export async function runCli(argv = process.argv): Promise<void> {
   await createProgram().parseAsync(argv);
 }
 
+/* v8 ignore next 6 -- exercised by the packaged bin entrypoint */
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runCli().catch((error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

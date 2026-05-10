@@ -15,6 +15,7 @@ function parseFrontmatter(markdown: string): Record<string, unknown> | null {
 
 function isInside(parent: string, child: string): boolean {
   const relative = path.relative(parent, child);
+  /* v8 ignore next -- covers Windows drive-boundary paths */
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 

@@ -116,6 +116,123 @@ describe("checkForSkillUpdates", () => {
     expect(result.updated).toEqual([]);
   });
 
+  it("selects a single skill by name and skips last-checked stamping when requested", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+    await store.save({ ...metadataFor(libraryPath, "id-one", false), name: "Display Name" });
+    await store.save(metadataFor(libraryPath, "id-two", true));
+
+    const result = await checkForSkillUpdates({
+      libraryPath,
+      config: configFor(libraryPath),
+      skillId: "Display Name",
+      metadataStore: store,
+      stampLastCheckedAt: false,
+      now: () => checkedAt
+    });
+
+    expect(result.considered).toEqual([{ id: "id-one", name: "Display Name" }]);
+    expect((await store.list()).find((skill) => skill.id === "id-one")?.lastCheckedAt).toBeUndefined();
+  });
+
+  it("does not report an available update when the remote commit is missing or unchanged", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+    const source: SkillMetadata["source"] = {
+      type: "github",
+      githubUrl: "https://github.com/example/skill",
+      ref: "main",
+      commit: "abc123"
+    };
+    await store.save(metadataFor(libraryPath, "github-skill", true, source));
+
+    const unchanged = await checkForSkillUpdates({
+      libraryPath,
+      config: configFor(libraryPath),
+      metadataStore: store,
+      remoteResolver: vi.fn(async () => "abc123"),
+      now: () => checkedAt
+    });
+    const missing = await checkForSkillUpdates({
+      libraryPath,
+      config: configFor(libraryPath),
+      metadataStore: store,
+      remoteResolver: vi.fn(async () => null),
+      now: () => checkedAt
+    });
+
+    expect(unchanged.available).toEqual([]);
+    expect(missing.available).toEqual([]);
+  });
+
+  it("records resolver and metadata save errors without aborting the check", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+    await store.save(
+      metadataFor(libraryPath, "github-skill", true, {
+        type: "github",
+        githubUrl: "https://github.com/example/skill",
+        ref: "main",
+        commit: "abc123"
+      })
+    );
+    const failingStore = {
+      list: () => store.list(),
+      save: vi.fn(async () => {
+        throw new Error("metadata write failed");
+      })
+    } as unknown as MetadataStore;
+
+    const result = await checkForSkillUpdates({
+      libraryPath,
+      config: configFor(libraryPath),
+      metadataStore: failingStore,
+      remoteResolver: vi.fn(async () => {
+        throw new Error("resolver failed");
+      }),
+      now: () => checkedAt
+    });
+
+    expect(result.errors).toEqual([
+      { id: "github-skill", message: "resolver failed" },
+      { id: "github-skill", message: "metadata write failed" }
+    ]);
+  });
+
+  it("stringifies non-Error resolver and metadata save failures", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+    await store.save(
+      metadataFor(libraryPath, "github-skill", true, {
+        type: "github",
+        githubUrl: "https://github.com/example/skill",
+        ref: "main",
+        commit: "abc123"
+      })
+    );
+    const failingStore = {
+      list: () => store.list(),
+      save: vi.fn(async () => {
+        throw "metadata write failed";
+      })
+    } as unknown as MetadataStore;
+
+    const result = await checkForSkillUpdates({
+      libraryPath,
+      config: configFor(libraryPath),
+      metadataStore: failingStore,
+      remoteResolver: vi.fn(async () => {
+        throw "resolver failed";
+      })
+    });
+
+    expect(result.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(result.errors).toEqual([
+      { id: "github-skill", message: "resolver failed" },
+      { id: "github-skill", message: "metadata write failed" }
+    ]);
+  });
+
   it("checks all skills when the config opts into keeping all skills updated", async () => {
     const libraryPath = await makeTempDir();
     const store = new MetadataStore(libraryPath);
@@ -149,6 +266,44 @@ describe("checkForSkillUpdates", () => {
         headers: expect.objectContaining({ "User-Agent": "skiller" })
       })
     );
+  });
+
+  it("returns null for unresolvable github sources", async () => {
+    await expect(resolveGithubRemoteCommit({ type: "local" })).resolves.toBeNull();
+    await expect(
+      resolveGithubRemoteCommit({
+        type: "github",
+        githubUrl: "not-a-github-url",
+        ref: "main",
+        commit: "abc123"
+      })
+    ).resolves.toBeNull();
+  });
+
+  it("returns null when GitHub responds without a sha", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({}))));
+
+    await expect(
+      resolveGithubRemoteCommit({
+        type: "github",
+        githubUrl: "https://github.com/example/skill",
+        ref: "main",
+        commit: "abc123"
+      })
+    ).resolves.toBeNull();
+  });
+
+  it("throws GitHub status context for failed commit lookups", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 500, statusText: "Server Error" })));
+
+    await expect(
+      resolveGithubRemoteCommit({
+        type: "github",
+        githubUrl: "https://github.com/example/skill",
+        ref: "main",
+        commit: "abc123"
+      })
+    ).rejects.toThrow("GitHub update check failed: 500 Server Error");
   });
 
   it("uses the default github resolver during update checks", async () => {

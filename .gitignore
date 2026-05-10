@@ -4,3 +4,6 @@ dist/
 *.tsbuildinfo
 .env
 .env.*
+coverage/
+playwright-report/
+test-results/

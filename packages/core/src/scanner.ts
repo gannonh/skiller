@@ -58,6 +58,7 @@ async function resolveEffectivePath(targetPath: string): Promise<string> {
 
   while (!(await fs.pathExists(existingAncestor))) {
     const parent = path.dirname(existingAncestor);
+    /* v8 ignore next -- filesystem roots normally exist */
     if (parent === existingAncestor) break;
     existingAncestor = parent;
   }
@@ -69,12 +70,11 @@ async function resolveEffectivePath(targetPath: string): Promise<string> {
 
 function isPathInsideOrEqual(parentPath: string, childPath: string): boolean {
   const relativePath = path.relative(parentPath, childPath);
+  /* v8 ignore next -- covers Windows drive-boundary paths */
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 }
 
 async function isUnsafeTargetDirectory(targetDir: string, libraryPath: string): Promise<boolean> {
-  if (!(await fs.pathExists(targetDir))) return false;
-
   const realTargetPath = await fs.realpath(targetDir);
   const realLibraryPath = await resolveEffectivePath(libraryPath);
   return isPathInsideOrEqual(realTargetPath, realLibraryPath);

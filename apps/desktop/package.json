@@ -9,7 +9,8 @@
     "dev:renderer": "vite --host 127.0.0.1",
     "build": "tsc -b ../../packages/core tsconfig.json && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@skiller/core": "workspace:*",

@@ -57,6 +57,31 @@ describe("scanTargets", () => {
     expect((await fs.lstat(skill)).isSymbolicLink()).toBe(true);
   });
 
+  it("falls back to the folder slug when SKILL.md has no frontmatter name", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(target, "Example Skill");
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "Plain markdown");
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result.imported.map((metadata) => metadata.id)).toEqual(["example-skill"]);
+    await expect(fs.pathExists(path.join(library, "example-skill", "SKILL.md"))).resolves.toBe(true);
+  });
+
+  it("falls back to the folder slug when SKILL.md frontmatter is empty", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(target, "Empty Frontmatter");
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\n\n---\n");
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result.imported.map((metadata) => metadata.id)).toEqual(["empty-frontmatter"]);
+  });
+
   it("imports duplicate basenames with distinct declared names into distinct library paths", async () => {
     const firstTarget = path.join(tmp, "first-target");
     const secondTarget = path.join(tmp, "second-target");
@@ -79,6 +104,22 @@ describe("scanTargets", () => {
     expect(await fs.readFile(path.join(library, "second", "SKILL.md"), "utf8")).toBe(secondContent);
     expect(await fs.realpath(firstSkill)).toBe(await fs.realpath(path.join(library, "first")));
     expect(await fs.realpath(secondSkill)).toBe(await fs.realpath(path.join(library, "second")));
+  });
+
+  it("adds a suffix when a library folder already exists without tracked metadata", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const existingLibraryFolder = path.join(library, "example");
+    const skill = path.join(target, "example");
+    await fs.ensureDir(existingLibraryFolder);
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(existingLibraryFolder, "SKILL.md"), "---\nname: old-example\ndescription: Old.\n---\n");
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result.imported.map((metadata) => metadata.id)).toEqual(["example-2"]);
+    await expect(fs.pathExists(path.join(library, "example-2", "SKILL.md"))).resolves.toBe(true);
   });
 
   it("enables an existing master skill when a target installs the same declared skill as a real folder", async () => {
@@ -137,6 +178,64 @@ describe("scanTargets", () => {
     expect(result.errors).toHaveLength(0);
   });
 
+  it("reports filesystem errors while checking candidate skill folders", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(target, "example");
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const stat = vi.spyOn(fs, "stat").mockRejectedValueOnce(new Error("stat failed"));
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result.errors).toEqual([{ path: skill, message: "stat failed" }]);
+    stat.mockRestore();
+  });
+
+  it("skips candidate skill folders removed between existence and stat checks", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(target, "example");
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const originalPathExists = fs.pathExists;
+    const pathExists = vi.spyOn(fs, "pathExists").mockImplementation(async (candidate) => {
+      if (candidate === path.join(skill, "SKILL.md")) return true;
+      return originalPathExists(candidate as string);
+    });
+    const stat = vi.spyOn(fs, "stat").mockRejectedValueOnce(Object.assign(new Error("missing"), { code: "ENOENT" }));
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result).toEqual({ imported: [], enabled: [], errors: [] });
+    pathExists.mockRestore();
+    stat.mockRestore();
+  });
+
+  it("skips target entries that are not skill directories", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(target);
+    await fs.writeFile(path.join(target, "note.txt"), "not a skill");
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result).toEqual({ imported: [], enabled: [], errors: [] });
+  });
+
+  it("stringifies non-Error scan failures", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(target, "example");
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    fileOpsMock.replaceWithSymlink.mockRejectedValueOnce("symlink failed");
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result.errors).toEqual([{ path: skill, message: "symlink failed" }]);
+  });
+
   it("does not save enabled target metadata when symlink replacement fails", async () => {
     const target = path.join(tmp, "target");
     const library = path.join(tmp, "library");
@@ -182,6 +281,70 @@ describe("scanTargets", () => {
     expect(result.imported).toHaveLength(0);
     expect(result.enabled.map((metadata) => metadata.id)).toEqual(["example"]);
     expect(saved[0]?.enabledTargets).toEqual([target]);
+  });
+
+  it("skips stale metadata paths while resolving target symlinks", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const missingLibrarySkill = path.join(library, "aa-missing");
+    const librarySkill = path.join(library, "zz-example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await fs.ensureDir(missingLibrarySkill);
+    await fs.writeJson(path.join(missingLibrarySkill, "skiller.metadata.json"), {
+      id: "aa-missing",
+      name: "aa-missing",
+      libraryPath: path.join(library, "missing-real-path"),
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabledTargets: []
+    });
+    await store.save({
+      id: "zz-example",
+      name: "zz-example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabledTargets: []
+    });
+    await fs.symlink(librarySkill, targetSkill);
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result.enabled.map((metadata) => metadata.id)).toEqual(["zz-example"]);
+  });
+
+  it("ignores target symlinks that do not point to tracked library skills", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const unmanaged = path.join(tmp, "unmanaged");
+    const targetSkill = path.join(target, "unmanaged");
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(unmanaged);
+    await fs.writeFile(path.join(unmanaged, "SKILL.md"), "---\nname: unmanaged\ndescription: Unmanaged.\n---\n");
+    await fs.symlink(unmanaged, targetSkill);
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+
+    expect(result).toEqual({ imported: [], enabled: [], errors: [] });
+  });
+
+  it("skips missing target directories", async () => {
+    const library = path.join(tmp, "library");
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [path.join(tmp, "missing-target")] });
+
+    expect(result).toEqual({ imported: [], enabled: [], errors: [] });
   });
 
   it("removes configured enabled targets that no longer point at the master skill", async () => {

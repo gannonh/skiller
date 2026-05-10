@@ -89,4 +89,54 @@ describe("installLocalSkill", () => {
     expect(metadata.validation.issues.map((issue) => issue.code)).toContain("invalid-frontmatter");
     await expect(fs.pathExists(path.join(library, "fallback-source", "SKILL.md"))).resolves.toBe(true);
   });
+
+  it("falls back to source basename when frontmatter name is blank", async () => {
+    const source = path.join(tmp, "blank-name-source");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(source);
+    await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: \"   \"\ndescription: Local.\n---\n");
+
+    const metadata = await installLocalSkill({ sourcePath: source, libraryPath: library });
+
+    expect(metadata.id).toBe("blank-name-source");
+  });
+
+  it("falls back to source basename when frontmatter is absent or has a non-string name", async () => {
+    const noFrontmatter = path.join(tmp, "no-frontmatter");
+    const nonStringName = path.join(tmp, "non-string-name");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(noFrontmatter);
+    await fs.ensureDir(nonStringName);
+    await fs.writeFile(path.join(noFrontmatter, "SKILL.md"), "Plain markdown");
+    await fs.writeFile(path.join(nonStringName, "SKILL.md"), "---\nname: 123\ndescription: Local.\n---\n");
+
+    await expect(installLocalSkill({ sourcePath: noFrontmatter, libraryPath: library })).resolves.toMatchObject({
+      id: "no-frontmatter"
+    });
+    await expect(installLocalSkill({ sourcePath: nonStringName, libraryPath: library })).resolves.toMatchObject({
+      id: "non-string-name"
+    });
+  });
+
+  it("falls back to source basename when frontmatter parses to empty", async () => {
+    const source = path.join(tmp, "empty-frontmatter");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(source);
+    await fs.writeFile(path.join(source, "SKILL.md"), "---\n\n---\n");
+
+    await expect(installLocalSkill({ sourcePath: source, libraryPath: library })).resolves.toMatchObject({
+      id: "empty-frontmatter"
+    });
+  });
+
+  it("uses a generic id when the parsed name contains no slug characters", async () => {
+    const source = path.join(tmp, "source");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(source);
+    await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: \"!!!\"\ndescription: Local.\n---\n");
+
+    const metadata = await installLocalSkill({ sourcePath: source, libraryPath: library });
+
+    expect(metadata.id).toBe("skill");
+  });
 });

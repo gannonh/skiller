@@ -12,5 +12,17 @@ export default defineConfig({
   },
   test: {
     root: ".",
+    coverage: {
+      provider: "v8",
+      all: true,
+      include: ["src/main/background.ts", "src/main/update-check.ts"],
+      exclude: ["tests/**"],
+      thresholds: {
+        branches: 100,
+        functions: 100,
+        lines: 100,
+        statements: 100
+      }
+    }
   },
 });

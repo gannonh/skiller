@@ -1,12 +1,13 @@
 import fs from "fs-extra";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { defaultConfig, loadConfig, normalizeConfig, saveConfig } from "./config.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultConfig, defaultConfigPath, loadConfig, normalizeConfig, saveConfig } from "./config.js";
 import { defaultTargetDirectories, expandHome } from "./paths.js";
 
 describe("config", () => {
   let tmp: string;
+  const originalPlatform = process.platform;
 
   beforeEach(async () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-config-"));
@@ -14,7 +15,13 @@ describe("config", () => {
 
   afterEach(async () => {
     await fs.remove(tmp);
+    vi.unstubAllEnvs();
+    Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
   });
+
+  function setPlatform(platform: NodeJS.Platform): void {
+    Object.defineProperty(process, "platform", { configurable: true, value: platform });
+  }
 
   it("defaults the library path to ~/skiller", () => {
     expect(defaultConfig().libraryPath).toBe("~/skiller");
@@ -36,8 +43,66 @@ describe("config", () => {
     expect(normalizeConfig({}).updateSchedule).toEqual({ intervalHours: 24 });
   });
 
+  it("normalizes provided update schedule and target directories", () => {
+    expect(
+      normalizeConfig({
+        updateSchedule: { intervalHours: 6 },
+        targetDirectories: ["~/custom-skills"]
+      })
+    ).toMatchObject({
+      updateSchedule: { intervalHours: 6 },
+      targetDirectories: ["~/custom-skills"]
+    });
+  });
+
   it("expands a leading home segment", () => {
     expect(expandHome("~/skiller", "/Users/example")).toBe("/Users/example/skiller");
+  });
+
+  it("expands a bare home segment and leaves other paths untouched", () => {
+    expect(expandHome("~", "/Users/example")).toBe("/Users/example");
+    expect(expandHome("/tmp/skiller", "/Users/example")).toBe("/tmp/skiller");
+  });
+
+  it("uses HOME when expandHome is called without an explicit home", () => {
+    vi.stubEnv("HOME", "/Users/from-env");
+
+    expect(expandHome("~/skiller")).toBe("/Users/from-env/skiller");
+  });
+
+  it("uses an empty fallback when HOME is unavailable", () => {
+    vi.unstubAllEnvs();
+    delete process.env.HOME;
+
+    expect(expandHome("~/skiller")).toBe("/skiller");
+  });
+
+  it("uses explicit, macOS, Windows, and XDG default config paths", () => {
+    vi.stubEnv("SKILLER_CONFIG_PATH", path.join(tmp, "explicit.json"));
+    expect(defaultConfigPath()).toBe(path.join(tmp, "explicit.json"));
+
+    vi.unstubAllEnvs();
+    setPlatform("darwin");
+    expect(defaultConfigPath()).toBe(path.join(os.homedir(), "Library", "Application Support", "skiller", "config.json"));
+
+    setPlatform("win32");
+    vi.stubEnv("APPDATA", path.join(tmp, "AppData", "Roaming"));
+    expect(defaultConfigPath()).toBe(path.join(tmp, "AppData", "Roaming", "skiller", "config.json"));
+
+    setPlatform("linux");
+    vi.stubEnv("XDG_CONFIG_HOME", path.join(tmp, "xdg"));
+    expect(defaultConfigPath()).toBe(path.join(tmp, "xdg", "skiller", "config.json"));
+
+    vi.unstubAllEnvs();
+    expect(defaultConfigPath()).toBe(path.join(os.homedir(), ".config", "skiller", "config.json"));
+  });
+
+  it("uses the default config path when persistence options omit configPath", async () => {
+    vi.stubEnv("SKILLER_CONFIG_PATH", path.join(tmp, "default-path.json"));
+
+    await saveConfig({ libraryPath: "/skills" });
+
+    await expect(loadConfig()).resolves.toMatchObject({ libraryPath: "/skills" });
   });
 
   it("loads defaults when the config file is missing", async () => {

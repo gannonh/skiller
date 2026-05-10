@@ -53,6 +53,15 @@ describe("MetadataStore", () => {
     expect(await fs.pathExists(path.join(outsidePath, "skiller.metadata.json"))).toBe(false);
   });
 
+  it("rejects metadata saved at the library root", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.save(metadataFor(libraryPath))).rejects.toThrow(
+      "Metadata path must be inside the configured library"
+    );
+  });
+
   it("rejects symlinked metadata paths that resolve outside the configured library", async () => {
     const libraryPath = await makeTempDir();
     const outsidePath = await makeTempDir();
