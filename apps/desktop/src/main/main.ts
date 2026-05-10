@@ -20,7 +20,7 @@ function rendererHtmlPath(): string {
   return join(__dirname, "../../src/renderer/index.html");
 }
 
-function createWindow(): BrowserWindow {
+async function createWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -31,18 +31,22 @@ function createWindow(): BrowserWindow {
     }
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    void window.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    void window.loadFile(rendererHtmlPath());
+  try {
+    if (process.env.VITE_DEV_SERVER_URL) {
+      await window.loadURL(process.env.VITE_DEV_SERVER_URL);
+    } else {
+      await window.loadFile(rendererHtmlPath());
+    }
+  } catch (error) {
+    console.error("Failed to load renderer", error);
   }
 
   return window;
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerIpcHandlers();
-  const window = createWindow();
+  const window = await createWindow();
   tray = createTray(window);
   cleanupItems = startBackgroundJobs(window);
 });

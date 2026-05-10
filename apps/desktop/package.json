@@ -6,8 +6,8 @@
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b ../../packages/core tsconfig.json",
-    "typecheck": "tsc -b ../../packages/core tsconfig.json --noEmit",
+    "build": "tsc -b ../../packages/core tsconfig.json && node scripts/copy-renderer-html.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
