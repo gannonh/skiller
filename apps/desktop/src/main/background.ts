@@ -32,7 +32,13 @@ export async function startBackgroundJobs(
 
   const runScan = () => {
     void deps
-      .scanTargets({ libraryPath: deps.expandHome(config.libraryPath), targetDirectories: expandedTargets })
+      .loadConfig()
+      .then((scanConfig) =>
+        deps.scanTargets({
+          libraryPath: deps.expandHome(scanConfig.libraryPath),
+          targetDirectories: scanConfig.targetDirectories.map((target) => deps.expandHome(target))
+        })
+      )
       .catch((error: unknown) => {
         console.error("Background scan failed", error);
         window.webContents.send("background:scan-error", {

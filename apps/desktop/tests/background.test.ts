@@ -48,4 +48,44 @@ describe("background jobs", () => {
 
     jobs.forEach((job) => job.stop());
   });
+
+  it("reloads persisted config for watcher-triggered scans", async () => {
+    const updatedConfig: SkillerConfig = {
+      ...config,
+      libraryPath: "~/updated-skiller",
+      targetDirectories: ["~/updated-skills"]
+    };
+    const loadConfig = vi.fn().mockResolvedValueOnce(config).mockResolvedValueOnce(config).mockResolvedValueOnce(updatedConfig);
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], errors: [] }));
+    const close = vi.fn();
+    let onChange: (() => void) | undefined;
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      scanTargets,
+      watchTargetDirectories: vi.fn((_config, callback) => {
+        onChange = callback;
+        return { close } as never;
+      }),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    onChange?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(scanTargets).toHaveBeenNthCalledWith(1, {
+      libraryPath: "/home/test/persisted-skiller",
+      targetDirectories: ["/home/test/skills"]
+    });
+    expect(scanTargets).toHaveBeenNthCalledWith(2, {
+      libraryPath: "/home/test/updated-skiller",
+      targetDirectories: ["/home/test/updated-skills"]
+    });
+
+    jobs.forEach((job) => job.stop());
+  });
 });

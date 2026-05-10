@@ -85,6 +85,37 @@ describe("scanTargets", () => {
     expect(saved).toHaveLength(0);
   });
 
+  it("records existing target symlinks to library skills as enabled", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabledTargets: []
+    });
+    await fs.symlink(librarySkill, targetSkill);
+
+    const result = await scanTargets({ libraryPath: library, targetDirectories: [target] });
+    const saved = await store.list();
+
+    expect(result.imported).toHaveLength(0);
+    expect(result.enabled.map((metadata) => metadata.id)).toEqual(["example"]);
+    expect(saved[0]?.enabledTargets).toEqual([target]);
+  });
+
   it("skips target directories that equal the library root", async () => {
     const library = path.join(tmp, "library");
     const skill = path.join(library, "example");

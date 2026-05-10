@@ -63,8 +63,21 @@ async function uniqueSkillId(libraryPath: string, slug: string): Promise<string>
   return id;
 }
 
+async function findMetadataByRealLibraryPath(records: SkillMetadata[], libraryPath: string): Promise<SkillMetadata | undefined> {
+  const realLibraryPath = await fs.realpath(libraryPath);
+
+  for (const record of records) {
+    if ((await fs.realpath(record.libraryPath)) === realLibraryPath) {
+      return record;
+    }
+  }
+
+  return undefined;
+}
+
 export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsResult> {
   const store = new MetadataStore(input.libraryPath);
+  const records = await store.list();
   const imported: SkillMetadata[] = [];
   const enabled: SkillMetadata[] = [];
   const errors: Array<{ path: string; message: string }> = [];
@@ -80,7 +93,19 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
       try {
         const stat = await fs.lstat(targetSkillPath);
-        if (stat.isSymbolicLink()) continue;
+        if (stat.isSymbolicLink()) {
+          const metadata = await findMetadataByRealLibraryPath(records, targetSkillPath);
+
+          if (!metadata) continue;
+
+          if (!metadata.enabledTargets.includes(targetDir)) {
+            metadata.enabledTargets = [...metadata.enabledTargets, targetDir];
+            await store.save(metadata);
+          }
+
+          enabled.push(metadata);
+          continue;
+        }
         if (!(await isSkillDirectory(targetSkillPath))) continue;
 
         const id = await uniqueSkillId(input.libraryPath, slugFromPath(targetSkillPath));
@@ -100,6 +125,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
         await replaceWithSymlink(targetSkillPath, librarySkillPath);
         await store.save(metadata);
+        records.push(metadata);
         imported.push(metadata);
       } catch (error) {
         errors.push({ path: targetSkillPath, message: error instanceof Error ? error.message : String(error) });
