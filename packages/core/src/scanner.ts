@@ -67,7 +67,15 @@ async function findMetadataByRealLibraryPath(records: SkillMetadata[], libraryPa
   const realLibraryPath = await fs.realpath(libraryPath);
 
   for (const record of records) {
-    if ((await fs.realpath(record.libraryPath)) === realLibraryPath) {
+    let realRecordPath: string;
+
+    try {
+      realRecordPath = await fs.realpath(record.libraryPath);
+    } catch {
+      continue;
+    }
+
+    if (realRecordPath === realLibraryPath) {
       return record;
     }
   }
