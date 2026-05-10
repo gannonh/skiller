@@ -76,4 +76,28 @@ describe("config", () => {
       "Library path must be absolute or start with ~/"
     );
   });
+
+  it("rejects saved config files with blank or relative library paths", async () => {
+    const blankConfigPath = path.join(tmp, "blank", "config.json");
+    const relativeConfigPath = path.join(tmp, "relative", "config.json");
+    await fs.ensureDir(path.dirname(blankConfigPath));
+    await fs.ensureDir(path.dirname(relativeConfigPath));
+    await fs.writeJson(blankConfigPath, { libraryPath: "" });
+    await fs.writeJson(relativeConfigPath, { libraryPath: "skiller" });
+
+    await expect(loadConfig({ configPath: blankConfigPath })).rejects.toThrow("Library path cannot be blank");
+    await expect(loadConfig({ configPath: relativeConfigPath })).rejects.toThrow(
+      "Library path must be absolute or start with ~/"
+    );
+  });
+
+  it("rejects partial saves when existing config has a relative library path", async () => {
+    const configPath = path.join(tmp, "relative-existing", "config.json");
+    await fs.ensureDir(path.dirname(configPath));
+    await fs.writeJson(configPath, { libraryPath: "skiller" });
+
+    await expect(saveConfig({ keepAllSkillsUpdated: true }, { configPath })).rejects.toThrow(
+      "Library path must be absolute or start with ~/"
+    );
+  });
 });

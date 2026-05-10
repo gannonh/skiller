@@ -68,7 +68,9 @@ export async function loadConfig(options: ConfigPersistenceOptions = {}): Promis
     return defaultConfig();
   }
 
-  return normalizeConfig(await fs.readJson(configPath));
+  const config = normalizeConfig(await fs.readJson(configPath));
+  assertValidLibraryPath(config.libraryPath);
+  return config;
 }
 
 export async function saveConfig(
@@ -83,6 +85,7 @@ export async function saveConfig(
   const current = (await fs.pathExists(configPath)) ? await fs.readJson(configPath) : {};
   const update = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
   const config = normalizeConfig({ ...current, ...update });
+  assertValidLibraryPath(config.libraryPath);
 
   await fs.ensureDir(path.dirname(configPath));
   await fs.writeJson(configPath, config, { spaces: 2 });
