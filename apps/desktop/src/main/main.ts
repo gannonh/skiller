@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
   registerIpcHandlers();
   const window = await createWindow();
   tray = createTray(window);
-  cleanupItems = startBackgroundJobs(window);
+  cleanupItems = await startBackgroundJobs(window);
 });
 
 app.on("before-quit", () => {

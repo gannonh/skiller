@@ -1,8 +1,8 @@
-import { createUpdateInterval, defaultConfig, expandHome, scanTargets, watchTargetDirectories } from "@skiller/core";
+import { createUpdateInterval, expandHome, loadConfig, scanTargets, watchTargetDirectories } from "@skiller/core";
 import type { BrowserWindow } from "electron";
 
-export function startBackgroundJobs(window: BrowserWindow): Array<{ stop: () => void }> {
-  const config = defaultConfig();
+export async function startBackgroundJobs(window: BrowserWindow): Promise<Array<{ stop: () => void }>> {
+  const config = await loadConfig();
   const expandedTargets = config.targetDirectories.map((target) => expandHome(target));
 
   const runScan = () => {
