@@ -8,9 +8,17 @@ import { skillerApi } from "../lib/api.js";
 export function TargetsPage() {
   const [status, setStatus] = useState("Ready");
   const [error, setError] = useState<string | null>(null);
+  const [targetDirectories, setTargetDirectories] = useState<string[]>([]);
   const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
+    void skillerApi
+      .getConfig()
+      .then((config) => setTargetDirectories(config.targetDirectories))
+      .catch((caught: unknown) => {
+        setError(caught instanceof Error ? caught.message : String(caught));
+      });
+
     return skillerApi.onScanError((scanError) => {
       setError(scanError.message);
       setStatus("Scan failed");
@@ -42,6 +50,16 @@ export function TargetsPage() {
         <CardDescription>Default and custom agent skill directories</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          {targetDirectories.map((targetDirectory) => (
+            <div key={targetDirectory} className="rounded-md border px-3 py-2 font-mono text-sm">
+              {targetDirectory}
+            </div>
+          ))}
+          {targetDirectories.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No target directories configured.</p>
+          ) : null}
+        </div>
         {error ? (
           <Alert variant="destructive">
             <AlertTitle>Scan issue</AlertTitle>

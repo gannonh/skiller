@@ -1,5 +1,6 @@
 import fs from "fs-extra";
 import path from "node:path";
+import YAML from "yaml";
 import { copySkillToLibrary, hashDirectory, replaceWithSymlink } from "./file-ops.js";
 import { MetadataStore } from "./metadata-store.js";
 import type { SkillMetadata } from "./types.js";
@@ -20,8 +21,36 @@ function slugFromPath(skillPath: string): string {
   return path.basename(skillPath).toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
 }
 
+function normalizeSkillId(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+async function skillIdFromSkillPath(skillPath: string): Promise<string> {
+  const markdown = await fs.readFile(path.join(skillPath, "SKILL.md"), "utf8");
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+
+  if (match) {
+    const frontmatter = YAML.parse(match[1]) ?? {};
+
+    if (typeof frontmatter.name === "string" && frontmatter.name.trim() !== "") {
+      return normalizeSkillId(frontmatter.name);
+    }
+  }
+
+  return slugFromPath(skillPath);
+}
+
 async function isSkillDirectory(candidate: string): Promise<boolean> {
-  return (await fs.pathExists(path.join(candidate, "SKILL.md"))) && (await fs.stat(candidate)).isDirectory();
+  try {
+    return (await fs.pathExists(path.join(candidate, "SKILL.md"))) && (await fs.stat(candidate)).isDirectory();
+  } catch (error) {
+    if (isMissingPathError(error)) return false;
+    throw error;
+  }
 }
 
 async function resolveEffectivePath(targetPath: string): Promise<string> {
@@ -83,6 +112,14 @@ async function findMetadataByRealLibraryPath(records: SkillMetadata[], libraryPa
   return undefined;
 }
 
+function findMetadataById(records: SkillMetadata[], id: string): SkillMetadata | undefined {
+  return records.find((record) => record.id === id);
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsResult> {
   if (!path.isAbsolute(input.libraryPath)) {
     throw new Error("Library path must be absolute before scanning targets");
@@ -93,6 +130,19 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
   const imported: SkillMetadata[] = [];
   const enabled: SkillMetadata[] = [];
   const errors: Array<{ path: string; message: string }> = [];
+  const configuredTargets = new Set(input.targetDirectories);
+  const observedEnabledTargets = new Map(records.map((record) => [record.id, new Set<string>()]));
+
+  function markEnabled(metadata: SkillMetadata, targetDir: string): void {
+    let targets = observedEnabledTargets.get(metadata.id);
+
+    if (!targets) {
+      targets = new Set();
+      observedEnabledTargets.set(metadata.id, targets);
+    }
+
+    targets.add(targetDir);
+  }
 
   for (const targetDir of input.targetDirectories) {
     if (!(await fs.pathExists(targetDir))) continue;
@@ -110,17 +160,23 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
           if (!metadata) continue;
 
-          if (!metadata.enabledTargets.includes(targetDir)) {
-            metadata.enabledTargets = [...metadata.enabledTargets, targetDir];
-            await store.save(metadata);
-          }
-
+          markEnabled(metadata, targetDir);
           enabled.push(metadata);
           continue;
         }
         if (!(await isSkillDirectory(targetSkillPath))) continue;
 
-        const id = await uniqueSkillId(input.libraryPath, slugFromPath(targetSkillPath));
+        const declaredId = await skillIdFromSkillPath(targetSkillPath);
+        const existingMetadata = findMetadataById(records, declaredId);
+
+        if (existingMetadata) {
+          await replaceWithSymlink(targetSkillPath, existingMetadata.libraryPath);
+          markEnabled(existingMetadata, targetDir);
+          enabled.push(existingMetadata);
+          continue;
+        }
+
+        const id = await uniqueSkillId(input.libraryPath, declaredId);
         const librarySkillPath = await copySkillToLibrary(targetSkillPath, input.libraryPath, id);
         const validation = await validateSkill(librarySkillPath);
         const metadata: SkillMetadata = {
@@ -138,10 +194,23 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
         await replaceWithSymlink(targetSkillPath, librarySkillPath);
         await store.save(metadata);
         records.push(metadata);
+        markEnabled(metadata, targetDir);
         imported.push(metadata);
       } catch (error) {
+        if (isMissingPathError(error)) continue;
         errors.push({ path: targetSkillPath, message: error instanceof Error ? error.message : String(error) });
       }
+    }
+  }
+
+  for (const record of records) {
+    const preservedTargets = record.enabledTargets.filter((targetDir) => !configuredTargets.has(targetDir));
+    const observedTargets = input.targetDirectories.filter((targetDir) => observedEnabledTargets.get(record.id)?.has(targetDir));
+    const nextTargets = [...preservedTargets, ...observedTargets];
+
+    if (!arraysEqual(record.enabledTargets, nextTargets)) {
+      record.enabledTargets = nextTargets;
+      await store.save(record);
     }
   }
 

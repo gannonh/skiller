@@ -14,11 +14,20 @@ export interface ValidationResult {
   issues: ValidationIssue[];
 }
 
+export interface SkillSource {
+  type: "skills.sh" | "github" | "local" | "unknown";
+  skillsShId?: string;
+  githubUrl?: string;
+  ref?: string;
+  commit?: string;
+}
+
 export interface SkillMetadata {
   id: string;
   name: string;
   description?: string;
   libraryPath: string;
+  source: SkillSource;
   installedAt: string;
   lastCheckedAt?: string;
   keepUpdated: boolean;
@@ -70,8 +79,79 @@ export interface SkillerApi {
 
 declare global {
   interface Window {
-    skiller: SkillerApi;
+    skiller?: SkillerApi;
   }
 }
 
-export const skillerApi = window.skiller;
+const fallbackSkills: SkillMetadata[] = [
+  {
+    id: "example-skill",
+    name: "example-skill",
+    description: "Renderer preview skill",
+    libraryPath: "~/skiller/example-skill",
+    source: { type: "local" },
+    installedAt: new Date().toISOString(),
+    keepUpdated: false,
+    validation: { valid: true, issues: [] },
+    enabledTargets: ["~/.codex/skills"]
+  }
+];
+
+const fallbackDiscoverSkills: DiscoverSkill[] = [
+  { id: "agent-browser", name: "agent-browser", description: "Browser automation CLI for agent workflows" },
+  { id: "find-skills", name: "find-skills", description: "Discover and install agent skills" },
+  { id: "frontend-design", name: "frontend-design", description: "Frontend design guidance for agents" },
+  { id: "browser-use", name: "browser-use", description: "Automate browser-based QA flows" }
+];
+
+function createBrowserPreviewApi(): SkillerApi {
+  let config: SkillerConfig = {
+    libraryPath: "~/skiller",
+    targetDirectories: [
+      "~/.agents/skills",
+      "~/.claude/skills",
+      "~/.codex/skills",
+      "~/.cursor/skills",
+      "~/.pi/agent/skills",
+      "~/.gemini/skills",
+      "~/.copilot/skills"
+    ],
+    updateSchedule: { intervalHours: 24 },
+    keepAllSkillsUpdated: false,
+    launchAtLogin: false,
+    trayEnabled: true
+  };
+
+  return {
+    listLibrary: async () => fallbackSkills,
+    scanTargets: async () => ({ imported: [], enabled: fallbackSkills, errors: [] }),
+    getConfig: async () => config,
+    saveConfig: async (update) => {
+      if (update.libraryPath !== undefined && update.libraryPath.trim() !== "" && !update.libraryPath.startsWith("/") && !update.libraryPath.startsWith("~/")) {
+        throw new Error("Library path must be absolute or start with ~/");
+      }
+      config = { ...config, ...update };
+      return config;
+    },
+    checkUpdates: async () => ({
+      checkedAt: new Date().toISOString(),
+      considered: fallbackSkills.map((skill) => ({ id: skill.id, name: skill.name })),
+      available: [],
+      updated: [],
+      errors: []
+    }),
+    leaderboard: async () => ({ skills: fallbackDiscoverSkills }),
+    search: async (query) => {
+      const normalizedQuery = query.toLowerCase();
+      return {
+        skills: fallbackDiscoverSkills.filter((skill) =>
+          Object.values(skill).some((value) => String(value).toLowerCase().includes(normalizedQuery))
+        )
+      };
+    },
+    onCheckUpdates: () => () => undefined,
+    onScanError: () => () => undefined
+  };
+}
+
+export const skillerApi = window.skiller ?? createBrowserPreviewApi();

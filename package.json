@@ -8,6 +8,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "dev": "pnpm --filter @skiller/desktop dev",
+    "dev:renderer": "pnpm --filter @skiller/desktop dev:renderer",
     "cli": "pnpm --filter @skiller/cli start"
   },
   "dependencies": {
