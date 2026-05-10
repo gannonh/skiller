@@ -18,6 +18,40 @@ async function listFiles(root: string): Promise<string[]> {
   return files.sort();
 }
 
+function isInsidePath(child: string, parent: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+async function validateSkillSymlinks(sourcePath: string): Promise<void> {
+  const sourceRoot = await fs.realpath(sourcePath);
+
+  async function visit(directory: string): Promise<void> {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const absolute = path.join(directory, entry.name);
+
+      if (entry.isSymbolicLink()) {
+        const resolved = await fs.realpath(absolute);
+
+        if (!isInsidePath(resolved, sourceRoot)) {
+          const relative = path.relative(sourceRoot, absolute);
+          throw new Error(`Symlink resolves outside skill source: ${relative} -> ${resolved}`);
+        }
+
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        await visit(absolute);
+      }
+    }
+  }
+
+  await visit(sourceRoot);
+}
+
 function updateHashFrame(hash: crypto.Hash, label: string, data: Buffer | string): void {
   const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
   hash.update(label);
@@ -44,6 +78,7 @@ export async function copySkillToLibrary(sourcePath: string, libraryPath: string
   const destination = path.join(libraryPath, skillId);
   const staging = path.join(libraryPath, ".staging", `${skillId}-${Date.now()}`);
 
+  await validateSkillSymlinks(sourcePath);
   await fs.ensureDir(path.dirname(staging));
   await fs.copy(sourcePath, staging, { dereference: true });
   await fs.ensureDir(libraryPath);

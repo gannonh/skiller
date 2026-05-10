@@ -44,6 +44,52 @@ describe("file operations", () => {
     await expect(fs.pathExists(path.join(copied, "SKILL.md"))).resolves.toBe(true);
   });
 
+  it("rejects nested file symlinks that resolve outside the skill source", async () => {
+    const source = path.join(tmp, "source");
+    const library = path.join(tmp, "library");
+    const outside = path.join(tmp, "outside.txt");
+    await fs.ensureDir(path.join(source, "scripts"));
+    await fs.writeFile(path.join(source, "SKILL.md"), "hello");
+    await fs.writeFile(outside, "secret");
+    await fs.symlink(outside, path.join(source, "scripts", "outside.txt"));
+
+    await expect(copySkillToLibrary(source, library, "example")).rejects.toThrow(
+      "Symlink resolves outside skill source"
+    );
+    await expect(fs.pathExists(path.join(library, "example"))).resolves.toBe(false);
+  });
+
+  it("rejects nested directory symlinks that resolve outside the skill source", async () => {
+    const source = path.join(tmp, "source");
+    const library = path.join(tmp, "library");
+    const outside = path.join(tmp, "outside");
+    await fs.ensureDir(path.join(source, "scripts"));
+    await fs.ensureDir(outside);
+    await fs.writeFile(path.join(source, "SKILL.md"), "hello");
+    await fs.writeFile(path.join(outside, "secret.txt"), "secret");
+    await fs.symlink(outside, path.join(source, "scripts", "outside"), "dir");
+
+    await expect(copySkillToLibrary(source, library, "example")).rejects.toThrow(
+      "Symlink resolves outside skill source"
+    );
+    await expect(fs.pathExists(path.join(library, "example"))).resolves.toBe(false);
+  });
+
+  it("dereferences nested symlinks that resolve inside the skill source", async () => {
+    const source = path.join(tmp, "source");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(path.join(source, "scripts"));
+    await fs.writeFile(path.join(source, "SKILL.md"), "hello");
+    await fs.writeFile(path.join(source, "scripts", "tool.sh"), "echo hi");
+    await fs.symlink(path.join(source, "scripts", "tool.sh"), path.join(source, "linked-tool.sh"));
+
+    const copied = await copySkillToLibrary(source, library, "example");
+    const stat = await fs.lstat(path.join(copied, "linked-tool.sh"));
+
+    expect(stat.isFile()).toBe(true);
+    await expect(fs.readFile(path.join(copied, "linked-tool.sh"), "utf8")).resolves.toBe("echo hi");
+  });
+
   it("replaces a target folder with a symlink", async () => {
     const source = path.join(tmp, "master");
     const target = path.join(tmp, "target");
