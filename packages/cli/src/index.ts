@@ -7,7 +7,9 @@ import {
   SkillsShClient,
   checkForSkillUpdates,
   expandHome,
+  installGithubSkill,
   installLocalSkill,
+  installSkillsShSkill,
   loadConfig,
   scanTargets,
   validateSkill
@@ -26,7 +28,9 @@ interface CliDependencies {
   loadConfig: typeof loadConfig;
   checkForSkillUpdates: typeof checkForSkillUpdates;
   expandHome: typeof expandHome;
+  installGithubSkill: typeof installGithubSkill;
   installLocalSkill: typeof installLocalSkill;
+  installSkillsShSkill: typeof installSkillsShSkill;
   scanTargets: typeof scanTargets;
   validateSkill: typeof validateSkill;
   skillsShClient: () => DiscoverClient;
@@ -40,7 +44,9 @@ function defaultDependencies(): CliDependencies {
     loadConfig,
     checkForSkillUpdates,
     expandHome,
+    installGithubSkill,
     installLocalSkill,
+    installSkillsShSkill,
     scanTargets,
     validateSkill,
     skillsShClient: () => new SkillsShClient(),
@@ -113,6 +119,36 @@ export function createProgram(dependencies: Partial<CliDependencies> = {}): Comm
     .action(async (sourcePath: string, options: { json?: boolean }) => {
       const config = await deps.loadConfig();
       const metadata = await deps.installLocalSkill({ sourcePath, libraryPath: deps.expandHome(config.libraryPath) });
+      deps.printResult(options.json ? metadata : `installed ${metadata.name}`, Boolean(options.json));
+    });
+
+  program
+    .command("install-github")
+    .argument("<url>")
+    .option("--path <path>")
+    .option("--ref <ref>")
+    .option("--json", "print JSON")
+    .action(async (githubUrl: string, options: { path?: string; ref?: string; json?: boolean }) => {
+      const config = await deps.loadConfig();
+      const metadata = await deps.installGithubSkill({
+        githubUrl,
+        githubPath: options.path,
+        ref: options.ref,
+        libraryPath: deps.expandHome(config.libraryPath)
+      });
+      deps.printResult(options.json ? metadata : `installed ${metadata.name}`, Boolean(options.json));
+    });
+
+  program
+    .command("install-registry")
+    .argument("<skills-sh-id>")
+    .option("--json", "print JSON")
+    .action(async (skillsShId: string, options: { json?: boolean }) => {
+      const config = await deps.loadConfig();
+      const metadata = await deps.installSkillsShSkill({
+        skillsShId,
+        libraryPath: deps.expandHome(config.libraryPath)
+      });
       deps.printResult(options.json ? metadata : `installed ${metadata.name}`, Boolean(options.json));
     });
 
