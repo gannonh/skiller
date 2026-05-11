@@ -138,13 +138,14 @@ function uniqueTargets(targets: TargetConfig[]): TargetConfig[] {
   const seen = new Set<string>();
   const unique: TargetConfig[] = [];
 
-  for (const target of targets) {
+  for (let index = targets.length - 1; index >= 0; index -= 1) {
+    const target = targets[index]!;
     if (seen.has(target.path)) continue;
     seen.add(target.path);
     unique.push(target);
   }
 
-  return unique;
+  return unique.reverse();
 }
 
 function changeKey(skillId: string, targetPath: string): string {

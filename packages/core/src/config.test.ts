@@ -58,6 +58,32 @@ describe("config", () => {
     });
   });
 
+  it("preserves an explicitly empty target list", () => {
+    expect(normalizeConfig({ targets: [] }).targets).toEqual([]);
+  });
+
+  it("normalizes legacy target directories into enabled target records", () => {
+    expect(normalizeConfig({ targetDirectories: ["~/legacy-skills"] }).targets).toEqual([
+      { path: "~/legacy-skills", enabled: true }
+    ]);
+  });
+
+  it("trims target paths and preserves root-like targets", () => {
+    expect(
+      normalizeConfig({
+        targets: [
+          { path: "~/skills/", enabled: true },
+          { path: " / ", enabled: false },
+          { path: " ~ ", enabled: true }
+        ]
+      }).targets
+    ).toEqual([
+      { path: "~/skills", enabled: true },
+      { path: "/", enabled: false },
+      { path: "~", enabled: true }
+    ]);
+  });
+
   it("expands a leading home segment", () => {
     expect(expandHome("~/skiller", "/Users/example")).toBe("/Users/example/skiller");
   });

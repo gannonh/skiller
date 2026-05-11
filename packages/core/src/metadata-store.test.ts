@@ -1,7 +1,7 @@
 import fs from "fs-extra";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MetadataStore } from "./metadata-store.js";
 import type { SkillMetadata } from "./types.js";
 
@@ -28,6 +28,7 @@ async function makeTempDir(): Promise<string> {
 
 describe("MetadataStore", () => {
   afterEach(async () => {
+    vi.restoreAllMocks();
     await Promise.all(tempDirs.splice(0).map((dir) => fs.remove(dir)));
   });
 
@@ -104,6 +105,75 @@ describe("MetadataStore", () => {
       skills: [metadata]
     });
     await expect(fs.pathExists(path.join(skillPath, "skiller.metadata.json"))).resolves.toBe(false);
+  });
+
+  it("recovers a corrupt manifest from legacy per-skill metadata", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const metadata = metadataFor(skillPath);
+
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(libraryPath, "skiller.manifest.json"), "{");
+    await fs.writeJson(path.join(skillPath, "skiller.metadata.json"), metadata);
+
+    await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([metadata]);
+    await expect(fs.readJson(path.join(libraryPath, "skiller.manifest.json"))).resolves.toEqual({
+      version: 1,
+      skills: [metadata]
+    });
+    await expect(fs.pathExists(path.join(skillPath, "skiller.metadata.json"))).resolves.toBe(false);
+  });
+
+  it("returns an empty library for a corrupt manifest without legacy metadata", async () => {
+    const libraryPath = await makeTempDir();
+
+    await fs.writeFile(path.join(libraryPath, "skiller.manifest.json"), "{");
+
+    await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([]);
+  });
+
+  it("rethrows non-parse manifest read failures", async () => {
+    const libraryPath = await makeTempDir();
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), { version: 1, skills: [] });
+    vi.spyOn(fs, "readJson").mockRejectedValueOnce(new Error("read failed"));
+
+    await expect(new MetadataStore(libraryPath).list()).rejects.toThrow("read failed");
+  });
+
+  it("updates enabled without replacing unrelated metadata fields", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const otherSkillPath = path.join(libraryPath, "other-skill");
+    const store = new MetadataStore(libraryPath);
+    const metadata = { ...metadataFor(skillPath), lastCheckedAt: "2026-05-10T00:00:00.000Z" };
+    const otherMetadata = { ...metadataFor(otherSkillPath), id: "other-skill", name: "Other Skill" };
+
+    await store.save(metadata);
+    await store.save(otherMetadata);
+    await store.setEnabled("example-skill", false);
+
+    expect(await store.list()).toEqual([{ ...metadata, enabled: false }, otherMetadata]);
+  });
+
+  it("rejects enabling an unknown skill", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.setEnabled("missing", true)).rejects.toThrow("Skill not found: missing");
+  });
+
+  it("removes temporary manifest files when an atomic replace fails", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const store = new MetadataStore(libraryPath);
+
+    vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("rename failed"));
+
+    await expect(store.save(metadataFor(skillPath))).rejects.toThrow("rename failed");
+
+    const entries = await fs.readdir(libraryPath);
+    expect(entries.filter((entry) => entry.includes("skiller.manifest.json") && entry.endsWith(".tmp"))).toEqual([]);
   });
 
   it("skips corrupt legacy metadata during consolidation", async () => {

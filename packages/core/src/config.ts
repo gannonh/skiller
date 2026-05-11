@@ -10,6 +10,10 @@ export interface ConfigPersistenceOptions {
   configPath?: string;
 }
 
+type ConfigInput = Partial<SkillerConfig> & {
+  targetDirectories?: string[];
+};
+
 export function defaultConfigPath(): string {
   if (process.env.SKILLER_CONFIG_PATH) return process.env.SKILLER_CONFIG_PATH;
 
@@ -35,16 +39,41 @@ export function defaultConfig(): SkillerConfig {
   };
 }
 
-export function normalizeConfig(input: Partial<SkillerConfig>): SkillerConfig {
+function normalizeTargetPath(targetPath: string): string {
+  const trimmed = targetPath.trim();
+  if (trimmed === "/" || trimmed === "~") return trimmed;
+  return trimmed.replace(/[\\/]+$/g, "");
+}
+
+function normalizeTargets(input: ConfigInput, defaults: SkillerConfig): SkillerConfig["targets"] {
+  if (Array.isArray(input.targets)) {
+    return input.targets.map((target) => ({
+      ...target,
+      path: normalizeTargetPath(target.path)
+    }));
+  }
+
+  if (Array.isArray(input.targetDirectories)) {
+    return input.targetDirectories.map((targetPath) => ({
+      path: normalizeTargetPath(targetPath),
+      enabled: true
+    }));
+  }
+
+  return defaults.targets;
+}
+
+export function normalizeConfig(input: ConfigInput): SkillerConfig {
   const defaults = defaultConfig();
+  const { targetDirectories: _targetDirectories, ...currentInput } = input;
   return {
     ...defaults,
-    ...input,
+    ...currentInput,
     updateSchedule: {
       ...defaults.updateSchedule,
       ...input.updateSchedule
     },
-    targets: input.targets && input.targets.length > 0 ? input.targets : defaults.targets
+    targets: normalizeTargets(input, defaults)
   };
 }
 

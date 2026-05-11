@@ -58,14 +58,8 @@ export function registerIpcHandlers(): void {
     const config = await loadConfig();
     const libraryPath = expandHome(config.libraryPath);
     const store = new MetadataStore(libraryPath);
-    const skills = await store.list();
-    const skill = skills.find((metadata) => metadata.id === skillId);
 
-    if (!skill) {
-      throw new Error(`Skill not found: ${skillId}`);
-    }
-
-    await store.save({ ...skill, enabled });
+    await store.setEnabled(skillId, enabled);
     await scanConfig(config);
     return store.list();
   });

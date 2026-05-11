@@ -10,6 +10,29 @@ import { Switch } from "@workspace/ui/components/switch";
 import type { TargetConfig } from "@skiller/core";
 import { skillerApi } from "../lib/api.js";
 
+function normalizeTargetPath(targetPath: string): string {
+  const trimmed = targetPath.trim();
+  if (trimmed === "/" || trimmed === "~") return trimmed;
+  return trimmed.replace(/[\\/]+$/g, "");
+}
+
+function mergeTouchedTargets(
+  currentTargets: TargetConfig[],
+  serverTargets: TargetConfig[],
+  touchedPaths: string[]
+): TargetConfig[] {
+  const touched = new Set(touchedPaths);
+  const currentPaths = new Set(currentTargets.map((target) => target.path));
+  const serverByPath = new Map(serverTargets.map((target) => [target.path, target]));
+  const mergedTargets = currentTargets.flatMap((target) => {
+    if (!touched.has(target.path)) return [target];
+    const serverTarget = serverByPath.get(target.path);
+    return serverTarget ? [serverTarget] : [];
+  });
+  const addedTouchedTargets = serverTargets.filter((target) => touched.has(target.path) && !currentPaths.has(target.path));
+  return [...mergedTargets, ...addedTouchedTargets];
+}
+
 export function TargetsPage() {
   const [status, setStatus] = useState("Ready");
   const [error, setError] = useState<string | null>(null);
@@ -39,10 +62,10 @@ export function TargetsPage() {
     setError(null);
     try {
       const config = await skillerApi.saveTargets(nextTargets);
-      setTargets(config.targets);
+      setTargets((current) => mergeTouchedTargets(current, config.targets, pendingPaths));
       setStatus(nextStatus);
     } catch (caught) {
-      setTargets(previousTargets);
+      setTargets((current) => mergeTouchedTargets(current, previousTargets, pendingPaths));
       setError(caught instanceof Error ? caught.message : String(caught));
       setStatus("Save failed");
     } finally {
@@ -57,7 +80,7 @@ export function TargetsPage() {
   }
 
   async function addTarget() {
-    const targetPath = newTarget.trim();
+    const targetPath = normalizeTargetPath(newTarget);
     if (targetPath === "" || targets.some((target) => target.path === targetPath)) return;
 
     await saveTargets([...targets, { path: targetPath, enabled: true }], "Target added", [targetPath]);
@@ -138,11 +161,11 @@ export function TargetsPage() {
               if (event.key === "Enter") void addTarget();
             }}
             placeholder="~/path/to/skills"
-            disabled={pendingTargets.has(newTarget.trim())}
+            disabled={pendingTargets.has(normalizeTargetPath(newTarget))}
           />
           <Button
             onClick={() => void addTarget()}
-            disabled={newTarget.trim() === "" || pendingTargets.has(newTarget.trim())}
+            disabled={normalizeTargetPath(newTarget) === "" || pendingTargets.has(normalizeTargetPath(newTarget))}
           >
             <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
             Add Target

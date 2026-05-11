@@ -1,9 +1,11 @@
 import fs from "fs-extra";
+import { open } from "node:fs/promises";
 import path from "node:path";
 import type { SkillMetadata } from "./types.js";
 
 const MANIFEST_FILE = "skiller.manifest.json";
 const LEGACY_METADATA_FILE = "skiller.metadata.json";
+const writeLocks = new Map<string, Promise<unknown>>();
 
 interface SkillManifest {
   version: 1;
@@ -79,8 +81,22 @@ export class MetadataStore {
       version: 1,
       skills
     };
+    const finalPath = this.manifestPath();
+    const tmpPath = `${finalPath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
 
-    await fs.writeJson(this.manifestPath(), manifest, { spaces: 2 });
+    try {
+      await fs.writeJson(tmpPath, manifest, { spaces: 2 });
+      const handle = await open(tmpPath, "r");
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await fs.rename(tmpPath, finalPath);
+    } catch (error) {
+      await fs.remove(tmpPath).catch(() => undefined);
+      throw error;
+    }
   }
 
   private async removeLegacyRecords(files: string[]): Promise<void> {
@@ -98,9 +114,37 @@ export class MetadataStore {
       return legacyRecords.records;
     }
 
-    const manifest = (await fs.readJson(this.manifestPath())) as SkillManifest;
+    let manifest: SkillManifest;
+
+    try {
+      manifest = (await fs.readJson(this.manifestPath())) as SkillManifest;
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+
+      const legacyRecords = await this.readLegacyRecords();
+      if (legacyRecords.records.length === 0) return [];
+
+      await this.writeManifest(legacyRecords.records);
+      await this.removeLegacyRecords(legacyRecords.files);
+      return legacyRecords.records;
+    }
 
     return Array.isArray(manifest.skills) ? manifest.skills.map(normalizeMetadata) : [];
+  }
+
+  private async withWriteLock<T>(operation: () => Promise<T>): Promise<T> {
+    const key = path.resolve(this.libraryPath);
+    const previous = writeLocks.get(key) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(operation);
+    const tracked = next.catch(() => undefined).then(() => {
+      if (writeLocks.get(key) === tracked) {
+        writeLocks.delete(key);
+      }
+    });
+
+    writeLocks.set(key, tracked);
+
+    return next;
   }
 
   async save(metadata: SkillMetadata): Promise<void> {
@@ -114,13 +158,30 @@ export class MetadataStore {
       throw new Error("Metadata path must be inside the configured library");
     }
 
-    const currentSkills = await this.list();
-    const existingIndex = currentSkills.findIndex((skill) => skill.id === metadata.id);
-    const nextSkills =
-      existingIndex === -1
-        ? [...currentSkills, metadata]
-        : currentSkills.map((skill, index) => (index === existingIndex ? metadata : skill));
+    await this.withWriteLock(async () => {
+      const currentSkills = await this.list();
+      const existingIndex = currentSkills.findIndex((skill) => skill.id === metadata.id);
+      const nextSkills =
+        existingIndex === -1
+          ? [...currentSkills, metadata]
+          : currentSkills.map((skill, index) => (index === existingIndex ? metadata : skill));
 
-    await this.writeManifest(nextSkills);
+      await this.writeManifest(nextSkills);
+    });
+  }
+
+  async setEnabled(skillId: string, enabled: boolean): Promise<SkillMetadata> {
+    return this.withWriteLock(async () => {
+      const currentSkills = await this.list();
+      const existingIndex = currentSkills.findIndex((skill) => skill.id === skillId);
+
+      if (existingIndex === -1) {
+        throw new Error(`Skill not found: ${skillId}`);
+      }
+
+      const updated = { ...currentSkills[existingIndex], enabled };
+      await this.writeManifest(currentSkills.map((skill, index) => (index === existingIndex ? updated : skill)));
+      return updated;
+    });
   }
 }

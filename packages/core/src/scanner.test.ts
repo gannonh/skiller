@@ -118,6 +118,33 @@ describe("scanTargets", () => {
     expect(await fs.realpath(path.join(target, "example"))).toBe(await fs.realpath(skill));
   });
 
+  it("uses the last duplicate target entry when syncing", async () => {
+    const target = path.join(tmp, "duplicate-target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(library, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: skill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true
+    });
+
+    const result = await scanTargets({ libraryPath: library, targets: [disabledTarget(target), enabledTarget(target)] });
+
+    expect(result.enabled).toEqual([{ skillId: "example", targetPath: target }]);
+    expect(await fs.realpath(path.join(target, "example"))).toBe(await fs.realpath(skill));
+  });
+
   it("removes disabled library skills from enabled targets", async () => {
     const target = path.join(tmp, "target");
     const library = path.join(tmp, "library");
