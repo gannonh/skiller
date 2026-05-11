@@ -55,7 +55,7 @@ export function App() {
   return (
     <TooltipProvider>
       <SidebarProvider>
-        <Sidebar collapsible="none" className="min-h-svh">
+        <Sidebar collapsible="none" className="h-auto min-h-svh self-stretch">
           <SidebarHeader>
             <div className="flex items-start justify-between gap-2 px-2 py-1">
               <div className="flex min-w-0 flex-col gap-1">
