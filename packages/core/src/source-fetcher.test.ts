@@ -219,6 +219,49 @@ describe("fetchGithubSkillSource", () => {
     expect(stat.mode & 0o111).not.toBe(0);
   });
 
+  it("encodes github raw url path segments while writing decoded local paths", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(
+          JSON.stringify({
+            tree: [
+              { path: "skills/agent-browser/SKILL.md", type: "blob" },
+              { path: "skills/agent-browser/assets/icon #1.txt", type: "blob" }
+            ]
+          })
+        );
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/agent-browser/SKILL.md") {
+        return new Response("# Agent Browser");
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/agent-browser/assets/icon%20%231.txt") {
+        return new Response("icon");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const fetched = await fetchGithubSkillSource({
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "skills/agent-browser",
+      ref: "main",
+      fetchImpl
+    });
+    tempRoots.push(fetched.rootPath);
+
+    await expect(fs.readFile(path.join(fetched.sourcePath, "assets", "icon #1.txt"), "utf8")).resolves.toBe("icon");
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://raw.githubusercontent.com/example/skills/commit123/skills/agent-browser/assets/icon%20%231.txt",
+      expect.anything()
+    );
+  });
+
   it("rejects a tree without SKILL.md", async () => {
     const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/main") {

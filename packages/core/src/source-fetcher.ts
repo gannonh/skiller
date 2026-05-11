@@ -84,6 +84,10 @@ function entryRelativePath(entryPath: string, githubPath: string): string | null
   return entryPath.slice(githubPath.length + 1);
 }
 
+function encodeEntryPath(entryPath: string): string {
+  return entryPath.split("/").map(encodeURIComponent).join("/");
+}
+
 async function readJson(fetchImpl: FetchImpl, url: string, context: string): Promise<unknown> {
   const response = await fetchImpl(url, { headers: githubHeaders });
   if (!response.ok) {
@@ -169,7 +173,9 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
     for (const blob of blobs) {
       if (!blob.relativePath) continue;
 
-      const rawUrl = `https://raw.githubusercontent.com/${repository.owner}/${repository.repo}/${commit}/${blob.entryPath}`;
+      const rawUrl = `https://raw.githubusercontent.com/${repository.owner}/${repository.repo}/${commit}/${encodeEntryPath(
+        blob.entryPath
+      )}`;
       const response = await fetchImpl(rawUrl, { headers: githubHeaders });
       if (!response.ok) {
         throw new Error(`GitHub blob fetch failed: ${response.status} ${response.statusText}`);
