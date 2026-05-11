@@ -1,4 +1,4 @@
-import type { ScanTargetsResult, SkillerConfig, TargetConfig } from "@skiller/core";
+import type { ScanTargetsResult, SkillSource, SkillerConfig, TargetConfig } from "@skiller/core";
 
 export type LeaderboardType = "all-time" | "trending" | "hot";
 
@@ -14,14 +14,6 @@ export interface ValidationResult {
   issues: ValidationIssue[];
 }
 
-export interface SkillSource {
-  type: "skills.sh" | "github" | "local" | "unknown";
-  skillsShId?: string;
-  githubUrl?: string;
-  ref?: string;
-  commit?: string;
-}
-
 export interface SkillMetadata {
   id: string;
   name: string;
@@ -30,6 +22,7 @@ export interface SkillMetadata {
   source: SkillSource;
   installedAt: string;
   lastCheckedAt?: string;
+  contentHash?: string;
   keepUpdated: boolean;
   enabled: boolean;
   validation: ValidationResult;
@@ -73,8 +66,13 @@ export interface SkillerApi {
   getConfig: () => Promise<SkillerConfig>;
   saveConfig: (config: ConfigUpdate) => Promise<SkillerConfig>;
   checkUpdates: () => Promise<UpdateCheckResult>;
+  installLocal: () => Promise<SkillMetadata | null>;
+  installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => Promise<SkillMetadata>;
+  installRegistry: (skillsShId: string) => Promise<SkillMetadata>;
   leaderboard: (type: LeaderboardType) => Promise<{ skills: DiscoverSkill[] }>;
   search: (query: string) => Promise<{ skills: DiscoverSkill[] }>;
+  registrySkill: (id: string) => Promise<DiscoverSkill>;
+  registryAudit: (id: string) => Promise<DiscoverSkill>;
   onCheckUpdates: (callback: () => void) => RemoveListener;
   onScanError: (callback: (error: ScanError) => void) => RemoveListener;
 }
@@ -91,7 +89,7 @@ const fallbackSkills: SkillMetadata[] = [
     name: "example-skill",
     description: "Renderer preview skill",
     libraryPath: "~/skiller/example-skill",
-    source: { type: "local" },
+    source: { type: "local", path: "~/skiller/example-skill" },
     installedAt: new Date().toISOString(),
     keepUpdated: false,
     enabled: true,
@@ -123,6 +121,31 @@ function createBrowserPreviewApi(): SkillerApi {
     trayEnabled: true
   };
 
+  const createPreviewMetadata = (input: {
+    id: string;
+    name: string;
+    description: string;
+    libraryPath: string;
+    source: SkillSource;
+    keepUpdated: boolean;
+  }): SkillMetadata => ({
+    id: input.id,
+    name: input.name,
+    description: input.description,
+    libraryPath: input.libraryPath,
+    source: input.source,
+    installedAt: new Date().toISOString(),
+    contentHash: "preview",
+    keepUpdated: input.keepUpdated,
+    enabled: true,
+    validation: { valid: true, issues: [] }
+  });
+
+  const addPreviewSkill = (metadata: SkillMetadata): SkillMetadata => {
+    fallbackSkills.push(metadata);
+    return metadata;
+  };
+
   return {
     listLibrary: async () => fallbackSkills,
     setSkillEnabled: async (skillId, enabled) => {
@@ -150,6 +173,45 @@ function createBrowserPreviewApi(): SkillerApi {
       updated: [],
       errors: []
     }),
+    installLocal: async () =>
+      addPreviewSkill(createPreviewMetadata({
+        id: `local-preview-${fallbackSkills.length + 1}`,
+        name: "Local Preview Skill",
+        description: "Preview skill installed from a local folder",
+        libraryPath: "~/skiller/local-preview-skill",
+        source: { type: "local", path: "~/skiller/example-skill" },
+        keepUpdated: false
+      })),
+    installGithub: async (input) =>
+      addPreviewSkill(createPreviewMetadata({
+        id: `github-preview-${fallbackSkills.length + 1}`,
+        name: "GitHub Preview Skill",
+        description: "Preview skill installed from GitHub",
+        libraryPath: "~/skiller/github-preview-skill",
+        source: {
+          type: "github",
+          githubUrl: input.githubUrl,
+          ...(input.githubPath ? { githubPath: input.githubPath } : {}),
+          ...(input.ref ? { ref: input.ref } : {}),
+          commit: "preview"
+        },
+        keepUpdated: true
+      })),
+    installRegistry: async (skillsShId) =>
+      addPreviewSkill(createPreviewMetadata({
+        id: `registry-preview-${fallbackSkills.length + 1}`,
+        name: "Registry Preview Skill",
+        description: "Preview skill installed from skills.sh",
+        libraryPath: "~/skiller/registry-preview-skill",
+        source: {
+          type: "skills.sh",
+          skillsShId,
+          githubUrl: "https://github.com/example/skills",
+          ref: "main",
+          commit: "preview"
+        },
+        keepUpdated: true
+      })),
     leaderboard: async () => ({ skills: fallbackDiscoverSkills }),
     search: async (query) => {
       const normalizedQuery = query.toLowerCase();
@@ -159,6 +221,19 @@ function createBrowserPreviewApi(): SkillerApi {
         )
       };
     },
+    registrySkill: async (id) =>
+      fallbackDiscoverSkills.find((skill) => skill.id === id) ?? {
+        id,
+        name: id,
+        description: "Preview registry skill",
+        githubUrl: "https://github.com/example/skills"
+      },
+    registryAudit: async (id) => ({
+      id,
+      score: 100,
+      issues: [],
+      checkedAt: new Date().toISOString()
+    }),
     onCheckUpdates: () => () => undefined,
     onScanError: () => () => undefined
   };

@@ -1,9 +1,20 @@
-import { ipcMain } from "electron";
-import { MetadataStore, SkillsShClient, expandHome, loadConfig, saveConfig, scanTargets } from "@skiller/core";
+import { dialog, ipcMain } from "electron";
+import {
+  MetadataStore,
+  SkillsShClient,
+  expandHome,
+  installGithubSkill,
+  installLocalSkill,
+  installSkillsShSkill,
+  loadConfig,
+  saveConfig,
+  scanTargets
+} from "@skiller/core";
 import type { SkillerConfig, TargetConfig } from "@skiller/core";
 import { checkDesktopUpdates } from "./update-check.js";
 
 type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets">>;
+type InstallGithubInput = { githubUrl: string; githubPath?: string; ref?: string };
 
 const skillsShClient = new SkillsShClient();
 
@@ -64,6 +75,45 @@ export function registerIpcHandlers(): void {
     return store.list();
   });
 
+  ipcMain.handle("library:install-local", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Add Skill Folder",
+      properties: ["openDirectory"]
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+
+    const config = await loadConfig();
+    const metadata = await installLocalSkill({
+      sourcePath: result.filePaths[0],
+      libraryPath: expandHome(config.libraryPath)
+    });
+    await scanConfig(config);
+    return metadata;
+  });
+
+  ipcMain.handle("library:install-github", async (_event, input: InstallGithubInput) => {
+    const config = await loadConfig();
+    const metadata = await installGithubSkill({
+      githubUrl: input.githubUrl,
+      ...(input.githubPath ? { githubPath: input.githubPath } : {}),
+      ...(input.ref ? { ref: input.ref } : {}),
+      libraryPath: expandHome(config.libraryPath)
+    });
+    await scanConfig(config);
+    return metadata;
+  });
+
+  ipcMain.handle("library:install-registry", async (_event, skillsShId: string) => {
+    const config = await loadConfig();
+    const metadata = await installSkillsShSkill({
+      skillsShId,
+      libraryPath: expandHome(config.libraryPath),
+      client: skillsShClient
+    });
+    await scanConfig(config);
+    return metadata;
+  });
+
   ipcMain.handle("targets:scan", async () => {
     const config = await loadConfig();
     return scanConfig(config);
@@ -100,5 +150,13 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("discover:search", async (_event, query: string) => {
     return skillsShClient.search(query);
+  });
+
+  ipcMain.handle("discover:skill", async (_event, id: string) => {
+    return skillsShClient.skill(id);
+  });
+
+  ipcMain.handle("discover:audit", async (_event, id: string) => {
+    return skillsShClient.audit(id);
   });
 }
