@@ -5,11 +5,22 @@ import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/al
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@workspace/ui/components/card";
+import { Checkbox } from "@workspace/ui/components/checkbox";
 import { Input } from "@workspace/ui/components/input";
+import { Label } from "@workspace/ui/components/label";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle
+} from "@workspace/ui/components/sheet";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import { skillerApi, type SkillMetadata } from "../lib/api.js";
+import type { DiscoveredGithubSkill } from "@skiller/core";
 
 function sourceLabel(skill: SkillMetadata): string {
   if (skill.source.type === "skills.sh") return "Registry";
@@ -39,6 +50,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [pendingSkillIds, setPendingSkillIds] = useState<Set<string>>(() => new Set());
   const [githubUrl, setGithubUrl] = useState("");
   const [isInstalling, setIsInstalling] = useState(false);
+  const [githubChoices, setGithubChoices] = useState<DiscoveredGithubSkill[]>([]);
+  const [selectedGithubPaths, setSelectedGithubPaths] = useState<Set<string>>(() => new Set());
+  const [isGithubSheetOpen, setIsGithubSheetOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -60,6 +74,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   }, []);
 
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
+  const selectedGithubSkills = useMemo(
+    () => githubChoices.filter((skill) => selectedGithubPaths.has(skill.path)),
+    [githubChoices, selectedGithubPaths]
+  );
 
   async function refreshLibrary() {
     const result = await skillerApi.listLibrary();
@@ -88,6 +106,14 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setIsInstalling(true);
     setError(null);
     try {
+      const discovery = await skillerApi.discoverGithub(githubUrl.trim());
+      if (discovery.repositoryOnly) {
+        setGithubChoices(discovery.skills);
+        setSelectedGithubPaths(new Set(discovery.skills.map((skill) => skill.path)));
+        setIsGithubSheetOpen(true);
+        return;
+      }
+
       await skillerApi.installGithub({
         githubUrl: githubUrl.trim()
       });
@@ -98,6 +124,42 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     } finally {
       setIsInstalling(false);
     }
+  }
+
+  async function installSelectedGithubSkills() {
+    if (isInstalling || selectedGithubSkills.length === 0) return;
+    setIsInstalling(true);
+    setError(null);
+    try {
+      for (const skill of selectedGithubSkills) {
+        await skillerApi.installGithub({
+          githubUrl: skill.githubUrl,
+          ...(skill.githubPath ? { githubPath: skill.githubPath } : {}),
+          ref: skill.ref
+        });
+      }
+      setGithubUrl("");
+      setIsGithubSheetOpen(false);
+      setGithubChoices([]);
+      setSelectedGithubPaths(new Set());
+      await refreshLibrary();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsInstalling(false);
+    }
+  }
+
+  function setGithubSkillSelected(path: string, selected: boolean) {
+    setSelectedGithubPaths((current) => {
+      const next = new Set(current);
+      if (selected) {
+        next.add(path);
+      } else {
+        next.delete(path);
+      }
+      return next;
+    });
   }
 
   async function setSkillEnabled(skillId: string, enabled: boolean) {
@@ -227,7 +289,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       aria-label={`Delete ${skill.name || skill.id}`}
                       onClick={() => void deleteSkill(skill.id)}
                     >
-                      <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                      <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} data-icon="inline-start" />
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -243,6 +305,70 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
           </Table>
         )}
       </CardContent>
+      <Sheet open={isGithubSheetOpen} onOpenChange={setIsGithubSheetOpen}>
+        <SheetContent className="sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>GitHub Skills</SheetTitle>
+            <SheetDescription>Select skills to install from this repository.</SheetDescription>
+          </SheetHeader>
+          <div className="flex flex-col gap-3 px-6">
+            {githubChoices.length === 0 ? (
+              <Alert>
+                <AlertTitle>No skills found</AlertTitle>
+                <AlertDescription>No SKILL.md files were found in this repository.</AlertDescription>
+              </Alert>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Install</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Path</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {githubChoices.map((skill) => {
+                    const id = `github-skill-${skill.path.replace(/[^a-z0-9_-]+/gi, "-")}`;
+                    return (
+                      <TableRow key={skill.path}>
+                        <TableCell>
+                          <Label htmlFor={id}>
+                            <Checkbox
+                              id={id}
+                              checked={selectedGithubPaths.has(skill.path)}
+                              onCheckedChange={(checked) => setGithubSkillSelected(skill.path, Boolean(checked))}
+                            />
+                            <span className="sr-only">Install {skill.name}</span>
+                          </Label>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <span>{skill.name}</span>
+                            {skill.description ? (
+                              <span className="max-w-80 truncate text-xs text-muted-foreground">
+                                {skill.description}
+                              </span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{skill.path}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          <SheetFooter>
+            <Button
+              onClick={() => void installSelectedGithubSkills()}
+              disabled={isInstalling || selectedGithubSkills.length === 0}
+            >
+              Install selected
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </Card>
   );
 }

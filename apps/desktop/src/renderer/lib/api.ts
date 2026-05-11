@@ -1,4 +1,10 @@
-import type { ScanTargetsResult, SkillSource, SkillerConfig, TargetConfig } from "@skiller/core";
+import type {
+  DiscoverGithubSkillsResult,
+  ScanTargetsResult,
+  SkillSource,
+  SkillerConfig,
+  TargetConfig
+} from "@skiller/core";
 
 export type LeaderboardType = "all-time" | "trending" | "hot";
 
@@ -69,6 +75,7 @@ export interface SkillerApi {
   checkUpdates: () => Promise<UpdateCheckResult>;
   installLocal: () => Promise<SkillMetadata | null>;
   installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => Promise<SkillMetadata>;
+  discoverGithub: (githubUrl: string) => Promise<DiscoverGithubSkillsResult>;
   installRegistry: (skillsShId: string) => Promise<SkillMetadata>;
   leaderboard: (type: LeaderboardType) => Promise<{ skills: DiscoverSkill[] }>;
   search: (query: string) => Promise<{ skills: DiscoverSkill[] }>;
@@ -180,12 +187,13 @@ function createBrowserPreviewApi(): SkillerApi {
       errors: []
     }),
     installLocal: async () => null,
-    installGithub: async (input) =>
-      addPreviewSkill(createPreviewMetadata({
-        id: "github-preview",
-        name: "github-preview",
+    installGithub: async (input) => {
+      const id = input.githubPath?.split("/").filter(Boolean).at(-1) ?? "github-preview";
+      return addPreviewSkill(createPreviewMetadata({
+        id,
+        name: id,
         description: "GitHub preview skill",
-        libraryPath: "~/skiller/github-preview",
+        libraryPath: `~/skiller/${id}`,
         source: {
           type: "github",
           githubUrl: input.githubUrl,
@@ -194,7 +202,45 @@ function createBrowserPreviewApi(): SkillerApi {
           commit: "preview"
         },
         keepUpdated: true
-      })),
+      }));
+    },
+    discoverGithub: async (githubUrl) => {
+      if (/\/tree\/|\/blob\/|raw\.githubusercontent\.com/.test(githubUrl)) {
+        return {
+          repositoryOnly: false,
+          githubUrl,
+          ref: "main",
+          commit: "preview",
+          skills: []
+        };
+      }
+
+      return {
+        repositoryOnly: true,
+        githubUrl,
+        ref: "HEAD",
+        commit: "preview",
+        skills: [
+          {
+            name: "alpha-skill",
+            path: "skills/alpha-skill",
+            description: "Preview GitHub repository skill",
+            githubUrl,
+            githubPath: "skills/alpha-skill",
+            ref: "HEAD",
+            commit: "preview"
+          },
+          {
+            name: "beta-skill",
+            path: "skills/beta-skill",
+            githubUrl,
+            githubPath: "skills/beta-skill",
+            ref: "HEAD",
+            commit: "preview"
+          }
+        ]
+      };
+    },
     installRegistry: async (skillsShId) =>
       addPreviewSkill(createPreviewMetadata({
         id: skillsShId,

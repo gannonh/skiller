@@ -1,6 +1,7 @@
 import fs from "fs-extra";
 import os from "node:os";
 import path from "node:path";
+import YAML from "yaml";
 
 export interface GithubRepository {
   owner: string;
@@ -33,6 +34,29 @@ export interface FetchedGithubSkillSource {
   };
 }
 
+export interface DiscoverGithubSkillsInput {
+  githubUrl: string;
+  fetchImpl?: typeof fetch;
+}
+
+export interface DiscoveredGithubSkill {
+  name: string;
+  path: string;
+  description?: string;
+  githubUrl: string;
+  githubPath?: string;
+  ref: string;
+  commit: string;
+}
+
+export interface DiscoverGithubSkillsResult {
+  repositoryOnly: boolean;
+  githubUrl: string;
+  ref: string;
+  commit: string;
+  skills: DiscoveredGithubSkill[];
+}
+
 export interface RegistrySkillSource {
   skillsShId: string;
   githubUrl: string;
@@ -58,6 +82,11 @@ interface GithubBlob {
   entryPath: string;
   relativePath: string;
   mode?: string;
+}
+
+interface SkillInfo {
+  name: string;
+  description?: string;
 }
 
 const githubHeaders = {
@@ -100,6 +129,29 @@ function pathFromSkillFile(githubPath: string): string {
 
   const skillDir = path.posix.dirname(normalizedPath);
   return skillDir === "." ? "" : skillDir;
+}
+
+function parseSkillInfo(markdown: string, fallback: string): SkillInfo {
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!match) return { name: fallback };
+
+  try {
+    const frontmatter = YAML.parse(match[1]) ?? {};
+    if (typeof frontmatter !== "object" || frontmatter === null || Array.isArray(frontmatter)) {
+      return { name: fallback };
+    }
+
+    const record = frontmatter as Record<string, unknown>;
+    const name = stringField(record, "name") ?? fallback;
+    const description = stringField(record, "description");
+
+    return {
+      name,
+      ...(description ? { description } : {})
+    };
+  } catch {
+    return { name: fallback };
+  }
 }
 
 function parseGithubSourceUrl(githubUrl: string): GithubSourceLocation | null {
@@ -217,11 +269,114 @@ async function readJson(fetchImpl: FetchImpl, url: string, context: string): Pro
   return response.json();
 }
 
+async function resolveGithubTree(input: {
+  githubUrl: string;
+  fetchImpl: FetchImpl;
+  ref?: string;
+}): Promise<{
+  source: GithubSourceLocation;
+  ref: string;
+  commit: string;
+  entries: GithubTreeEntry[];
+}> {
+  const source = parseGithubSourceUrl(input.githubUrl);
+  if (!source) {
+    throw new Error("Invalid GitHub repository URL");
+  }
+
+  const ref = input.ref ?? source.ref ?? "HEAD";
+  const commitUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/commits/${encodeURIComponent(ref)}`;
+  const commitPayload = (await readJson(input.fetchImpl, commitUrl, "GitHub commit lookup")) as GithubCommitPayload;
+  if (typeof commitPayload.sha !== "string" || commitPayload.sha.length === 0) {
+    throw new Error("GitHub commit lookup did not return a commit sha");
+  }
+
+  const commit = commitPayload.sha;
+  const treeUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/git/trees/${encodeURIComponent(
+    commit
+  )}?recursive=1`;
+  const treePayload = (await readJson(input.fetchImpl, treeUrl, "GitHub tree lookup")) as GithubTreePayload;
+  const entries = Array.isArray(treePayload.tree) ? (treePayload.tree as GithubTreeEntry[]) : [];
+
+  return { source, ref, commit, entries };
+}
+
+async function readRawGithubBlob(input: {
+  fetchImpl: FetchImpl;
+  owner: string;
+  repo: string;
+  commit: string;
+  entryPath: string;
+}): Promise<string> {
+  const rawUrl = `https://raw.githubusercontent.com/${input.owner}/${input.repo}/${input.commit}/${encodeEntryPath(
+    input.entryPath
+  )}`;
+  const response = await input.fetchImpl(rawUrl, { headers: githubHeaders });
+  if (!response.ok) {
+    throw new Error(`GitHub blob fetch failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.text();
+}
+
 export function parseGithubRepository(githubUrl: string): GithubRepository | null {
   const source = parseGithubSourceUrl(githubUrl);
   if (!source) return null;
 
   return { owner: source.owner, repo: source.repo };
+}
+
+export async function discoverGithubSkills(input: DiscoverGithubSkillsInput): Promise<DiscoverGithubSkillsResult> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const { source, ref, commit, entries } = await resolveGithubTree({ githubUrl: input.githubUrl, fetchImpl });
+  const repositoryOnly = !source.githubPath && !source.ref;
+
+  if (!repositoryOnly) {
+    return {
+      repositoryOnly,
+      githubUrl: source.githubUrl,
+      ref,
+      commit,
+      skills: []
+    };
+  }
+
+  const skillEntries = entries
+    .filter((entry) => entry.type === "blob" && typeof entry.path === "string" && path.posix.basename(entry.path) === "SKILL.md")
+    .map((entry) => entry.path as string)
+    .sort((left, right) => left.localeCompare(right));
+  const skills: DiscoveredGithubSkill[] = [];
+
+  for (const skillMarkdownPath of skillEntries) {
+    const githubPath = pathFromSkillFile(skillMarkdownPath);
+    const fallback = githubPath ? path.posix.basename(githubPath) : source.repo;
+    const markdown = await readRawGithubBlob({
+      fetchImpl,
+      owner: source.owner,
+      repo: source.repo,
+      commit,
+      entryPath: skillMarkdownPath
+    });
+    const skillInfo = parseSkillInfo(markdown, fallback);
+
+    skills.push({
+      name: skillInfo.name,
+      path: githubPath || ".",
+      ...(skillInfo.description ? { description: skillInfo.description } : {}),
+      githubUrl: source.githubUrl,
+      ...(githubPath ? { githubPath } : {}),
+      ref,
+      commit
+    });
+  }
+
+  return {
+    repositoryOnly,
+    githubUrl: source.githubUrl,
+    ref,
+    commit,
+    skills
+  };
 }
 
 export function extractRegistrySkillSource(payload: Record<string, unknown>): RegistrySkillSource {
@@ -268,27 +423,15 @@ function githubPathFromRegistrySource(payload: Record<string, unknown>, source: 
 }
 
 export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput): Promise<FetchedGithubSkillSource> {
-  const source = parseGithubSourceUrl(input.githubUrl);
-  if (!source) {
-    throw new Error("Invalid GitHub repository URL");
-  }
-
-  const repository = { owner: source.owner, repo: source.repo };
   const fetchImpl = input.fetchImpl ?? fetch;
+  const { source, commit, entries } = await resolveGithubTree({
+    githubUrl: input.githubUrl,
+    fetchImpl,
+    ...(input.ref ? { ref: input.ref } : {})
+  });
+  const repository = { owner: source.owner, repo: source.repo };
   const ref = input.ref ?? source.ref ?? "HEAD";
   const githubPath = normalizeGithubPath(input.githubPath ?? source.githubPath);
-  const commitUrl = `https://api.github.com/repos/${repository.owner}/${repository.repo}/commits/${encodeURIComponent(ref)}`;
-  const commitPayload = (await readJson(fetchImpl, commitUrl, "GitHub commit lookup")) as GithubCommitPayload;
-  if (typeof commitPayload.sha !== "string" || commitPayload.sha.length === 0) {
-    throw new Error("GitHub commit lookup did not return a commit sha");
-  }
-
-  const commit = commitPayload.sha;
-  const treeUrl = `https://api.github.com/repos/${repository.owner}/${repository.repo}/git/trees/${encodeURIComponent(
-    commit
-  )}?recursive=1`;
-  const treePayload = (await readJson(fetchImpl, treeUrl, "GitHub tree lookup")) as GithubTreePayload;
-  const entries = Array.isArray(treePayload.tree) ? (treePayload.tree as GithubTreeEntry[]) : [];
   const resolvedGithubPath = resolveGithubPath(entries, githubPath);
   const blobs: GithubBlob[] = [];
 

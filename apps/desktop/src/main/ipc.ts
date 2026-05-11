@@ -2,6 +2,7 @@ import { dialog, ipcMain } from "electron";
 import {
   MetadataStore,
   SkillsShClient,
+  discoverGithubSkills,
   expandHome,
   installGithubSkill,
   installLocalSkill,
@@ -116,6 +117,10 @@ export function registerIpcHandlers(): void {
     });
     await scanConfig(config);
     return metadata;
+  });
+
+  ipcMain.handle("library:discover-github", async (_event, githubUrl: string) => {
+    return discoverGithubSkills({ githubUrl });
   });
 
   ipcMain.handle("library:install-registry", async (_event, skillsShId: string) => {

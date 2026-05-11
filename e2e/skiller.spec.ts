@@ -84,6 +84,22 @@ test("installs a GitHub skill from one URL field in preview mode", async ({ page
   await expect(page.getByRole("cell", { name: "github-preview", exact: true })).toBeVisible();
 });
 
+test("selects skills from a GitHub repository preview", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByLabel("GitHub URL").fill("https://github.com/example/skills");
+  await page.getByRole("button", { name: "Add from GitHub" }).click();
+
+  await expect(page.getByRole("heading", { name: "GitHub Skills" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /alpha-skill/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /beta-skill/ })).toBeVisible();
+  await page.getByRole("row", { name: /beta-skill/ }).getByRole("checkbox").click();
+  await page.getByRole("button", { name: "Install selected" }).click();
+
+  await expect(page.getByRole("cell", { name: "alpha-skill", exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toHaveCount(0);
+});
+
 test("installs a registry result from Discover preview mode", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();

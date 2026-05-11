@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("skiller", {
   checkUpdates: () => ipcRenderer.invoke("updates:check"),
   installLocal: () => ipcRenderer.invoke("library:install-local"),
   installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => ipcRenderer.invoke("library:install-github", input),
+  discoverGithub: (githubUrl: string) => ipcRenderer.invoke("library:discover-github", githubUrl),
   installRegistry: (skillsShId: string) => ipcRenderer.invoke("library:install-registry", skillsShId),
   leaderboard: (type: "all-time" | "trending" | "hot") => ipcRenderer.invoke("discover:leaderboard", type),
   search: (query: string) => ipcRenderer.invoke("discover:search", query),

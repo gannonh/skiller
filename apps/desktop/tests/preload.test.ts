@@ -11,6 +11,7 @@ describe("desktop preload", () => {
     expect(preloadSource).toContain("contextBridge.exposeInMainWorld");
     expect(preloadSource).toContain("installLocal");
     expect(preloadSource).toContain("installGithub");
+    expect(preloadSource).toContain("discoverGithub");
     expect(preloadSource).toContain("installRegistry");
     expect(preloadSource).toContain("deleteSkill");
   });
