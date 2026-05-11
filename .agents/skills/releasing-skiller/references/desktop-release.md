@@ -27,6 +27,10 @@ If using the Kata local secrets as a guide, `.secrets/signing-cert.p12.base64` i
 
 `.github/workflows/desktop-release.yml` runs on pushes to `main` and manual dispatch. It reads `apps/desktop/package.json`, skips if `desktop-vX.Y.Z` already exists, validates the app, builds macOS `arm64` and `x64`, builds Linux `x64` and `arm64`, notarizes macOS artifacts, then creates the GitHub Release.
 
+Release notes must come from the changelog entry for that version. Do not write separate ad hoc release notes during tagging.
+
+Update `README.md` in the release PR when supported platforms, install steps, setup requirements, commands, screenshots, or user-visible behavior changed.
+
 ## Local Commands
 
 ```bash
