@@ -1,0 +1,50 @@
+appId: com.gannonhall.skiller
+productName: Skiller
+copyright: Copyright © 2026 Gannon Hall
+
+directories:
+  output: release
+
+files:
+  - dist/**
+  - assets/**
+  - package.json
+
+asar: true
+
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/app-icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - target: dmg
+    - target: zip
+
+dmg:
+  artifactName: Skiller-Desktop-${arch}.${ext}
+
+win:
+  icon: assets/app-icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: Skiller-Desktop-${arch}-Setup.${ext}
+
+linux:
+  category: Development
+  icon: assets/app-icon.png
+  maintainer: Gannon Hall <gannonhall@gmail.com>
+  target:
+    - target: AppImage
+    - target: deb
+
+artifactName: Skiller-Desktop-${arch}.${ext}

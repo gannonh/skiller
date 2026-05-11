@@ -1,0 +1,300 @@
+name: Desktop Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  check-version:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check desktop version
+        id: check
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          TAG="desktop-v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if git ls-remote --tags origin | awk '{print $2}' | grep -Fxq "refs/tags/$TAG"; then
+            echo "Tag $TAG already exists, skipping release"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New desktop version $VERSION detected"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  validate-release:
+    needs: check-version
+    if: github.ref == 'refs/heads/main' && needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Core tests
+        run: pnpm --filter @skiller/core test
+
+      - name: Desktop tests
+        run: pnpm --filter @skiller/desktop test
+
+      - name: E2E tests
+        run: pnpm test:e2e
+
+      - name: Build
+        run: pnpm build
+
+  build-macos:
+    needs: [check-version, validate-release]
+    if: github.ref == 'refs/heads/main' && needs.check-version.outputs.should_release == 'true'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate signing secrets
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name secret is required for desktop release signing and notarization."
+              exit 1
+            fi
+          done
+
+      - name: Import code signing certificate
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$CSC_LINK" | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+          rm certificate.p12
+
+      - name: Build desktop app
+        run: pnpm --dir apps/desktop run build
+
+      - name: Package macOS app
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/desktop exec electron-builder --config electron-builder.yml --mac dmg zip --${{ matrix.arch }}
+
+      - name: Notarize and rebuild artifacts
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          cd apps/desktop/release
+
+          APP_PATH=$(find . -name "Skiller.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No Skiller.app bundle found in release directory."
+            find . -maxdepth 3 -print
+            exit 1
+          fi
+
+          ZIP_PATH="notarize-Skiller-${{ matrix.arch }}.zip"
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+
+          xcrun notarytool submit "$ZIP_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --timeout 30m
+
+          xcrun stapler staple "$APP_PATH"
+          rm "$ZIP_PATH"
+
+          DIST_ZIP="Skiller-Desktop-${{ matrix.arch }}.zip"
+          rm -f "$DIST_ZIP"
+          ditto -c -k --keepParent "$APP_PATH" "$DIST_ZIP"
+
+          DIST_DMG="Skiller-Desktop-${{ matrix.arch }}.dmg"
+          rm -f "$DIST_DMG"
+
+          STAGING_DIR=$(mktemp -d)
+          cp -R "$APP_PATH" "$STAGING_DIR/"
+          ln -s /Applications "$STAGING_DIR/Applications"
+          hdiutil create "$DIST_DMG" \
+            -volname "Skiller" \
+            -srcfolder "$STAGING_DIR" \
+            -format UDZO \
+            -fs HFS+
+          rm -rf "$STAGING_DIR"
+
+          spctl -a -v "$APP_PATH" 2>&1 || true
+
+      - name: Verify artifacts
+        run: |
+          set -euo pipefail
+          test -f "apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.dmg"
+          test -f "apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.zip"
+          ls -la apps/desktop/release
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: skiller-desktop-${{ matrix.arch }}
+          path: |
+            apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.dmg
+            apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  build-linux:
+    needs: [check-version, validate-release]
+    if: github.ref == 'refs/heads/main' && needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop app
+        run: pnpm --dir apps/desktop run build
+
+      - name: Package Linux app
+        run: pnpm --dir apps/desktop exec electron-builder --config electron-builder.yml --linux AppImage deb --${{ matrix.arch }}
+
+      - name: Verify artifacts
+        id: linux-artifacts
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.arch }}" = "x64" ]; then
+            APPIMAGE_ARCH="x86_64"
+            DEB_ARCH="amd64"
+          else
+            APPIMAGE_ARCH="arm64"
+            DEB_ARCH="arm64"
+          fi
+          echo "appimage_arch=$APPIMAGE_ARCH" >> "$GITHUB_OUTPUT"
+          echo "deb_arch=$DEB_ARCH" >> "$GITHUB_OUTPUT"
+          test -f "apps/desktop/release/Skiller-Desktop-$APPIMAGE_ARCH.AppImage"
+          test -f "apps/desktop/release/Skiller-Desktop-$DEB_ARCH.deb"
+          ls -la apps/desktop/release
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: skiller-desktop-linux-${{ matrix.arch }}
+          path: |
+            apps/desktop/release/Skiller-Desktop-${{ steps.linux-artifacts.outputs.appimage_arch }}.AppImage
+            apps/desktop/release/Skiller-Desktop-${{ steps.linux-artifacts.outputs.deb_arch }}.deb
+          if-no-files-found: error
+
+  create-release:
+    needs: [check-version, build-macos, build-linux]
+    if: github.ref == 'refs/heads/main' && needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="desktop-v$VERSION"
+          gh release create "$TAG" release-artifacts/* \
+            --target "$GITHUB_SHA" \
+            --title "Skiller Desktop v$VERSION" \
+            --notes "Skiller Desktop v$VERSION"

@@ -12,7 +12,7 @@ function metadataFor(libraryPath: string): SkillMetadata {
     id: "example-skill",
     name: "Example Skill",
     libraryPath,
-    source: { type: "local" },
+    source: { type: "local", path: libraryPath },
     installedAt: "2026-05-09T00:00:00.000Z",
     keepUpdated: false,
     validation: { valid: true, issues: [] },
@@ -72,6 +72,188 @@ describe("MetadataStore", () => {
     });
 
     expect(await store.list()).toEqual([metadataFor(skillPath)]);
+  });
+
+  it("normalizes source records from the root manifest", async () => {
+    const libraryPath = await makeTempDir();
+    const localPath = path.join(libraryPath, "local-skill");
+    const githubPath = path.join(libraryPath, "github-skill");
+    const unknownPath = path.join(libraryPath, "unknown-skill");
+    await fs.ensureDir(localPath);
+    await fs.ensureDir(githubPath);
+    await fs.ensureDir(unknownPath);
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skills: [
+        { ...metadataFor(localPath), id: "local-skill", name: "Local Skill", source: { type: "local" } },
+        {
+          ...metadataFor(githubPath),
+          id: "github-skill",
+          name: "GitHub Skill",
+          source: {
+            type: "github",
+            githubUrl: "https://github.com/example/skills",
+            githubPath: "skills/github-skill",
+            ref: "main",
+            commit: "abc123"
+          }
+        },
+        {
+          ...metadataFor(unknownPath),
+          id: "unknown-skill",
+          name: "Unknown Skill",
+          source: { type: "missing-type", value: 1 }
+        }
+      ]
+    });
+
+    await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([
+      {
+        ...metadataFor(localPath),
+        id: "local-skill",
+        name: "Local Skill",
+        source: { type: "local", path: localPath }
+      },
+      {
+        ...metadataFor(githubPath),
+        id: "github-skill",
+        name: "GitHub Skill",
+        source: {
+          type: "github",
+          githubUrl: "https://github.com/example/skills",
+          githubPath: "skills/github-skill",
+          ref: "main",
+          commit: "abc123"
+        }
+      },
+      {
+        ...metadataFor(unknownPath),
+        id: "unknown-skill",
+        name: "Unknown Skill",
+        source: { type: "unknown" }
+      }
+    ]);
+  });
+
+  it("normalizes partial and invalid source records from the root manifest", async () => {
+    const libraryPath = await makeTempDir();
+    const paths = {
+      missing: path.join(libraryPath, "missing-source"),
+      skillsShMissingUrl: path.join(libraryPath, "skills-sh-missing-url"),
+      skillsShMinimal: path.join(libraryPath, "skills-sh-minimal"),
+      skillsShFull: path.join(libraryPath, "skills-sh-full"),
+      githubMissingUrl: path.join(libraryPath, "github-missing-url"),
+      githubMinimal: path.join(libraryPath, "github-minimal"),
+      localFallback: path.join(libraryPath, "local-fallback")
+    };
+    await Promise.all(Object.values(paths).map((skillPath) => fs.ensureDir(skillPath)));
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skills: [
+        { ...metadataFor(paths.missing), id: "missing-source", name: "Missing Source", source: null },
+        {
+          ...metadataFor(paths.skillsShMissingUrl),
+          id: "skills-sh-missing-url",
+          name: "Skills Missing URL",
+          source: { type: "skills.sh", skillsShId: "skills-sh-missing-url" }
+        },
+        {
+          ...metadataFor(paths.skillsShMinimal),
+          id: "skills-sh-minimal",
+          name: "Skills Minimal",
+          source: { type: "skills.sh", githubUrl: "https://github.com/example/skills" }
+        },
+        {
+          ...metadataFor(paths.skillsShFull),
+          id: "skills-sh-full",
+          name: "Skills Full",
+          source: {
+            type: "skills.sh",
+            skillsShId: "skills-sh-full",
+            githubUrl: "https://github.com/example/skills",
+            githubPath: "skills/skills-sh-full",
+            ref: "main",
+            commit: "abc123"
+          }
+        },
+        {
+          ...metadataFor(paths.githubMissingUrl),
+          id: "github-missing-url",
+          name: "GitHub Missing URL",
+          source: { type: "github", githubPath: "skills/github-missing-url" }
+        },
+        {
+          ...metadataFor(paths.githubMinimal),
+          id: "github-minimal",
+          name: "GitHub Minimal",
+          source: { type: "github", githubUrl: "https://github.com/example/skills" }
+        },
+        {
+          ...metadataFor(paths.localFallback),
+          id: "local-fallback",
+          name: "Local Fallback",
+          source: { type: "local", path: "" }
+        }
+      ]
+    });
+
+    await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([
+      {
+        ...metadataFor(paths.missing),
+        id: "missing-source",
+        name: "Missing Source",
+        source: { type: "unknown" }
+      },
+      {
+        ...metadataFor(paths.skillsShMissingUrl),
+        id: "skills-sh-missing-url",
+        name: "Skills Missing URL",
+        source: { type: "unknown" }
+      },
+      {
+        ...metadataFor(paths.skillsShMinimal),
+        id: "skills-sh-minimal",
+        name: "Skills Minimal",
+        source: {
+          type: "skills.sh",
+          skillsShId: "skills-sh-minimal",
+          githubUrl: "https://github.com/example/skills"
+        }
+      },
+      {
+        ...metadataFor(paths.skillsShFull),
+        id: "skills-sh-full",
+        name: "Skills Full",
+        source: {
+          type: "skills.sh",
+          skillsShId: "skills-sh-full",
+          githubUrl: "https://github.com/example/skills",
+          githubPath: "skills/skills-sh-full",
+          ref: "main",
+          commit: "abc123"
+        }
+      },
+      {
+        ...metadataFor(paths.githubMissingUrl),
+        id: "github-missing-url",
+        name: "GitHub Missing URL",
+        source: { type: "unknown" }
+      },
+      {
+        ...metadataFor(paths.githubMinimal),
+        id: "github-minimal",
+        name: "GitHub Minimal",
+        source: { type: "github", githubUrl: "https://github.com/example/skills" }
+      },
+      {
+        ...metadataFor(paths.localFallback),
+        id: "local-fallback",
+        name: "Local Fallback",
+        source: { type: "local", path: paths.localFallback }
+      }
+    ]);
   });
 
   it("treats malformed manifest skills as empty", async () => {
@@ -154,6 +336,56 @@ describe("MetadataStore", () => {
     await store.setEnabled("example-skill", false);
 
     expect(await store.list()).toEqual([{ ...metadata, enabled: false }, otherMetadata]);
+  });
+
+  it("prunes manifest records whose library path is missing", async () => {
+    const libraryPath = await makeTempDir();
+    const existingPath = path.join(libraryPath, "existing-skill");
+    const missingPath = path.join(libraryPath, "missing-skill");
+    const existingMetadata = { ...metadataFor(existingPath), id: "existing-skill", name: "Existing Skill" };
+    const missingMetadata = { ...metadataFor(missingPath), id: "missing-skill", name: "Missing Skill" };
+    const store = new MetadataStore(libraryPath);
+
+    await fs.ensureDir(existingPath);
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skills: [existingMetadata, missingMetadata]
+    });
+
+    await expect(store.pruneMissing()).resolves.toEqual([missingMetadata]);
+    await expect(store.list()).resolves.toEqual([existingMetadata]);
+    await expect(fs.readJson(path.join(libraryPath, "skiller.manifest.json"))).resolves.toEqual({
+      version: 1,
+      skills: [existingMetadata]
+    });
+  });
+
+  it("deletes a manifest record and its library folder", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const otherSkillPath = path.join(libraryPath, "other-skill");
+    const store = new MetadataStore(libraryPath);
+    const metadata = metadataFor(skillPath);
+    const otherMetadata = { ...metadataFor(otherSkillPath), id: "other-skill", name: "Other Skill" };
+
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "example");
+    await fs.ensureDir(otherSkillPath);
+    await fs.writeFile(path.join(otherSkillPath, "SKILL.md"), "other");
+    await store.save(metadata);
+    await store.save(otherMetadata);
+
+    await expect(store.delete("example-skill")).resolves.toEqual(metadata);
+    await expect(fs.pathExists(skillPath)).resolves.toBe(false);
+    await expect(fs.pathExists(otherSkillPath)).resolves.toBe(true);
+    await expect(store.list()).resolves.toEqual([otherMetadata]);
+  });
+
+  it("rejects deleting an unknown skill", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.delete("missing")).rejects.toThrow("Skill not found: missing");
   });
 
   it("rejects enabling an unknown skill", async () => {

@@ -1,7 +1,7 @@
 import fs from "fs-extra";
 import { open } from "node:fs/promises";
 import path from "node:path";
-import type { SkillMetadata } from "./types.js";
+import type { SkillMetadata, SkillSource } from "./types.js";
 
 const MANIFEST_FILE = "skiller.manifest.json";
 const LEGACY_METADATA_FILE = "skiller.metadata.json";
@@ -38,11 +38,80 @@ function isPathInside(parentPath: string, childPath: string): boolean {
   return relativePath !== "" && !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
 }
 
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function normalizeSource(metadata: SkillMetadata): SkillSource {
+  const source = metadata.source as unknown;
+  if (typeof source !== "object" || source === null) return { type: "unknown" };
+
+  const record = source as Record<string, unknown>;
+
+  if (record.type === "skills.sh") {
+    const skillsShId = stringField(record, "skillsShId") ?? metadata.id;
+    const githubUrl = stringField(record, "githubUrl");
+    if (!githubUrl) return { type: "unknown" };
+    const githubPath = stringField(record, "githubPath");
+    const ref = stringField(record, "ref");
+    const commit = stringField(record, "commit");
+
+    return {
+      type: "skills.sh",
+      skillsShId,
+      githubUrl,
+      ...(githubPath ? { githubPath } : {}),
+      ...(ref ? { ref } : {}),
+      ...(commit ? { commit } : {})
+    };
+  }
+
+  if (record.type === "github") {
+    const githubUrl = stringField(record, "githubUrl");
+    if (!githubUrl) return { type: "unknown" };
+    const githubPath = stringField(record, "githubPath");
+    const ref = stringField(record, "ref");
+    const commit = stringField(record, "commit");
+
+    return {
+      type: "github",
+      githubUrl,
+      ...(githubPath ? { githubPath } : {}),
+      ...(ref ? { ref } : {}),
+      ...(commit ? { commit } : {})
+    };
+  }
+
+  if (record.type === "local") {
+    const sourcePath = stringField(record, "path");
+    return { type: "local", path: sourcePath ?? metadata.libraryPath };
+  }
+
+  if (record.type === "unknown") {
+    const discoveredFrom = stringField(record, "discoveredFrom");
+    return discoveredFrom ? { type: "unknown", discoveredFrom } : { type: "unknown" };
+  }
+
+  return { type: "unknown" };
+}
+
 function normalizeMetadata(metadata: SkillMetadata): SkillMetadata {
   return {
     ...metadata,
+    source: normalizeSource(metadata),
     enabled: typeof metadata.enabled === "boolean" ? metadata.enabled : true
   };
+}
+
+async function assertMetadataPathInsideLibrary(libraryPath: string, metadataPath: string): Promise<void> {
+  const libraryRoot = await fs.realpath(libraryPath);
+  const resolvedMetadataPath = path.resolve(metadataPath);
+  const effectiveMetadataPath = await resolveEffectivePath(resolvedMetadataPath);
+
+  if (!isPathInside(libraryRoot, effectiveMetadataPath)) {
+    throw new Error("Metadata path must be inside the configured library");
+  }
 }
 
 export class MetadataStore {
@@ -150,13 +219,7 @@ export class MetadataStore {
   async save(metadata: SkillMetadata): Promise<void> {
     await fs.ensureDir(this.libraryPath);
 
-    const libraryRoot = await fs.realpath(this.libraryPath);
-    const metadataPath = path.resolve(metadata.libraryPath);
-    const effectiveMetadataPath = await resolveEffectivePath(metadataPath);
-
-    if (!isPathInside(libraryRoot, effectiveMetadataPath)) {
-      throw new Error("Metadata path must be inside the configured library");
-    }
+    await assertMetadataPathInsideLibrary(this.libraryPath, metadata.libraryPath);
 
     await this.withWriteLock(async () => {
       const currentSkills = await this.list();
@@ -182,6 +245,46 @@ export class MetadataStore {
       const updated = { ...currentSkills[existingIndex], enabled };
       await this.writeManifest(currentSkills.map((skill, index) => (index === existingIndex ? updated : skill)));
       return updated;
+    });
+  }
+
+  async pruneMissing(): Promise<SkillMetadata[]> {
+    return this.withWriteLock(async () => {
+      const currentSkills = await this.list();
+      const existingSkills: SkillMetadata[] = [];
+      const missingSkills: SkillMetadata[] = [];
+
+      for (const skill of currentSkills) {
+        if (await fs.pathExists(skill.libraryPath)) {
+          existingSkills.push(skill);
+        } else {
+          missingSkills.push(skill);
+        }
+      }
+
+      if (missingSkills.length > 0) {
+        await this.writeManifest(existingSkills);
+      }
+
+      return missingSkills;
+    });
+  }
+
+  async delete(skillId: string): Promise<SkillMetadata> {
+    await fs.ensureDir(this.libraryPath);
+
+    return this.withWriteLock(async () => {
+      const currentSkills = await this.list();
+      const existing = currentSkills.find((skill) => skill.id === skillId);
+
+      if (!existing) {
+        throw new Error(`Skill not found: ${skillId}`);
+      }
+
+      await assertMetadataPathInsideLibrary(this.libraryPath, existing.libraryPath);
+      await fs.remove(existing.libraryPath);
+      await this.writeManifest(currentSkills.filter((skill) => skill.id !== skillId));
+      return existing;
     });
   }
 }

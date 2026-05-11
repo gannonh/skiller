@@ -263,6 +263,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
         if (existingMetadata) {
           if (!existingMetadata.enabled) continue;
+          if (!(await fs.pathExists(existingMetadata.libraryPath))) continue;
           await replaceWithSymlink(targetSkillPath, existingMetadata.libraryPath);
           markEnabled(existingMetadata, targetDir);
           continue;
@@ -278,7 +279,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
             id,
             name: id,
             libraryPath: librarySkillPath,
-            source: { type: "unknown" },
+            source: { type: "unknown", discoveredFrom: targetSkillPath },
             installedAt: new Date().toISOString(),
             contentHash: await hashDirectory(librarySkillPath),
             keepUpdated: false,

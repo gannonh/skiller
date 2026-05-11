@@ -1,5 +1,9 @@
 ## Agent Skills
 
+## Git
+
+- Do not use `git push --no-verify`. Fix local hook failures before pushing.
+
 ### agent-browser
 
 - Use agent-browser to test electron app functionality, identify any issues or bugs and provide UAT evidence.

@@ -1,4 +1,5 @@
 import { MetadataStore } from "./metadata-store.js";
+import { githubFailureDetail, githubRequestHeaders } from "./github-api.js";
 import type { SkillMetadata, SkillSource, SkillerConfig } from "./types.js";
 
 export interface UpdateCheckSkill {
@@ -55,14 +56,14 @@ function toUpdateCheckSkill(metadata: SkillMetadata): UpdateCheckSkill {
   };
 }
 
-function hasResolvableGithubSource(source: SkillSource): source is SkillSource & {
-  type: "github";
+function hasUpdateableSource(source: SkillSource): source is SkillSource & {
+  type: "github" | "skills.sh";
   githubUrl: string;
   ref: string;
   commit: string;
 } {
   return (
-    source.type === "github" &&
+    (source.type === "github" || source.type === "skills.sh") &&
     typeof source.githubUrl === "string" &&
     source.githubUrl.length > 0 &&
     typeof source.ref === "string" &&
@@ -73,7 +74,7 @@ function hasResolvableGithubSource(source: SkillSource): source is SkillSource &
 }
 
 export async function resolveGithubRemoteCommit(source: SkillSource): Promise<string | null> {
-  if (!hasResolvableGithubSource(source)) return null;
+  if (!hasUpdateableSource(source)) return null;
 
   const repository = parseGithubRepository(source.githubUrl);
   if (!repository) return null;
@@ -83,16 +84,13 @@ export async function resolveGithubRemoteCommit(source: SkillSource): Promise<st
   const response = await fetch(
     `https://api.github.com/repos/${repository.owner}/${repository.repo}/commits/${encodeURIComponent(source.ref)}`,
     {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "skiller"
-      },
+      headers: await githubRequestHeaders(),
       signal: controller.signal
     }
   ).finally(() => clearTimeout(timer));
 
   if (!response.ok) {
-    throw new Error(`GitHub update check failed: ${response.status} ${response.statusText}`);
+    throw new Error(`GitHub update check failed: ${await githubFailureDetail(response)}`);
   }
 
   const payload = (await response.json()) as { sha?: unknown };
@@ -103,14 +101,16 @@ export async function checkForSkillUpdates(input: CheckForSkillUpdatesInput): Pr
   const checkedAt = (input.now ?? (() => new Date()))().toISOString();
   const store = input.metadataStore ?? new MetadataStore(input.libraryPath);
   const skills = await store.list();
-  const selected = skills.filter((metadata) => shouldConsiderSkill(metadata, input.config, input.skillId));
+  const selected = skills.filter(
+    (metadata) => shouldConsiderSkill(metadata, input.config, input.skillId) && hasUpdateableSource(metadata.source)
+  );
   const considered = selected.map(toUpdateCheckSkill);
   const available: UpdateCheckSkill[] = [];
   const errors: UpdateCheckError[] = [];
   const remoteResolver = input.remoteResolver ?? resolveGithubRemoteCommit;
 
   for (const metadata of selected) {
-    if (hasResolvableGithubSource(metadata.source)) {
+    if (hasUpdateableSource(metadata.source)) {
       try {
         const remoteCommit = await remoteResolver(metadata.source, metadata);
         if (remoteCommit && remoteCommit !== metadata.source.commit) {

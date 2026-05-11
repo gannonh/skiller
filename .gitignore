@@ -4,6 +4,9 @@ dist/
 *.tsbuildinfo
 .env
 .env.*
+*.p12
+*.p12.base64
 coverage/
 playwright-report/
 test-results/
+apps/desktop/release/

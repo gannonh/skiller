@@ -191,6 +191,114 @@ describe("cli", () => {
     expect(printResult).toHaveBeenCalledWith(metadata, true);
   });
 
+  it("installs GitHub skills through the persisted library path", async () => {
+    const printResult = vi.fn();
+    const installGithubSkill = vi.fn(async () => ({ id: "github-skill", name: "GitHub Skill" }));
+    const program = createProgram({
+      printResult,
+      installGithubSkill: installGithubSkill as never,
+      loadConfig: async () => ({
+        libraryPath: "~/persisted-skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      expandHome: (value) => value.replace("~", "/home/test")
+    });
+
+    await program.parseAsync([
+      "node",
+      "skiller",
+      "install-github",
+      "https://github.com/example/skills",
+      "--path",
+      "skills/github-skill",
+      "--ref",
+      "main"
+    ]);
+
+    expect(installGithubSkill).toHaveBeenCalledWith({
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "skills/github-skill",
+      ref: "main",
+      libraryPath: "/home/test/persisted-skiller"
+    });
+    expect(printResult).toHaveBeenCalledWith("installed GitHub Skill", false);
+  });
+
+  it("prints GitHub install results as JSON", async () => {
+    const printResult = vi.fn();
+    const metadata = { id: "github-skill", name: "GitHub Skill" };
+    const program = createProgram({
+      printResult,
+      installGithubSkill: vi.fn(async () => metadata) as never,
+      loadConfig: async () => ({
+        libraryPath: "~/persisted-skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      expandHome: (value) => value.replace("~", "/home/test")
+    });
+
+    await program.parseAsync(["node", "skiller", "install-github", "https://github.com/example/skills", "--json"]);
+
+    expect(printResult).toHaveBeenCalledWith(metadata, true);
+  });
+
+  it("installs skills.sh skills through the persisted library path", async () => {
+    const printResult = vi.fn();
+    const metadata = { id: "registry-skill", name: "Registry Skill" };
+    const installSkillsShSkill = vi.fn(async () => metadata);
+    const program = createProgram({
+      printResult,
+      installSkillsShSkill: installSkillsShSkill as never,
+      loadConfig: async () => ({
+        libraryPath: "~/persisted-skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      expandHome: (value) => value.replace("~", "/home/test")
+    });
+
+    await program.parseAsync(["node", "skiller", "install-registry", "registry-skill", "--json"]);
+
+    expect(installSkillsShSkill).toHaveBeenCalledWith({
+      skillsShId: "registry-skill",
+      libraryPath: "/home/test/persisted-skiller"
+    });
+    expect(printResult).toHaveBeenCalledWith(metadata, true);
+  });
+
+  it("prints registry install results as plain text", async () => {
+    const printResult = vi.fn();
+    const metadata = { id: "registry-skill", name: "Registry Skill" };
+    const program = createProgram({
+      printResult,
+      installSkillsShSkill: vi.fn(async () => metadata) as never,
+      loadConfig: async () => ({
+        libraryPath: "~/persisted-skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      expandHome: (value) => value.replace("~", "/home/test")
+    });
+
+    await program.parseAsync(["node", "skiller", "install-registry", "registry-skill"]);
+
+    expect(printResult).toHaveBeenCalledWith("installed Registry Skill", false);
+  });
+
   it("checks updates through core using persisted config", async () => {
     const printResult = vi.fn();
     const checkForSkillUpdates = vi.fn(async () => ({

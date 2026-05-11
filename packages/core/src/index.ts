@@ -6,6 +6,7 @@ export * from "./installer.js";
 export * from "./metadata-store.js";
 export * from "./paths.js";
 export * from "./scanner.js";
+export * from "./source-fetcher.js";
 export * from "./skills-sh-client.js";
 export * from "./types.js";
 export * from "./updater.js";

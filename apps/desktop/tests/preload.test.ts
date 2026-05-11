@@ -9,5 +9,13 @@ describe("desktop preload", () => {
 
     expect(mainSource).toContain("../preload.cjs");
     expect(preloadSource).toContain("contextBridge.exposeInMainWorld");
+    expect(preloadSource).toContain("installLocal");
+    expect(preloadSource).toContain("installGithub");
+    expect(preloadSource).toContain("discoverGithub");
+    expect(preloadSource).toContain("installRegistry");
+    expect(preloadSource).toContain("updateSkill");
+    expect(preloadSource).toContain("deleteSkill");
+    expect(preloadSource).toContain("registrySkill");
+    expect(preloadSource).toContain("registryAudit");
   });
 });

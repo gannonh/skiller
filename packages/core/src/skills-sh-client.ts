@@ -37,7 +37,12 @@ export class SkillsShClient {
   }
 
   async skill(id: string): Promise<Record<string, unknown>> {
-    return this.get(`/skills/${encodeSkillId(id)}`);
+    try {
+      return await this.get(`/skills/${encodeSkillId(id)}`);
+    } catch (error) {
+      if (!isFallbackStatus(error)) throw error;
+      return this.findPublicSkill(id);
+    }
   }
 
   async files(id: string): Promise<Record<string, unknown>> {
@@ -86,6 +91,34 @@ export class SkillsShClient {
     const skills = extractInitialSkills(html);
     return { skills };
   }
+
+  private async findPublicSkill(id: string): Promise<Record<string, unknown>> {
+    const exact = await this.findPublicSkillFromQuery(id, id);
+    if (exact) return exact;
+
+    const lastSegment = id.split("/").filter(Boolean).at(-1);
+    if (lastSegment && lastSegment !== id) {
+      const fallback = await this.findPublicSkillFromQuery(lastSegment, id);
+      if (fallback) return fallback;
+    }
+
+    throw new SkillsShRequestError(404, "Not Found");
+  }
+
+  private async findPublicSkillFromQuery(query: string, id: string): Promise<Record<string, unknown> | null> {
+    const { skills } = await this.getLegacySkillList(`/api/search?q=${encodeURIComponent(query)}`);
+    const normalizedId = id.toLowerCase();
+    const normalizedLastSegment = id.split("/").filter(Boolean).at(-1)?.toLowerCase();
+
+    const match =
+      skills.find((skill) => stringValue(skill, "id")?.toLowerCase() === normalizedId) ??
+      skills.find((skill) => stringValue(skill, "skillId")?.toLowerCase() === normalizedId) ??
+      skills.find((skill) => stringValue(skill, "name")?.toLowerCase() === normalizedId) ??
+      skills.find((skill) => normalizedLastSegment && stringValue(skill, "skillId")?.toLowerCase() === normalizedLastSegment) ??
+      null;
+
+    return match ? enrichPublicSkillSource(match) : null;
+  }
 }
 
 function encodeSkillId(id: string): string {
@@ -122,4 +155,40 @@ function extractInitialSkills(html: string): Array<Record<string, unknown>> {
   }
 
   return [];
+}
+
+function stringValue(payload: Record<string, unknown>, key: string): string | undefined {
+  const value = payload[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function githubUrlFromPublicSource(source: string): string | undefined {
+  if (/^https?:\/\/github\.com\/[^/]+\/[^/]+/.test(source)) return source;
+  if (/^[^/\s]+\/[^/\s]+$/.test(source)) return `https://github.com/${source}`;
+  return undefined;
+}
+
+function githubPathFromPublicSkill(skill: Record<string, unknown>, source: string): string | undefined {
+  const id = stringValue(skill, "id");
+  if (id?.startsWith(`${source}/`)) {
+    const path = id.slice(source.length + 1);
+    return path.length > 0 ? path : undefined;
+  }
+
+  return stringValue(skill, "skillId") ?? stringValue(skill, "name");
+}
+
+function enrichPublicSkillSource(skill: Record<string, unknown>): Record<string, unknown> {
+  const source = stringValue(skill, "source");
+  if (!source) return skill;
+
+  const githubUrl = githubUrlFromPublicSource(source);
+  if (!githubUrl) return skill;
+
+  const githubPath = githubPathFromPublicSkill(skill, source);
+  return {
+    ...skill,
+    githubUrl,
+    ...(githubPath ? { githubPath } : {})
+  };
 }

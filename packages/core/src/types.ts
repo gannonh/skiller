@@ -12,13 +12,30 @@ export interface ValidationResult {
   issues: ValidationIssue[];
 }
 
-export interface SkillSource {
-  type: "skills.sh" | "github" | "local" | "unknown";
-  skillsShId?: string;
-  githubUrl?: string;
-  ref?: string;
-  commit?: string;
-}
+export type SkillSource =
+  | {
+      type: "skills.sh";
+      skillsShId: string;
+      githubUrl: string;
+      githubPath?: string;
+      ref?: string;
+      commit?: string;
+    }
+  | {
+      type: "github";
+      githubUrl: string;
+      githubPath?: string;
+      ref?: string;
+      commit?: string;
+    }
+  | {
+      type: "local";
+      path: string;
+    }
+  | {
+      type: "unknown";
+      discoveredFrom?: string;
+    };
 
 export interface SkillMetadata {
   id: string;
@@ -27,6 +44,7 @@ export interface SkillMetadata {
   libraryPath: string;
   source: SkillSource;
   installedAt: string;
+  updatedAt?: string;
   lastCheckedAt?: string;
   contentHash?: string;
   keepUpdated: boolean;
