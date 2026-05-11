@@ -76,7 +76,7 @@ export interface SkillerApi {
   installLocal: () => Promise<SkillMetadata | null>;
   installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => Promise<SkillMetadata>;
   discoverGithub: (githubUrl: string) => Promise<DiscoverGithubSkillsResult>;
-  installRegistry: (skillsShId: string) => Promise<SkillMetadata>;
+  installRegistry: (input: string | { skillsShId: string; registrySkill?: DiscoverSkill }) => Promise<SkillMetadata>;
   leaderboard: (type: LeaderboardType) => Promise<{ skills: DiscoverSkill[] }>;
   search: (query: string) => Promise<{ skills: DiscoverSkill[] }>;
   registrySkill: (id: string) => Promise<DiscoverSkill>;
@@ -314,21 +314,28 @@ function createBrowserPreviewApi(): SkillerApi {
         ]
       };
     },
-    installRegistry: async (skillsShId) =>
-      addPreviewSkill(createPreviewMetadata({
+    installRegistry: async (input) => {
+      const skillsShId = typeof input === "string" ? input : input.skillsShId;
+      const registrySkill = typeof input === "string" ? undefined : input.registrySkill;
+      const source = typeof registrySkill?.source === "string" ? registrySkill.source : "example/skills";
+      const sourceSkillId =
+        skillsShId === "frontend-design" ? `${source}/${skillsShId}` : skillsShId;
+
+      return addPreviewSkill(createPreviewMetadata({
         id: skillsShId,
         name: skillsShId,
         description: "Registry preview skill",
         libraryPath: `~/skiller/${skillsShId}`,
         source: {
           type: "skills.sh",
-          skillsShId,
+          skillsShId: sourceSkillId,
           githubUrl: "https://github.com/example/skills",
           ref: "main",
           commit: "preview"
         },
         keepUpdated: true
-      })),
+      }));
+    },
     leaderboard: async () => ({ skills: fallbackDiscoverSkills }),
     search: async (query) => {
       const normalizedQuery = query.toLowerCase();

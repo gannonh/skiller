@@ -25,6 +25,14 @@ function skillId(skill: DiscoverSkill, fallback: string): string {
   return skillText(skill, ["id", "slug", "name"], fallback);
 }
 
+function lastPathSegment(value: string): string {
+  return value.split("/").filter(Boolean).at(-1) ?? value;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
+}
+
 function skillSource(skill: DiscoverSkill): string {
   const direct = skillText(skill, ["source", "repository", "repo", "githubRepo"], "");
   if (direct) return direct.replace(/^https:\/\/github\.com\//, "");
@@ -38,6 +46,29 @@ function skillSource(skill: DiscoverSkill): string {
   } catch {
     return "unknown source";
   }
+}
+
+function registryAliasesForSkill(skill: DiscoverSkill, fallback: string): string[] {
+  const id = skillId(skill, fallback);
+  const name = skillText(skill, ["skillId", "slug", "name"], "");
+  const source = skillSource(skill);
+  const baseIds = uniqueStrings([id, name, lastPathSegment(id), lastPathSegment(name)]);
+  const sourceIds = source === "unknown source" ? [] : baseIds.map((candidate) => `${source}/${candidate}`);
+
+  return uniqueStrings([...baseIds, ...sourceIds]);
+}
+
+function registryAliasesForMetadata(skill: SkillMetadata): string[] {
+  if (skill.source.type !== "skills.sh") return [];
+
+  return uniqueStrings([
+    skill.source.skillsShId,
+    lastPathSegment(skill.source.skillsShId),
+    skill.id,
+    skill.name,
+    lastPathSegment(skill.id),
+    lastPathSegment(skill.name)
+  ]);
 }
 
 function skillInstalls(skill: DiscoverSkill): number | null {
@@ -77,7 +108,7 @@ export function DiscoverPage() {
   const [query, setQuery] = useState("");
   const [leaderboardType, setLeaderboardType] = useState<LeaderboardType>("all-time");
   const [isLoading, setIsLoading] = useState(true);
-  const [status, setStatus] = useState("Skills Leaderboard");
+  const [status, setStatus] = useState("Skills Leaderboard (skills.sh)");
   const [visibleCount, setVisibleCount] = useState(pageSize);
 
   useEffect(() => {
@@ -90,7 +121,7 @@ export function DiscoverPage() {
         if (!mounted) return;
         setSkills(result.skills);
         setVisibleCount(pageSize);
-        setStatus("Skills Leaderboard");
+        setStatus("Skills Leaderboard (skills.sh)");
       })
       .catch((caught: unknown) => {
         if (mounted) setStatus(caught instanceof Error ? caught.message : String(caught));
@@ -112,7 +143,7 @@ export function DiscoverPage() {
   const installedRegistryIds = useMemo(
     () =>
       new Set(
-        librarySkills.flatMap((skill) => (skill.source.type === "skills.sh" ? [skill.source.skillsShId] : []))
+        librarySkills.flatMap((skill) => registryAliasesForMetadata(skill))
       ),
     [librarySkills]
   );
@@ -134,11 +165,11 @@ export function DiscoverPage() {
     }
   }
 
-  async function installRegistry(id: string) {
+  async function installRegistry(id: string, skill: DiscoverSkill) {
     setPendingSkillIds((current) => new Set(current).add(id));
     setStatus(`Installing ${id}`);
     try {
-      const metadata = await skillerApi.installRegistry(id);
+      const metadata = await skillerApi.installRegistry({ skillsShId: id, registrySkill: skill });
       setLibrarySkills((current) => [...current.filter((skill) => skill.id !== metadata.id), metadata]);
       setStatus(`Installed ${metadata.name}`);
     } catch (caught) {
@@ -162,7 +193,7 @@ export function DiscoverPage() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <form className="flex min-w-72 items-center gap-2" onSubmit={search}>
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search skills..." />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search skills.sh..." />
           <Button type="submit" aria-label="Search">
             <HugeiconsIcon icon={Search01Icon} strokeWidth={2} data-icon="inline-start" />
             Search
@@ -196,8 +227,9 @@ export function DiscoverPage() {
             <TableBody>
               {rows.map((skill, index) => {
                 const id = skillId(skill, `skill-${index}`);
-                const installed = installedRegistryIds.has(id);
-                const pending = pendingSkillIds.has(id);
+                const registryAliases = registryAliasesForSkill(skill, `skill-${index}`);
+                const installed = registryAliases.some((alias) => installedRegistryIds.has(alias));
+                const pending = registryAliases.some((alias) => pendingSkillIds.has(alias));
                 const name = skillText(skill, ["name", "title", "id", "slug"], "Untitled skill");
                 const source = skillSource(skill);
                 return (
@@ -215,7 +247,7 @@ export function DiscoverPage() {
                         size="sm"
                         variant={installed ? "outline" : "default"}
                         disabled={installed || pending}
-                        onClick={() => void installRegistry(id)}
+                        onClick={() => void installRegistry(id, skill)}
                       >
                         <HugeiconsIcon icon={PackageAddIcon} strokeWidth={2} data-icon="inline-start" />
                         {installed ? "Installed" : pending ? "Installing" : "Install"}

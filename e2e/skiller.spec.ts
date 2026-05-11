@@ -81,7 +81,7 @@ test("searches discover results", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();
 
-  await expect(page.getByText("Skills Leaderboard")).toBeVisible();
+  await expect(page.getByText("Skills Leaderboard (skills.sh)")).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "#" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Installs" })).toBeVisible();
   await expect(page.getByRole("row", { name: /agent-browser vercel-labs\/agent-browser 259K/ })).toBeVisible();
@@ -91,7 +91,7 @@ test("searches discover results", async ({ page }) => {
   await page.getByRole("button", { name: "Load more skills" }).click();
   await expect(page.getByRole("row", { name: /visual-explainer gannonh\/skills/ })).toBeVisible();
 
-  await page.getByPlaceholder("Search skills").fill("browser");
+  await page.getByPlaceholder("Search skills.sh").fill("browser");
   await page.getByRole("button", { name: "Search" }).click();
 
   await expect(page.getByText("Search results for browser")).toBeVisible();
@@ -106,7 +106,7 @@ test("shows provenance in the library and navigates to discover", async ({ page 
   await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
   await expect(page.getByText("Local", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Browse registry" }).click();
+  await page.getByRole("button", { name: "Browse skills.sh registry" }).click();
   await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
 });
 
@@ -147,6 +147,15 @@ test("installs a registry result from Discover preview mode", async ({ page }) =
   await page.getByRole("button", { name: "Library" }).click();
   await expect(page.getByRole("cell", { name: "agent-browser", exact: true })).toBeVisible();
   await expect(page.getByText("Registry", { exact: true })).toBeVisible();
+});
+
+test("marks existing registry skills as installed by source alias", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+
+  await page.getByRole("row", { name: /frontend-design/ }).getByRole("button", { name: "Install" }).click();
+
+  await expect(page.getByRole("row", { name: /frontend-design/ }).getByRole("button", { name: "Installed" })).toBeVisible();
 });
 
 test("lists updateable skills on the Updates page", async ({ page }) => {

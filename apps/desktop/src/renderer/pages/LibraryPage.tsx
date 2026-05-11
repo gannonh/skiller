@@ -291,7 +291,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
             Add from local folder
           </Button>
           <Button variant="outline" onClick={onBrowseRegistry}>
-            Browse registry
+            Browse skills.sh registry
           </Button>
         </div>
         <form className="grid gap-2 md:grid-cols-[minmax(16rem,1fr)_auto]" onSubmit={installGithub}>

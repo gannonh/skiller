@@ -336,4 +336,49 @@ describe("remote installers", () => {
     });
     await expect(fs.pathExists(path.join(library, "agent-browser", "SKILL.md"))).resolves.toBe(true);
   });
+
+  it("installs a skills.sh skill from provided registry row data", async () => {
+    const library = path.join(tmp, "library");
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "abc123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/abc123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "agent-browser/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/abc123/agent-browser/SKILL.md") {
+        return new Response("---\nname: agent-browser\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+    const client = {
+      skill: vi.fn(async () => {
+        throw new Error("skill detail should not be fetched");
+      })
+    };
+
+    const metadata = await installSkillsShSkill({
+      skillsShId: "agent-browser",
+      libraryPath: library,
+      registrySkill: {
+        id: "example/skills/agent-browser",
+        skillId: "agent-browser",
+        name: "agent-browser",
+        source: "example/skills"
+      },
+      client,
+      fetchImpl
+    });
+
+    expect(client.skill).not.toHaveBeenCalled();
+    expect(metadata.source).toMatchObject({
+      type: "skills.sh",
+      skillsShId: "example/skills/agent-browser",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "agent-browser"
+    });
+  });
 });

@@ -16,6 +16,7 @@ import { checkDesktopUpdates } from "./update-check.js";
 
 type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets">>;
 type InstallGithubInput = { githubUrl: string; githubPath?: string; ref?: string };
+type InstallRegistryInput = string | { skillsShId: string; registrySkill?: Record<string, unknown> };
 
 const skillsShClient = new SkillsShClient();
 
@@ -123,10 +124,12 @@ export function registerIpcHandlers(): void {
     return discoverGithubSkills({ githubUrl });
   });
 
-  ipcMain.handle("library:install-registry", async (_event, skillsShId: string) => {
+  ipcMain.handle("library:install-registry", async (_event, input: InstallRegistryInput) => {
+    const skillsShId = typeof input === "string" ? input : input.skillsShId;
     const config = await loadConfig();
     const metadata = await installSkillsShSkill({
       skillsShId,
+      ...(typeof input === "string" || !input.registrySkill ? {} : { registrySkill: input.registrySkill }),
       libraryPath: expandHome(config.libraryPath),
       client: skillsShClient
     });

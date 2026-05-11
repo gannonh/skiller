@@ -24,6 +24,7 @@ export interface InstallGithubSkillInput {
 export interface InstallSkillsShSkillInput {
   skillsShId: string;
   libraryPath: string;
+  registrySkill?: Record<string, unknown>;
   client?: {
     skill(id: string): Promise<Record<string, unknown>>;
   };
@@ -148,7 +149,7 @@ export async function installGithubSkill(input: InstallGithubSkillInput): Promis
 
 export async function installSkillsShSkill(input: InstallSkillsShSkillInput): Promise<SkillMetadata> {
   const client = input.client ?? new SkillsShClient({ ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}) });
-  const registrySource = extractRegistrySkillSource(await client.skill(input.skillsShId));
+  const registrySource = extractRegistrySkillSource(input.registrySkill ?? await client.skill(input.skillsShId));
   let rootPath: string | undefined;
 
   try {
