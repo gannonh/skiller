@@ -9,6 +9,10 @@ import {
 
 const tempRoots: string[] = [];
 
+function mockFetch(handler: (url: string) => Promise<Response> | Response): typeof fetch {
+  return vi.fn(async (input: Parameters<typeof fetch>[0]) => handler(String(input))) as unknown as typeof fetch;
+}
+
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.remove(dir)));
 });
@@ -118,7 +122,7 @@ describe("extractRegistrySkillSource", () => {
 
 describe("fetchGithubSkillSource", () => {
   it("downloads only the requested github path", async () => {
-    const fetchImpl = vi.fn(async (url: string) => {
+    const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/main") {
         return new Response(JSON.stringify({ sha: "commit123" }));
       }
@@ -176,7 +180,7 @@ describe("fetchGithubSkillSource", () => {
   });
 
   it("preserves executable mode for github source files", async () => {
-    const fetchImpl = vi.fn(async (url: string) => {
+    const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/main") {
         return new Response(JSON.stringify({ sha: "commit123" }));
       }
@@ -216,7 +220,7 @@ describe("fetchGithubSkillSource", () => {
   });
 
   it("rejects a tree without SKILL.md", async () => {
-    const fetchImpl = vi.fn(async (url: string) => {
+    const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/main") {
         return new Response(JSON.stringify({ sha: "commit123" }));
       }

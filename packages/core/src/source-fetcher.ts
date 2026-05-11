@@ -48,6 +48,12 @@ interface GithubTreePayload {
   tree?: unknown;
 }
 
+interface GithubBlob {
+  entryPath: string;
+  relativePath: string;
+  mode?: string;
+}
+
 const githubHeaders = {
   Accept: "application/vnd.github+json",
   "User-Agent": "skiller"
@@ -137,16 +143,20 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
   )}?recursive=1`;
   const treePayload = (await readJson(fetchImpl, treeUrl, "GitHub tree lookup")) as GithubTreePayload;
   const entries = Array.isArray(treePayload.tree) ? (treePayload.tree as GithubTreeEntry[]) : [];
-  const blobs = entries
-    .filter((entry) => entry.type === "blob" && typeof entry.path === "string")
-    .map((entry) => ({
-      entryPath: entry.path as string,
-      mode: typeof entry.mode === "string" ? entry.mode : undefined
-    }))
-    .map((entry) => ({ ...entry, relativePath: entryRelativePath(entry.entryPath, githubPath) }))
-    .filter(
-      (entry): entry is { entryPath: string; mode?: string; relativePath: string } => entry.relativePath !== null
-    );
+  const blobs: GithubBlob[] = [];
+
+  for (const entry of entries) {
+    if (entry.type !== "blob" || typeof entry.path !== "string") continue;
+
+    const relativePath = entryRelativePath(entry.path, githubPath);
+    if (relativePath === null) continue;
+
+    blobs.push({
+      entryPath: entry.path,
+      relativePath,
+      ...(typeof entry.mode === "string" ? { mode: entry.mode } : {})
+    });
+  }
 
   const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-source-"));
   const sourcePath = path.join(rootPath, "source");
