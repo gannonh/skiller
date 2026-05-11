@@ -178,8 +178,8 @@ function createBrowserPreviewApi(): SkillerApi {
       addPreviewSkill(createPreviewMetadata({
         id: "github-preview",
         name: "github-preview",
-        description: "Preview skill installed from GitHub",
-        libraryPath: "~/skiller/github-preview-skill",
+        description: "GitHub preview skill",
+        libraryPath: "~/skiller/github-preview",
         source: {
           type: "github",
           githubUrl: input.githubUrl,
@@ -193,8 +193,8 @@ function createBrowserPreviewApi(): SkillerApi {
       addPreviewSkill(createPreviewMetadata({
         id: skillsShId,
         name: skillsShId,
-        description: "Preview skill installed from skills.sh",
-        libraryPath: "~/skiller/registry-preview-skill",
+        description: "Registry preview skill",
+        libraryPath: `~/skiller/${skillsShId}`,
         source: {
           type: "skills.sh",
           skillsShId,
