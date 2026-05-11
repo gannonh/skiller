@@ -136,6 +136,126 @@ describe("MetadataStore", () => {
     ]);
   });
 
+  it("normalizes partial and invalid source records from the root manifest", async () => {
+    const libraryPath = await makeTempDir();
+    const paths = {
+      missing: path.join(libraryPath, "missing-source"),
+      skillsShMissingUrl: path.join(libraryPath, "skills-sh-missing-url"),
+      skillsShMinimal: path.join(libraryPath, "skills-sh-minimal"),
+      skillsShFull: path.join(libraryPath, "skills-sh-full"),
+      githubMissingUrl: path.join(libraryPath, "github-missing-url"),
+      githubMinimal: path.join(libraryPath, "github-minimal"),
+      localFallback: path.join(libraryPath, "local-fallback")
+    };
+    await Promise.all(Object.values(paths).map((skillPath) => fs.ensureDir(skillPath)));
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skills: [
+        { ...metadataFor(paths.missing), id: "missing-source", name: "Missing Source", source: null },
+        {
+          ...metadataFor(paths.skillsShMissingUrl),
+          id: "skills-sh-missing-url",
+          name: "Skills Missing URL",
+          source: { type: "skills.sh", skillsShId: "skills-sh-missing-url" }
+        },
+        {
+          ...metadataFor(paths.skillsShMinimal),
+          id: "skills-sh-minimal",
+          name: "Skills Minimal",
+          source: { type: "skills.sh", githubUrl: "https://github.com/example/skills" }
+        },
+        {
+          ...metadataFor(paths.skillsShFull),
+          id: "skills-sh-full",
+          name: "Skills Full",
+          source: {
+            type: "skills.sh",
+            skillsShId: "skills-sh-full",
+            githubUrl: "https://github.com/example/skills",
+            githubPath: "skills/skills-sh-full",
+            ref: "main",
+            commit: "abc123"
+          }
+        },
+        {
+          ...metadataFor(paths.githubMissingUrl),
+          id: "github-missing-url",
+          name: "GitHub Missing URL",
+          source: { type: "github", githubPath: "skills/github-missing-url" }
+        },
+        {
+          ...metadataFor(paths.githubMinimal),
+          id: "github-minimal",
+          name: "GitHub Minimal",
+          source: { type: "github", githubUrl: "https://github.com/example/skills" }
+        },
+        {
+          ...metadataFor(paths.localFallback),
+          id: "local-fallback",
+          name: "Local Fallback",
+          source: { type: "local", path: "" }
+        }
+      ]
+    });
+
+    await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([
+      {
+        ...metadataFor(paths.missing),
+        id: "missing-source",
+        name: "Missing Source",
+        source: { type: "unknown" }
+      },
+      {
+        ...metadataFor(paths.skillsShMissingUrl),
+        id: "skills-sh-missing-url",
+        name: "Skills Missing URL",
+        source: { type: "unknown" }
+      },
+      {
+        ...metadataFor(paths.skillsShMinimal),
+        id: "skills-sh-minimal",
+        name: "Skills Minimal",
+        source: {
+          type: "skills.sh",
+          skillsShId: "skills-sh-minimal",
+          githubUrl: "https://github.com/example/skills"
+        }
+      },
+      {
+        ...metadataFor(paths.skillsShFull),
+        id: "skills-sh-full",
+        name: "Skills Full",
+        source: {
+          type: "skills.sh",
+          skillsShId: "skills-sh-full",
+          githubUrl: "https://github.com/example/skills",
+          githubPath: "skills/skills-sh-full",
+          ref: "main",
+          commit: "abc123"
+        }
+      },
+      {
+        ...metadataFor(paths.githubMissingUrl),
+        id: "github-missing-url",
+        name: "GitHub Missing URL",
+        source: { type: "unknown" }
+      },
+      {
+        ...metadataFor(paths.githubMinimal),
+        id: "github-minimal",
+        name: "GitHub Minimal",
+        source: { type: "github", githubUrl: "https://github.com/example/skills" }
+      },
+      {
+        ...metadataFor(paths.localFallback),
+        id: "local-fallback",
+        name: "Local Fallback",
+        source: { type: "local", path: paths.localFallback }
+      }
+    ]);
+  });
+
   it("treats malformed manifest skills as empty", async () => {
     const libraryPath = await makeTempDir();
 

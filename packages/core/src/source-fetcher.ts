@@ -271,7 +271,7 @@ function encodeEntryPath(entryPath: string): string {
 }
 
 function skillMarkdownPath(githubPath: string): string {
-  return githubPath ? `${githubPath}/SKILL.md` : "SKILL.md";
+  return `${githubPath}/SKILL.md`;
 }
 
 function hasSkillMarkdown(entries: GithubTreeEntry[], githubPath: string): boolean {
@@ -281,7 +281,7 @@ function hasSkillMarkdown(entries: GithubTreeEntry[], githubPath: string): boole
 
 function basenameForGithubPath(githubPath: string): string {
   const segments = githubPath.split("/").filter(Boolean);
-  return segments.at(-1) ?? githubPath;
+  return segments.at(-1)!;
 }
 
 function dedupe(values: string[]): string[] {

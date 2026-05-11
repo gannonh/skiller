@@ -11,6 +11,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await fs.remove(tmp);
 });
 
@@ -379,6 +380,120 @@ describe("remote installers", () => {
       skillsShId: "example/skills/agent-browser",
       githubUrl: "https://github.com/example/skills",
       githubPath: "agent-browser"
+    });
+  });
+
+  it("installs a GitHub skill with defaults and global fetch", async () => {
+    const library = path.join(tmp, "library");
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "abc123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/abc123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/abc123/SKILL.md") {
+        return new Response("---\nname: root-skill\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    const metadata = await installGithubSkill({
+      githubUrl: "https://github.com/example/skills",
+      libraryPath: library
+    });
+
+    expect(metadata.source).toMatchObject({
+      type: "github",
+      githubUrl: "https://github.com/example/skills",
+      ref: "HEAD",
+      commit: "abc123"
+    });
+  });
+
+  it("installs a skills.sh skill from registry defaults and global fetch", async () => {
+    const library = path.join(tmp, "library");
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "abc123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/abc123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/abc123/SKILL.md") {
+        return new Response("---\nname: root-skill\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    const client = {
+      skill: vi.fn(async () => ({
+        id: "example/skills/",
+        githubUrl: "https://github.com/example/skills"
+      }))
+    };
+
+    const metadata = await installSkillsShSkill({
+      skillsShId: "root-skill",
+      libraryPath: library,
+      client
+    });
+
+    expect(metadata.source).toMatchObject({
+      type: "skills.sh",
+      skillsShId: "example/skills/",
+      githubUrl: "https://github.com/example/skills",
+      ref: "HEAD",
+      commit: "abc123"
+    });
+  });
+
+  it("installs a skills.sh skill with default client and global fetch", async () => {
+    const library = path.join(tmp, "library");
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://skills.sh/api/v1/skills/root-skill") {
+        return new Response(
+          JSON.stringify({
+            id: "root-skill",
+            githubUrl: "https://github.com/example/skills"
+          })
+        );
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "abc123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/abc123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/abc123/SKILL.md") {
+        return new Response("---\nname: root-skill\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    const metadata = await installSkillsShSkill({
+      skillsShId: "root-skill",
+      libraryPath: library
+    });
+
+    expect(metadata.source).toMatchObject({
+      type: "skills.sh",
+      skillsShId: "root-skill",
+      githubUrl: "https://github.com/example/skills",
+      ref: "HEAD",
+      commit: "abc123"
     });
   });
 });

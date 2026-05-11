@@ -183,6 +183,13 @@ describe("SkillsShClient", () => {
     expect(fetchImpl).toHaveBeenNthCalledWith(2, "https://skills.sh/api/search?q=agent-browser");
   });
 
+  it("throws non-fallback skill detail errors", async () => {
+    const fetchImpl = vi.fn(async () => new Response("nope", { status: 503, statusText: "Service Unavailable" }));
+    const client = new SkillsShClient({ fetchImpl });
+
+    await expect(client.skill("agent-browser")).rejects.toThrow("skills.sh request failed: 503 Service Unavailable");
+  });
+
   it("matches public search rows by skill id and name", async () => {
     const skillIdFetch = vi
       .fn()
@@ -227,6 +234,59 @@ describe("SkillsShClient", () => {
     await expect(new SkillsShClient({ fetchImpl: nameFetch }).skill("agent-browser")).resolves.toMatchObject({
       id: "example/skills/other",
       source: "not/github/source"
+    });
+  });
+
+  it("enriches public search rows with name fallback paths", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 401, statusText: "Unauthorized" }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            skills: [
+              {
+                id: "other/source/row",
+                name: "agent-browser",
+                source: "example/skills"
+              }
+            ]
+          })
+        )
+      );
+    const client = new SkillsShClient({ fetchImpl });
+
+    await expect(client.skill("agent-browser")).resolves.toEqual({
+      id: "other/source/row",
+      name: "agent-browser",
+      source: "example/skills",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "agent-browser"
+    });
+  });
+
+  it("omits public github paths when the source id has no suffix", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 401, statusText: "Unauthorized" }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            skills: [
+              {
+                id: "example/skills/",
+                source: "example/skills"
+              }
+            ]
+          })
+        )
+      );
+    const client = new SkillsShClient({ fetchImpl });
+
+    await expect(client.skill("example/skills/")).resolves.toEqual({
+      id: "example/skills/",
+      source: "example/skills",
+      githubUrl: "https://github.com/example/skills"
     });
   });
 

@@ -228,6 +228,28 @@ describe("cli", () => {
     expect(printResult).toHaveBeenCalledWith("installed GitHub Skill", false);
   });
 
+  it("prints GitHub install results as JSON", async () => {
+    const printResult = vi.fn();
+    const metadata = { id: "github-skill", name: "GitHub Skill" };
+    const program = createProgram({
+      printResult,
+      installGithubSkill: vi.fn(async () => metadata) as never,
+      loadConfig: async () => ({
+        libraryPath: "~/persisted-skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      expandHome: (value) => value.replace("~", "/home/test")
+    });
+
+    await program.parseAsync(["node", "skiller", "install-github", "https://github.com/example/skills", "--json"]);
+
+    expect(printResult).toHaveBeenCalledWith(metadata, true);
+  });
+
   it("installs skills.sh skills through the persisted library path", async () => {
     const printResult = vi.fn();
     const metadata = { id: "registry-skill", name: "Registry Skill" };
@@ -253,6 +275,28 @@ describe("cli", () => {
       libraryPath: "/home/test/persisted-skiller"
     });
     expect(printResult).toHaveBeenCalledWith(metadata, true);
+  });
+
+  it("prints registry install results as plain text", async () => {
+    const printResult = vi.fn();
+    const metadata = { id: "registry-skill", name: "Registry Skill" };
+    const program = createProgram({
+      printResult,
+      installSkillsShSkill: vi.fn(async () => metadata) as never,
+      loadConfig: async () => ({
+        libraryPath: "~/persisted-skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      expandHome: (value) => value.replace("~", "/home/test")
+    });
+
+    await program.parseAsync(["node", "skiller", "install-registry", "registry-skill"]);
+
+    expect(printResult).toHaveBeenCalledWith("installed Registry Skill", false);
   });
 
   it("checks updates through core using persisted config", async () => {

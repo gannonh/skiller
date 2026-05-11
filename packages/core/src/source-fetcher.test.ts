@@ -1,4 +1,5 @@
 import fs from "fs-extra";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -18,6 +19,7 @@ function mockFetch(handler: (url: string, init?: RequestInit) => Promise<Respons
 
 afterEach(async () => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   await Promise.all(tempRoots.splice(0).map((dir) => fs.remove(dir)));
 });
 
@@ -31,6 +33,14 @@ describe("parseGithubRepository", () => {
 
   it("parses github file and raw urls", () => {
     expect(parseGithubRepository("https://github.com/example/skills/blob/main/browser/SKILL.md")).toEqual({
+      owner: "example",
+      repo: "skills"
+    });
+    expect(parseGithubRepository("https://raw.githubusercontent.com/example/skills/main/README.md")).toEqual({
+      owner: "example",
+      repo: "skills"
+    });
+    expect(parseGithubRepository("https://raw.githubusercontent.com/example/skills/main/SKILL.md")).toEqual({
       owner: "example",
       repo: "skills"
     });
@@ -140,6 +150,46 @@ describe("extractRegistrySkillSource", () => {
     });
   });
 
+  it("derives github source fields from a full source url and skill id", () => {
+    expect(
+      extractRegistrySkillSource({
+        id: "agent-browser",
+        skillId: "skills/agent-browser",
+        source: "https://github.com/example/skills"
+      })
+    ).toEqual({
+      skillsShId: "agent-browser",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "skills/agent-browser"
+    });
+  });
+
+  it("uses the registry name as a github path fallback", () => {
+    expect(
+      extractRegistrySkillSource({
+        id: "agent-browser",
+        name: "agent-browser",
+        source: "example/skills"
+      })
+    ).toEqual({
+      skillsShId: "agent-browser",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "agent-browser"
+    });
+  });
+
+  it("omits derived registry paths when the id has no source suffix", () => {
+    expect(
+      extractRegistrySkillSource({
+        id: "example/skills/",
+        source: "example/skills"
+      })
+    ).toEqual({
+      skillsShId: "example/skills/",
+      githubUrl: "https://github.com/example/skills"
+    });
+  });
+
   it("rejects payloads without an id", () => {
     expect(() => extractRegistrySkillSource({ githubUrl: "https://github.com/example/skills" })).toThrow(
       "skills.sh payload is missing an id"
@@ -148,6 +198,12 @@ describe("extractRegistrySkillSource", () => {
 
   it("rejects payloads without a github url", () => {
     expect(() => extractRegistrySkillSource({ id: "agent-browser" })).toThrow(
+      "skills.sh payload is missing a GitHub URL"
+    );
+  });
+
+  it("rejects unsupported source strings without a github url", () => {
+    expect(() => extractRegistrySkillSource({ id: "agent-browser", source: "not a github source" })).toThrow(
       "skills.sh payload is missing a GitHub URL"
     );
   });
@@ -195,6 +251,114 @@ describe("discoverGithubSkills", () => {
     await expect(discoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl })).rejects.toThrow(
       'GitHub commit lookup failed: 403 rate limit exceeded. GitHub API rate limit exceeded. Make sure you are authenticated with GitHub by running "gh auth status" or set GITHUB_TOKEN, then try again.'
     );
+  });
+
+  it("omits github authorization when no token is available", async () => {
+    const emptyPath = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-empty-path-"));
+    tempRoots.push(emptyPath);
+    vi.stubEnv("PATH", emptyPath);
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [] }));
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await discoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.github.com/repos/example/skills/commits/HEAD",
+      expect.objectContaining({
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    );
+  });
+
+  it("authenticates github requests with a gh cli token", async () => {
+    const binPath = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-gh-bin-"));
+    tempRoots.push(binPath);
+    const ghPath = path.join(binPath, "gh");
+    await fs.writeFile(ghPath, "#!/bin/sh\nprintf token-from-gh\n");
+    await fs.chmod(ghPath, 0o755);
+    vi.stubEnv("PATH", binPath);
+    await vi.resetModules();
+    const { discoverGithubSkills: freshDiscoverGithubSkills } = await import("./source-fetcher.js");
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [] }));
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await freshDiscoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.github.com/repos/example/skills/commits/HEAD",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer token-from-gh" })
+      })
+    );
+  });
+
+  it("omits github authorization when gh returns no token", async () => {
+    const binPath = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-gh-empty-bin-"));
+    tempRoots.push(binPath);
+    const ghPath = path.join(binPath, "gh");
+    await fs.writeFile(ghPath, "#!/bin/sh\nexit 0\n");
+    await fs.chmod(ghPath, 0o755);
+    vi.stubEnv("PATH", binPath);
+    await vi.resetModules();
+    const { discoverGithubSkills: freshDiscoverGithubSkills } = await import("./source-fetcher.js");
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [] }));
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await freshDiscoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.github.com/repos/example/skills/commits/HEAD",
+      expect.objectContaining({
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    );
+  });
+
+  it("uses global fetch when no discover fetch implementation is provided", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [] }));
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await expect(discoverGithubSkills({ githubUrl: "https://github.com/example/skills" })).resolves.toMatchObject({
+      repositoryOnly: true,
+      skills: []
+    });
   });
 
   it("lists skills from a repository url", async () => {
@@ -249,6 +413,110 @@ describe("discoverGithubSkills", () => {
           ref: "HEAD",
           commit: "commit123"
         }
+      ]
+    });
+  });
+
+  it("rejects failed github skill metadata downloads", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "alpha/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/alpha/SKILL.md") {
+        return new Response("server error", { status: 500, statusText: "Server Error" });
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await expect(discoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl })).rejects.toThrow(
+      "GitHub blob fetch failed: 500 Server Error"
+    );
+  });
+
+  it("uses repository name fallback metadata for root skills", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/SKILL.md") {
+        return new Response("Plain markdown");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await expect(discoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl })).resolves.toEqual({
+      repositoryOnly: true,
+      githubUrl: "https://github.com/example/skills",
+      ref: "HEAD",
+      commit: "commit123",
+      skills: [
+        {
+          name: "skills",
+          path: ".",
+          githubUrl: "https://github.com/example/skills",
+          ref: "HEAD",
+          commit: "commit123"
+        }
+      ]
+    });
+  });
+
+  it("falls back when discovered skill frontmatter is invalid", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(
+          JSON.stringify({
+            tree: [
+              { path: "array/SKILL.md", type: "blob" },
+              { path: "broken/SKILL.md", type: "blob" },
+              { path: "empty/SKILL.md", type: "blob" },
+              { path: "unnamed/SKILL.md", type: "blob" }
+            ]
+          })
+        );
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/array/SKILL.md") {
+        return new Response("---\n- one\n---\n");
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/broken/SKILL.md") {
+        return new Response("---\nname: \"unterminated\n---\n");
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/empty/SKILL.md") {
+        return new Response("---\n\n---\n");
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/unnamed/SKILL.md") {
+        return new Response("---\ndescription: Details.\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await expect(discoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl })).resolves.toMatchObject({
+      skills: [
+        { name: "array", path: "array" },
+        { name: "broken", path: "broken" },
+        { name: "empty", path: "empty" },
+        { name: "unnamed", path: "unnamed", description: "Details." }
       ]
     });
   });
@@ -476,6 +744,66 @@ describe("fetchGithubSkillSource", () => {
     expect(fetched.resolved.githubPath).toBe("fix-github-ci");
   });
 
+  it("resolves a unique nested github path by basename", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "nested/browser/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/nested/browser/SKILL.md") {
+        return new Response("# Browser");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const fetched = await fetchGithubSkillSource({
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "browser",
+      ref: "main",
+      fetchImpl
+    });
+    tempRoots.push(fetched.rootPath);
+
+    await expect(fs.readFile(path.join(fetched.sourcePath, "SKILL.md"), "utf8")).resolves.toBe("# Browser");
+    expect(fetched.resolved.githubPath).toBe("nested/browser");
+  });
+
+  it("keeps ambiguous github path matches unresolved", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(
+          JSON.stringify({
+            tree: [
+              { path: "first/other/SKILL.md", type: "blob" },
+              { path: "first/browser/SKILL.md", type: "blob" },
+              { path: "second/browser/SKILL.md", type: "blob" }
+            ]
+          })
+        );
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await expect(
+      fetchGithubSkillSource({
+        githubUrl: "https://github.com/example/skills",
+        githubPath: "browser",
+        ref: "main",
+        fetchImpl
+      })
+    ).rejects.toThrow("GitHub source does not contain SKILL.md");
+  });
+
   it("resolves common skills.sh repository paths when the registry row names only the skill", async () => {
     const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
@@ -621,6 +949,144 @@ describe("fetchGithubSkillSource", () => {
         fetchImpl
       })
     ).rejects.toThrow("GitHub source does not contain SKILL.md");
+  });
+
+  it("rejects commit lookups without a sha", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({}));
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await expect(
+      fetchGithubSkillSource({
+        githubUrl: "https://github.com/example/skills/tree/main/skills/browser",
+        fetchImpl
+      })
+    ).rejects.toThrow("GitHub commit lookup did not return a commit sha");
+  });
+
+  it("treats malformed github trees as empty", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: null }));
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await expect(
+      fetchGithubSkillSource({
+        githubUrl: "https://github.com/example/skills/tree/main/skills/browser",
+        fetchImpl
+      })
+    ).rejects.toThrow("GitHub source does not contain SKILL.md");
+  });
+
+  it("uses global fetch when no github fetch implementation is provided", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "skills/browser/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/browser/SKILL.md") {
+        return new Response("# Browser");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    const fetched = await fetchGithubSkillSource({
+      githubUrl: "https://github.com/example/skills/tree/main/skills/browser"
+    });
+    tempRoots.push(fetched.rootPath);
+
+    await expect(fs.readFile(path.join(fetched.sourcePath, "SKILL.md"), "utf8")).resolves.toBe("# Browser");
+  });
+
+  it("ignores non-file github tree entries and empty relative paths", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(
+          JSON.stringify({
+            tree: [
+              { path: "skills/browser", type: "tree" },
+              { path: 123, type: "blob" },
+              { path: "skills/browser", type: "blob" },
+              { path: "skills/browser/SKILL.md", type: "blob" }
+            ]
+          })
+        );
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/browser/SKILL.md") {
+        return new Response("# Browser");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const fetched = await fetchGithubSkillSource({
+      githubUrl: "https://github.com/example/skills/tree/main/skills/browser",
+      fetchImpl
+    });
+    tempRoots.push(fetched.rootPath);
+
+    await expect(fs.readFile(path.join(fetched.sourcePath, "SKILL.md"), "utf8")).resolves.toBe("# Browser");
+    expect(fetchImpl).not.toHaveBeenCalledWith(
+      "https://raw.githubusercontent.com/example/skills/commit123/skills/browser",
+      expect.anything()
+    );
+  });
+
+  it("reports rate limits from response bodies and unreadable bodies", async () => {
+    const bodyLimitedFetch = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response("API rate limit exceeded", { status: 403, statusText: "Forbidden" });
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await expect(
+      fetchGithubSkillSource({
+        githubUrl: "https://github.com/example/skills/tree/main/skills/browser",
+        fetchImpl: bodyLimitedFetch
+      })
+    ).rejects.toThrow("GitHub API rate limit exceeded");
+
+    const unreadableResponse = {
+      ok: false,
+      status: 403,
+      statusText: "",
+      headers: new Headers(),
+      clone() {
+        throw new Error("clone failed");
+      }
+    } as unknown as Response;
+    const unreadableFetch = mockFetch(() => unreadableResponse);
+
+    await expect(
+      fetchGithubSkillSource({
+        githubUrl: "https://github.com/example/skills/tree/main/skills/browser",
+        fetchImpl: unreadableFetch
+      })
+    ).rejects.toThrow("GitHub commit lookup failed: 403 HTTP error");
   });
 
   it("rejects invalid github source urls", async () => {
