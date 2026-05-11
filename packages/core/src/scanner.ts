@@ -263,6 +263,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
         if (existingMetadata) {
           if (!existingMetadata.enabled) continue;
+          if (!(await fs.pathExists(existingMetadata.libraryPath))) continue;
           await replaceWithSymlink(targetSkillPath, existingMetadata.libraryPath);
           markEnabled(existingMetadata, targetDir);
           continue;

@@ -279,6 +279,36 @@ describe("scanTargets", () => {
     expect(await fs.realpath(secondSkill)).toBe(await fs.realpath(path.join(library, "kata-health")));
   });
 
+  it("leaves real target folders in place when matching metadata points to a missing library path", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const targetSkill = path.join(target, "example");
+    const missingLibrarySkill = path.join(library, "missing-example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(targetSkill);
+    await fs.writeFile(path.join(targetSkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: missingLibrarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true
+    });
+
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+
+    expect(fileOpsMock.replaceWithSymlink).not.toHaveBeenCalledWith(targetSkill, missingLibrarySkill);
+    expect((await fs.lstat(targetSkill)).isDirectory()).toBe(true);
+    expect((await fs.lstat(targetSkill)).isSymbolicLink()).toBe(false);
+    expect(result.enabled).toEqual([]);
+    expect(result.imported).toEqual([]);
+  });
+
   it("leaves matching real target folders in place when the library skill is disabled", async () => {
     const target = path.join(tmp, "target");
     const library = path.join(tmp, "library");
