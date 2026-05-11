@@ -183,6 +183,83 @@ describe("SkillsShClient", () => {
     expect(fetchImpl).toHaveBeenNthCalledWith(2, "https://skills.sh/api/search?q=agent-browser");
   });
 
+  it("matches public search rows by skill id and name", async () => {
+    const skillIdFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 401, statusText: "Unauthorized" }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            skills: [
+              {
+                id: "example/skills/other",
+                skillId: "agent-browser",
+                name: "Other",
+                source: "https://github.com/example/skills"
+              }
+            ]
+          })
+        )
+      );
+    const nameFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 401, statusText: "Unauthorized" }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            skills: [
+              {
+                id: "example/skills/other",
+                skillId: "other",
+                name: "agent-browser",
+                source: "not/github/source"
+              }
+            ]
+          })
+        )
+      );
+
+    await expect(new SkillsShClient({ fetchImpl: skillIdFetch }).skill("agent-browser")).resolves.toMatchObject({
+      id: "example/skills/other",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "agent-browser"
+    });
+    await expect(new SkillsShClient({ fetchImpl: nameFetch }).skill("agent-browser")).resolves.toMatchObject({
+      id: "example/skills/other",
+      source: "not/github/source"
+    });
+  });
+
+  it("falls back to public search rows without source metadata", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 401, statusText: "Unauthorized" }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            skills: [{ id: "example/skills/agent-browser", skillId: "agent-browser", name: "agent-browser" }]
+          })
+        )
+      );
+    const client = new SkillsShClient({ fetchImpl });
+
+    await expect(client.skill("agent-browser")).resolves.toEqual({
+      id: "example/skills/agent-browser",
+      skillId: "agent-browser",
+      name: "agent-browser"
+    });
+  });
+
+  it("throws not found when public search fallback has no match", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 401, statusText: "Unauthorized" }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ skills: [] })));
+    const client = new SkillsShClient({ fetchImpl });
+
+    await expect(client.skill("missing")).rejects.toThrow("skills.sh request failed: 404 Not Found");
+  });
+
   it("falls back to public search by the last id segment for full registry ids", async () => {
     const fetchImpl = vi
       .fn()

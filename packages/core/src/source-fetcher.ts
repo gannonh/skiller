@@ -7,6 +7,12 @@ export interface GithubRepository {
   repo: string;
 }
 
+interface GithubSourceLocation extends GithubRepository {
+  githubUrl: string;
+  githubPath?: string;
+  ref?: string;
+}
+
 export type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface FetchGithubSkillSourceInput {
@@ -77,6 +83,80 @@ function normalizeGithubPath(githubPath?: string): string {
   return githubPath?.replace(/^\/+|\/+$/g, "") ?? "";
 }
 
+function decodePathSegments(pathname: string): string[] {
+  return pathname
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => decodeURIComponent(segment));
+}
+
+function normalizeRepoName(repo: string): string {
+  return repo.replace(/\.git$/, "");
+}
+
+function pathFromSkillFile(githubPath: string): string {
+  const normalizedPath = normalizeGithubPath(githubPath);
+  if (path.posix.basename(normalizedPath) !== "SKILL.md") return normalizedPath;
+
+  const skillDir = path.posix.dirname(normalizedPath);
+  return skillDir === "." ? "" : skillDir;
+}
+
+function parseGithubSourceUrl(githubUrl: string): GithubSourceLocation | null {
+  let url: URL;
+
+  try {
+    url = new URL(githubUrl);
+  } catch {
+    return null;
+  }
+
+  const segments = decodePathSegments(url.pathname);
+
+  if (url.hostname === "github.com") {
+    if (segments.length < 2) return null;
+
+    const owner = segments[0]!;
+    const repo = normalizeRepoName(segments[1]!);
+    const baseUrl = `https://github.com/${owner}/${repo}`;
+    const kind = segments[2];
+
+    if ((kind === "tree" || kind === "blob") && segments.length >= 4) {
+      const ref = segments[3]!;
+      const githubPath = kind === "blob" ? pathFromSkillFile(segments.slice(4).join("/")) : normalizeGithubPath(segments.slice(4).join("/"));
+
+      return {
+        owner,
+        repo,
+        githubUrl: baseUrl,
+        ref,
+        ...(githubPath ? { githubPath } : {})
+      };
+    }
+
+    return { owner, repo, githubUrl: baseUrl };
+  }
+
+  if (url.hostname === "raw.githubusercontent.com") {
+    if (segments.length < 4) return null;
+
+    const owner = segments[0]!;
+    const repo = normalizeRepoName(segments[1]!);
+    const ref = segments[2]!;
+    const githubPath = pathFromSkillFile(segments.slice(3).join("/"));
+
+    return {
+      owner,
+      repo,
+      githubUrl: `https://github.com/${owner}/${repo}`,
+      ref,
+      ...(githubPath ? { githubPath } : {})
+    };
+  }
+
+  return null;
+}
+
 function entryRelativePath(entryPath: string, githubPath: string): string | null {
   if (!githubPath) return entryPath;
   if (entryPath === githubPath) return "";
@@ -86,6 +166,46 @@ function entryRelativePath(entryPath: string, githubPath: string): string | null
 
 function encodeEntryPath(entryPath: string): string {
   return entryPath.split("/").map(encodeURIComponent).join("/");
+}
+
+function skillMarkdownPath(githubPath: string): string {
+  return githubPath ? `${githubPath}/SKILL.md` : "SKILL.md";
+}
+
+function hasSkillMarkdown(entries: GithubTreeEntry[], githubPath: string): boolean {
+  const expectedPath = skillMarkdownPath(githubPath);
+  return entries.some((entry) => entry.type === "blob" && entry.path === expectedPath);
+}
+
+function basenameForGithubPath(githubPath: string): string {
+  const segments = githubPath.split("/").filter(Boolean);
+  return segments.at(-1) ?? githubPath;
+}
+
+function dedupe(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
+}
+
+function resolveGithubPath(entries: GithubTreeEntry[], githubPath: string): string {
+  if (!githubPath || hasSkillMarkdown(entries, githubPath)) return githubPath;
+
+  const basename = basenameForGithubPath(githubPath);
+  const candidates = dedupe([
+    `skills/${githubPath}`,
+    `skills/.curated/${basename}`,
+    `skills/.system/${basename}`,
+    `skill-data/${basename}`
+  ]);
+  const matchedCandidate = candidates.find((candidate) => hasSkillMarkdown(entries, candidate));
+  if (matchedCandidate) return matchedCandidate;
+
+  const matchingSkillPaths = entries.flatMap((entry) => {
+    if (entry.type !== "blob" || typeof entry.path !== "string" || !entry.path.endsWith("/SKILL.md")) return [];
+    const parentPath = entry.path.slice(0, -"/SKILL.md".length);
+    return basenameForGithubPath(parentPath) === basename ? [parentPath] : [];
+  });
+
+  return matchingSkillPaths.length === 1 ? matchingSkillPaths[0] : githubPath;
 }
 
 async function readJson(fetchImpl: FetchImpl, url: string, context: string): Promise<unknown> {
@@ -98,10 +218,10 @@ async function readJson(fetchImpl: FetchImpl, url: string, context: string): Pro
 }
 
 export function parseGithubRepository(githubUrl: string): GithubRepository | null {
-  const match = githubUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/#?]+?)(?:\.git)?(?:[/#?].*)?$/);
-  if (!match) return null;
+  const source = parseGithubSourceUrl(githubUrl);
+  if (!source) return null;
 
-  return { owner: match[1], repo: match[2] };
+  return { owner: source.owner, repo: source.repo };
 }
 
 export function extractRegistrySkillSource(payload: Record<string, unknown>): RegistrySkillSource {
@@ -148,14 +268,15 @@ function githubPathFromRegistrySource(payload: Record<string, unknown>, source: 
 }
 
 export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput): Promise<FetchedGithubSkillSource> {
-  const repository = parseGithubRepository(input.githubUrl);
-  if (!repository) {
+  const source = parseGithubSourceUrl(input.githubUrl);
+  if (!source) {
     throw new Error("Invalid GitHub repository URL");
   }
 
+  const repository = { owner: source.owner, repo: source.repo };
   const fetchImpl = input.fetchImpl ?? fetch;
-  const ref = input.ref ?? "HEAD";
-  const githubPath = normalizeGithubPath(input.githubPath);
+  const ref = input.ref ?? source.ref ?? "HEAD";
+  const githubPath = normalizeGithubPath(input.githubPath ?? source.githubPath);
   const commitUrl = `https://api.github.com/repos/${repository.owner}/${repository.repo}/commits/${encodeURIComponent(ref)}`;
   const commitPayload = (await readJson(fetchImpl, commitUrl, "GitHub commit lookup")) as GithubCommitPayload;
   if (typeof commitPayload.sha !== "string" || commitPayload.sha.length === 0) {
@@ -168,12 +289,13 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
   )}?recursive=1`;
   const treePayload = (await readJson(fetchImpl, treeUrl, "GitHub tree lookup")) as GithubTreePayload;
   const entries = Array.isArray(treePayload.tree) ? (treePayload.tree as GithubTreeEntry[]) : [];
+  const resolvedGithubPath = resolveGithubPath(entries, githubPath);
   const blobs: GithubBlob[] = [];
 
   for (const entry of entries) {
     if (entry.type !== "blob" || typeof entry.path !== "string") continue;
 
-    const relativePath = entryRelativePath(entry.path, githubPath);
+    const relativePath = entryRelativePath(entry.path, resolvedGithubPath);
     if (relativePath === null) continue;
 
     blobs.push({
@@ -218,8 +340,8 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
       rootPath,
       sourcePath,
       resolved: {
-        githubUrl: input.githubUrl,
-        ...(githubPath ? { githubPath } : {}),
+        githubUrl: source.githubUrl,
+        ...(resolvedGithubPath ? { githubPath: resolvedGithubPath } : {}),
         ref,
         commit
       }

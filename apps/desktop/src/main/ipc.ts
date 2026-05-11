@@ -62,7 +62,10 @@ async function scanTargetsForConfig(config: SkillerConfig, targets: TargetConfig
 export function registerIpcHandlers(): void {
   ipcMain.handle("library:list", async () => {
     const config = await loadConfig();
-    return new MetadataStore(expandHome(config.libraryPath)).list();
+    const store = new MetadataStore(expandHome(config.libraryPath));
+
+    await store.pruneMissing();
+    return store.list();
   });
 
   ipcMain.handle("library:set-enabled", async (_event, skillId: string, enabled: boolean) => {
@@ -71,6 +74,18 @@ export function registerIpcHandlers(): void {
     const store = new MetadataStore(libraryPath);
 
     await store.setEnabled(skillId, enabled);
+    await scanConfig(config);
+    return store.list();
+  });
+
+  ipcMain.handle("library:delete", async (_event, skillId: string) => {
+    const config = await loadConfig();
+    const libraryPath = expandHome(config.libraryPath);
+    const store = new MetadataStore(libraryPath);
+
+    await store.setEnabled(skillId, false);
+    await scanConfig(config);
+    await store.delete(skillId);
     await scanConfig(config);
     return store.list();
   });

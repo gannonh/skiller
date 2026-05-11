@@ -61,6 +61,7 @@ export type RemoveListener = () => void;
 export interface SkillerApi {
   listLibrary: () => Promise<SkillMetadata[]>;
   setSkillEnabled: (skillId: string, enabled: boolean) => Promise<SkillMetadata[]>;
+  deleteSkill: (skillId: string) => Promise<SkillMetadata[]>;
   scanTargets: () => Promise<ScanTargetsResult>;
   saveTargets: (targets: TargetConfig[]) => Promise<SkillerConfig>;
   getConfig: () => Promise<SkillerConfig>;
@@ -151,6 +152,11 @@ function createBrowserPreviewApi(): SkillerApi {
     setSkillEnabled: async (skillId, enabled) => {
       const skill = fallbackSkills.find((candidate) => candidate.id === skillId);
       if (skill) skill.enabled = enabled;
+      return fallbackSkills;
+    },
+    deleteSkill: async (skillId) => {
+      const index = fallbackSkills.findIndex((candidate) => candidate.id === skillId);
+      if (index !== -1) fallbackSkills.splice(index, 1);
       return fallbackSkills;
     },
     scanTargets: async () => ({ imported: [], enabled: [], disabled: [], errors: [] }),

@@ -218,6 +218,56 @@ describe("MetadataStore", () => {
     expect(await store.list()).toEqual([{ ...metadata, enabled: false }, otherMetadata]);
   });
 
+  it("prunes manifest records whose library path is missing", async () => {
+    const libraryPath = await makeTempDir();
+    const existingPath = path.join(libraryPath, "existing-skill");
+    const missingPath = path.join(libraryPath, "missing-skill");
+    const existingMetadata = { ...metadataFor(existingPath), id: "existing-skill", name: "Existing Skill" };
+    const missingMetadata = { ...metadataFor(missingPath), id: "missing-skill", name: "Missing Skill" };
+    const store = new MetadataStore(libraryPath);
+
+    await fs.ensureDir(existingPath);
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skills: [existingMetadata, missingMetadata]
+    });
+
+    await expect(store.pruneMissing()).resolves.toEqual([missingMetadata]);
+    await expect(store.list()).resolves.toEqual([existingMetadata]);
+    await expect(fs.readJson(path.join(libraryPath, "skiller.manifest.json"))).resolves.toEqual({
+      version: 1,
+      skills: [existingMetadata]
+    });
+  });
+
+  it("deletes a manifest record and its library folder", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const otherSkillPath = path.join(libraryPath, "other-skill");
+    const store = new MetadataStore(libraryPath);
+    const metadata = metadataFor(skillPath);
+    const otherMetadata = { ...metadataFor(otherSkillPath), id: "other-skill", name: "Other Skill" };
+
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "example");
+    await fs.ensureDir(otherSkillPath);
+    await fs.writeFile(path.join(otherSkillPath, "SKILL.md"), "other");
+    await store.save(metadata);
+    await store.save(otherMetadata);
+
+    await expect(store.delete("example-skill")).resolves.toEqual(metadata);
+    await expect(fs.pathExists(skillPath)).resolves.toBe(false);
+    await expect(fs.pathExists(otherSkillPath)).resolves.toBe(true);
+    await expect(store.list()).resolves.toEqual([otherMetadata]);
+  });
+
+  it("rejects deleting an unknown skill", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.delete("missing")).rejects.toThrow("Skill not found: missing");
+  });
+
   it("rejects enabling an unknown skill", async () => {
     const libraryPath = await makeTempDir();
     const store = new MetadataStore(libraryPath);

@@ -138,17 +138,23 @@ describe("installLocalSkill", () => {
   it("falls back to source basename when frontmatter is absent or has a non-string name", async () => {
     const noFrontmatter = path.join(tmp, "no-frontmatter");
     const nonStringName = path.join(tmp, "non-string-name");
+    const arrayFrontmatter = path.join(tmp, "array-frontmatter");
     const library = path.join(tmp, "library");
     await fs.ensureDir(noFrontmatter);
     await fs.ensureDir(nonStringName);
+    await fs.ensureDir(arrayFrontmatter);
     await fs.writeFile(path.join(noFrontmatter, "SKILL.md"), "Plain markdown");
     await fs.writeFile(path.join(nonStringName, "SKILL.md"), "---\nname: 123\ndescription: Local.\n---\n");
+    await fs.writeFile(path.join(arrayFrontmatter, "SKILL.md"), "---\n- one\n---\n");
 
     await expect(installLocalSkill({ sourcePath: noFrontmatter, libraryPath: library })).resolves.toMatchObject({
       id: "no-frontmatter"
     });
     await expect(installLocalSkill({ sourcePath: nonStringName, libraryPath: library })).resolves.toMatchObject({
       id: "non-string-name"
+    });
+    await expect(installLocalSkill({ sourcePath: arrayFrontmatter, libraryPath: library })).resolves.toMatchObject({
+      id: "array-frontmatter"
     });
   });
 

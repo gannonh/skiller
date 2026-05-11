@@ -97,6 +97,16 @@ function normalizeMetadata(metadata: SkillMetadata): SkillMetadata {
   };
 }
 
+async function assertMetadataPathInsideLibrary(libraryPath: string, metadataPath: string): Promise<void> {
+  const libraryRoot = await fs.realpath(libraryPath);
+  const resolvedMetadataPath = path.resolve(metadataPath);
+  const effectiveMetadataPath = await resolveEffectivePath(resolvedMetadataPath);
+
+  if (!isPathInside(libraryRoot, effectiveMetadataPath)) {
+    throw new Error("Metadata path must be inside the configured library");
+  }
+}
+
 export class MetadataStore {
   constructor(private readonly libraryPath: string) {}
 
@@ -202,13 +212,7 @@ export class MetadataStore {
   async save(metadata: SkillMetadata): Promise<void> {
     await fs.ensureDir(this.libraryPath);
 
-    const libraryRoot = await fs.realpath(this.libraryPath);
-    const metadataPath = path.resolve(metadata.libraryPath);
-    const effectiveMetadataPath = await resolveEffectivePath(metadataPath);
-
-    if (!isPathInside(libraryRoot, effectiveMetadataPath)) {
-      throw new Error("Metadata path must be inside the configured library");
-    }
+    await assertMetadataPathInsideLibrary(this.libraryPath, metadata.libraryPath);
 
     await this.withWriteLock(async () => {
       const currentSkills = await this.list();
@@ -234,6 +238,46 @@ export class MetadataStore {
       const updated = { ...currentSkills[existingIndex], enabled };
       await this.writeManifest(currentSkills.map((skill, index) => (index === existingIndex ? updated : skill)));
       return updated;
+    });
+  }
+
+  async pruneMissing(): Promise<SkillMetadata[]> {
+    return this.withWriteLock(async () => {
+      const currentSkills = await this.list();
+      const existingSkills: SkillMetadata[] = [];
+      const missingSkills: SkillMetadata[] = [];
+
+      for (const skill of currentSkills) {
+        if (await fs.pathExists(skill.libraryPath)) {
+          existingSkills.push(skill);
+        } else {
+          missingSkills.push(skill);
+        }
+      }
+
+      if (missingSkills.length > 0) {
+        await this.writeManifest(existingSkills);
+      }
+
+      return missingSkills;
+    });
+  }
+
+  async delete(skillId: string): Promise<SkillMetadata> {
+    await fs.ensureDir(this.libraryPath);
+
+    return this.withWriteLock(async () => {
+      const currentSkills = await this.list();
+      const existing = currentSkills.find((skill) => skill.id === skillId);
+
+      if (!existing) {
+        throw new Error(`Skill not found: ${skillId}`);
+      }
+
+      await assertMetadataPathInsideLibrary(this.libraryPath, existing.libraryPath);
+      await fs.remove(existing.libraryPath);
+      await this.writeManifest(currentSkills.filter((skill) => skill.id !== skillId));
+      return existing;
     });
   }
 }

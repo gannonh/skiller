@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Delete02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
@@ -36,8 +38,6 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [isLoading, setIsLoading] = useState(true);
   const [pendingSkillIds, setPendingSkillIds] = useState<Set<string>>(() => new Set());
   const [githubUrl, setGithubUrl] = useState("");
-  const [githubPath, setGithubPath] = useState("");
-  const [githubRef, setGithubRef] = useState("");
   const [isInstalling, setIsInstalling] = useState(false);
 
   useEffect(() => {
@@ -89,13 +89,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setError(null);
     try {
       await skillerApi.installGithub({
-        githubUrl: githubUrl.trim(),
-        ...(githubPath.trim() ? { githubPath: githubPath.trim() } : {}),
-        ...(githubRef.trim() ? { ref: githubRef.trim() } : {})
+        githubUrl: githubUrl.trim()
       });
       setGithubUrl("");
-      setGithubPath("");
-      setGithubRef("");
       await refreshLibrary();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -109,6 +105,23 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setError(null);
     try {
       const updatedSkills = await skillerApi.setSkillEnabled(skillId, enabled);
+      setSkills(updatedSkills);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPendingSkillIds((current) => {
+        const next = new Set(current);
+        next.delete(skillId);
+        return next;
+      });
+    }
+  }
+
+  async function deleteSkill(skillId: string) {
+    setPendingSkillIds((current) => new Set(current).add(skillId));
+    setError(null);
+    try {
+      const updatedSkills = await skillerApi.deleteSkill(skillId);
       setSkills(updatedSkills);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -148,24 +161,12 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
             Browse registry
           </Button>
         </div>
-        <form className="grid gap-2 md:grid-cols-[minmax(16rem,1fr)_12rem_10rem_auto]" onSubmit={installGithub}>
+        <form className="grid gap-2 md:grid-cols-[minmax(16rem,1fr)_auto]" onSubmit={installGithub}>
           <Input
             value={githubUrl}
             onChange={(event) => setGithubUrl(event.target.value)}
             aria-label="GitHub URL"
-            placeholder="GitHub URL"
-          />
-          <Input
-            value={githubPath}
-            onChange={(event) => setGithubPath(event.target.value)}
-            aria-label="Path"
-            placeholder="Path"
-          />
-          <Input
-            value={githubRef}
-            onChange={(event) => setGithubRef(event.target.value)}
-            aria-label="Ref"
-            placeholder="Ref"
+            placeholder="GitHub repo, skill folder, or SKILL.md URL"
           />
           <Button type="submit" disabled={isInstalling || githubUrl.trim() === ""}>
             Add from GitHub
@@ -185,6 +186,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                 <TableHead>Status</TableHead>
                 <TableHead>Updates</TableHead>
                 <TableHead>Enabled</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -217,11 +219,22 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name || skill.id}`}
                     />
                   </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      disabled={pendingSkillIds.has(skill.id)}
+                      aria-label={`Delete ${skill.name || skill.id}`}
+                      onClick={() => void deleteSkill(skill.id)}
+                    >
+                      <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
               {skills.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">
+                  <TableCell colSpan={6} className="text-muted-foreground">
                     No skills installed.
                   </TableCell>
                 </TableRow>

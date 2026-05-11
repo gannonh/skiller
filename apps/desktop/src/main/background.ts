@@ -1,10 +1,18 @@
-import { createUpdateInterval, expandHome, loadConfig, scanTargets, watchTargetDirectories } from "@skiller/core";
+import {
+  MetadataStore,
+  createUpdateInterval,
+  expandHome,
+  loadConfig,
+  scanTargets,
+  watchTargetDirectories
+} from "@skiller/core";
 import type { BrowserWindow } from "electron";
 import { checkDesktopUpdates } from "./update-check.js";
 
 interface BackgroundJobDependencies {
   loadConfig: typeof loadConfig;
   expandHome: typeof expandHome;
+  metadataStore: typeof MetadataStore;
   scanTargets: typeof scanTargets;
   watchTargetDirectories: typeof watchTargetDirectories;
   createUpdateInterval: typeof createUpdateInterval;
@@ -14,6 +22,7 @@ interface BackgroundJobDependencies {
 const defaultDependencies: BackgroundJobDependencies = {
   loadConfig,
   expandHome,
+  metadataStore: MetadataStore,
   scanTargets,
   watchTargetDirectories,
   createUpdateInterval,
@@ -33,12 +42,14 @@ export async function startBackgroundJobs(
   const runScan = () => {
     void deps
       .loadConfig()
-      .then((scanConfig) =>
-        deps.scanTargets({
-          libraryPath: deps.expandHome(scanConfig.libraryPath),
+      .then(async (scanConfig) => {
+        const libraryPath = deps.expandHome(scanConfig.libraryPath);
+        await new deps.metadataStore(libraryPath).pruneMissing();
+        return deps.scanTargets({
+          libraryPath,
           targets: scanConfig.targets.map((target) => ({ ...target, path: deps.expandHome(target.path) }))
-        })
-      )
+        });
+      })
       .catch((error: unknown) => {
         console.error("Background scan failed", error);
         window.webContents.send("background:scan-error", {

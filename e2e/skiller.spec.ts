@@ -9,6 +9,15 @@ test("renders the library from the browser preview API", async ({ page }) => {
   await expect(page.getByRole("columnheader", { name: "Enabled" })).toBeVisible();
 });
 
+test("deletes a library skill from the browser preview API", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("row", { name: /example-skill/ }).getByRole("button", { name: "Delete example-skill" }).click();
+
+  await expect(page.getByText("0 master skills")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "example-skill", exact: true })).toHaveCount(0);
+});
+
 test("shows configured target directories and refreshes scans", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Targets" }).click();
@@ -62,6 +71,17 @@ test("shows provenance in the library and navigates to discover", async ({ page 
 
   await page.getByRole("button", { name: "Browse registry" }).click();
   await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
+});
+
+test("installs a GitHub skill from one URL field in preview mode", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByPlaceholder("Path")).toHaveCount(0);
+  await expect(page.getByPlaceholder("Ref")).toHaveCount(0);
+  await page.getByLabel("GitHub URL").fill("https://github.com/gannonh/skills/tree/main/fix-github-ci");
+  await page.getByRole("button", { name: "Add from GitHub" }).click();
+
+  await expect(page.getByRole("cell", { name: "github-preview", exact: true })).toBeVisible();
 });
 
 test("installs a registry result from Discover preview mode", async ({ page }) => {

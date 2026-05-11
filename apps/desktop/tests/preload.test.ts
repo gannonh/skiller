@@ -12,5 +12,6 @@ describe("desktop preload", () => {
     expect(preloadSource).toContain("installLocal");
     expect(preloadSource).toContain("installGithub");
     expect(preloadSource).toContain("installRegistry");
+    expect(preloadSource).toContain("deleteSkill");
   });
 });

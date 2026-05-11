@@ -5,6 +5,7 @@ type ScanError = { message: string };
 contextBridge.exposeInMainWorld("skiller", {
   listLibrary: () => ipcRenderer.invoke("library:list"),
   setSkillEnabled: (skillId: string, enabled: boolean) => ipcRenderer.invoke("library:set-enabled", skillId, enabled),
+  deleteSkill: (skillId: string) => ipcRenderer.invoke("library:delete", skillId),
   scanTargets: () => ipcRenderer.invoke("targets:scan"),
   saveTargets: (targets: Array<{ path: string; enabled: boolean }>) => ipcRenderer.invoke("targets:save", targets),
   getConfig: () => ipcRenderer.invoke("config:get"),

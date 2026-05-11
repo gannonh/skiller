@@ -11,6 +11,10 @@ const config: SkillerConfig = {
   trayEnabled: true
 };
 
+function metadataStoreMock() {
+  return vi.fn(() => ({ pruneMissing: vi.fn(async () => []) })) as never;
+}
+
 describe("background jobs", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -33,6 +37,7 @@ describe("background jobs", () => {
     const jobs = await startBackgroundJobs(window, {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
       scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
       watchTargetDirectories: vi.fn(() => ({ close }) as never),
       createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
@@ -66,6 +71,7 @@ describe("background jobs", () => {
     const jobs = await startBackgroundJobs(window, {
       loadConfig,
       expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
       scanTargets,
       watchTargetDirectories: vi.fn((_config, callback) => {
         onChange = callback;
@@ -92,6 +98,30 @@ describe("background jobs", () => {
     jobs.forEach((job) => job.stop());
   });
 
+  it("prunes missing library records before startup scans", async () => {
+    const pruneMissing = vi.fn(async () => []);
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const close = vi.fn();
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: vi.fn(() => ({ pruneMissing })) as never,
+      scanTargets,
+      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    await vi.waitFor(() => expect(scanTargets).toHaveBeenCalledTimes(1));
+    expect(pruneMissing).toHaveBeenCalledTimes(1);
+    expect(pruneMissing.mock.invocationCallOrder[0]).toBeLessThan(scanTargets.mock.invocationCallOrder[0]);
+
+    jobs.forEach((job) => job.stop());
+  });
+
   it("sends scan and update errors to the renderer", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const close = vi.fn();
@@ -102,6 +132,7 @@ describe("background jobs", () => {
     const jobs = await startBackgroundJobs(window, {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
       scanTargets: vi.fn(async () => {
         throw new Error("scan failed");
       }),
@@ -139,6 +170,7 @@ describe("background jobs", () => {
     const jobs = await startBackgroundJobs(window, {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
       scanTargets: vi.fn(async () => {
         throw "scan failed";
       }),
