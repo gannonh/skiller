@@ -106,10 +106,83 @@ const fallbackSkills: SkillMetadata[] = [
 ];
 
 const fallbackDiscoverSkills: DiscoverSkill[] = [
-  { id: "agent-browser", name: "agent-browser", description: "Browser automation CLI for agent workflows" },
-  { id: "find-skills", name: "find-skills", description: "Discover and install agent skills" },
-  { id: "frontend-design", name: "frontend-design", description: "Frontend design guidance for agents" },
-  { id: "browser-use", name: "browser-use", description: "Automate browser-based QA flows" }
+  {
+    id: "agent-browser",
+    name: "agent-browser",
+    description: "Browser automation CLI for agent workflows",
+    source: "vercel-labs/agent-browser",
+    installs: 259000
+  },
+  {
+    id: "find-skills",
+    name: "find-skills",
+    description: "Discover and install agent skills",
+    source: "vercel-labs/skills",
+    installs: 1500000
+  },
+  {
+    id: "frontend-design",
+    name: "frontend-design",
+    description: "Frontend design guidance for agents",
+    source: "anthropics/skills",
+    installs: 394900
+  },
+  {
+    id: "browser-use",
+    name: "browser-use",
+    description: "Automate browser-based QA flows",
+    source: "browser-use/browser-use",
+    installs: 88000
+  },
+  {
+    id: "github-ci",
+    name: "github-ci",
+    description: "Fix GitHub Actions failures",
+    source: "gannonh/skills",
+    installs: 42000
+  },
+  {
+    id: "user-acceptance",
+    name: "user-acceptance",
+    description: "Collect UAT evidence for finished work",
+    source: "gannonh/skills",
+    installs: 31000
+  },
+  {
+    id: "linear",
+    name: "linear",
+    description: "Manage Linear issues from agents",
+    source: "gannonh/skills",
+    installs: 29000
+  },
+  {
+    id: "printing-press",
+    name: "printing-press",
+    description: "Generate API CLIs",
+    source: "gannonh/skills",
+    installs: 26000
+  },
+  {
+    id: "pull-requests",
+    name: "pull-requests",
+    description: "Work through pull request flows",
+    source: "gannonh/skills",
+    installs: 24000
+  },
+  {
+    id: "kata-health",
+    name: "kata-health",
+    description: "Check Kata project health",
+    source: "gannonh/skills",
+    installs: 18000
+  },
+  {
+    id: "visual-explainer",
+    name: "visual-explainer",
+    description: "Generate visual technical explainers",
+    source: "gannonh/skills",
+    installs: 12000
+  }
 ];
 
 function createBrowserPreviewApi(): SkillerApi {

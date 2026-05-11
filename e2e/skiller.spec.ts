@@ -81,7 +81,16 @@ test("searches discover results", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();
 
-  await expect(page.getByText("trending leaderboard")).toBeVisible();
+  await expect(page.getByText("Skills Leaderboard")).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "#" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Installs" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /agent-browser vercel-labs\/agent-browser 259K/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /kata-health gannonh\/skills/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load more skills" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Load more skills" }).click();
+  await expect(page.getByRole("row", { name: /visual-explainer gannonh\/skills/ })).toBeVisible();
+
   await page.getByPlaceholder("Search skills").fill("browser");
   await page.getByRole("button", { name: "Search" }).click();
 
