@@ -1,6 +1,12 @@
 {
   "name": "@skiller/desktop",
   "version": "0.1.0",
+  "description": "Desktop skill manager for agent skills",
+  "author": {
+    "name": "Gannon Hall",
+    "email": "gannonhall@gmail.com"
+  },
+  "homepage": "https://github.com/gannonh/skiller",
   "private": true,
   "type": "module",
   "main": "dist/main/main.js",
@@ -8,6 +14,9 @@
     "dev": "pnpm run build && sh -c 'pnpm run dev:renderer & VITE_PID=$!; trap \"kill -TERM -$VITE_PID 2>/dev/null || true\" EXIT INT TERM; until curl -fsS http://127.0.0.1:5173 >/dev/null 2>&1; do sleep 0.2; done; VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .'",
     "dev:renderer": "vite --host 127.0.0.1",
     "build": "tsc -b ../../packages/core tsconfig.json --force && vite build",
+    "desktop:pack": "pnpm run build && electron-builder --config electron-builder.yml --dir",
+    "desktop:dist": "pnpm run build && electron-builder --config electron-builder.yml",
+    "desktop:dist:mac": "pnpm run build && electron-builder --config electron-builder.yml --mac dmg zip",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
@@ -18,7 +27,6 @@
     "@skiller/core": "workspace:*",
     "@vitejs/plugin-react": "^4.3.0",
     "@workspace/ui": "workspace:^",
-    "electron": "^35.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "vite": "^6.0.0"
@@ -27,6 +35,8 @@
     "@tailwindcss/vite": "^4.1.18",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.8.1",
     "tailwindcss": "^4.1.18"
   }
 }
