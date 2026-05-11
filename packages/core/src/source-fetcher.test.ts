@@ -57,6 +57,62 @@ describe("extractRegistrySkillSource", () => {
       ref: "main"
     });
   });
+
+  it("extracts github source fields from name/repoUrl/skillPath/tag aliases", () => {
+    expect(
+      extractRegistrySkillSource({
+        name: "agent-browser",
+        repoUrl: "https://github.com/example/skills",
+        skillPath: "skills/agent-browser",
+        tag: "v1.0.0"
+      })
+    ).toEqual({
+      skillsShId: "agent-browser",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "skills/agent-browser",
+      ref: "v1.0.0"
+    });
+  });
+
+  it("extracts github source fields from snake-case and directory aliases", () => {
+    expect(
+      extractRegistrySkillSource({
+        id: "agent-browser",
+        github_url: "https://github.com/example/skills",
+        github_path: "skills/agent-browser",
+        ref: "main"
+      })
+    ).toEqual({
+      skillsShId: "agent-browser",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "skills/agent-browser",
+      ref: "main"
+    });
+
+    expect(
+      extractRegistrySkillSource({
+        id: "agent-browser",
+        sourceUrl: "https://github.com/example/skills",
+        directory: "skills/agent-browser"
+      })
+    ).toEqual({
+      skillsShId: "agent-browser",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "skills/agent-browser"
+    });
+  });
+
+  it("rejects payloads without an id", () => {
+    expect(() => extractRegistrySkillSource({ githubUrl: "https://github.com/example/skills" })).toThrow(
+      "skills.sh payload is missing an id"
+    );
+  });
+
+  it("rejects payloads without a github url", () => {
+    expect(() => extractRegistrySkillSource({ id: "agent-browser" })).toThrow(
+      "skills.sh payload is missing a GitHub URL"
+    );
+  });
 });
 
 describe("fetchGithubSkillSource", () => {
@@ -100,7 +156,7 @@ describe("fetchGithubSkillSource", () => {
     await expect(fs.readFile(`${fetched.sourcePath}/SKILL.md`, "utf8")).resolves.toBe("# Agent Browser");
     await expect(fs.readFile(`${fetched.sourcePath}/assets/icon.txt`, "utf8")).resolves.toBe("icon");
     await expect(fs.pathExists(`${fetched.sourcePath}/../other/SKILL.md`)).resolves.toBe(false);
-    expect(fetched).toMatchObject({
+    expect(fetched.resolved).toEqual({
       githubUrl: "https://github.com/example/skills.git",
       githubPath: "skills/agent-browser",
       ref: "main",

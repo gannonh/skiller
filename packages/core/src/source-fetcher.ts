@@ -13,21 +13,23 @@ export interface FetchGithubSkillSourceInput {
   githubUrl: string;
   githubPath?: string;
   ref?: string;
-  fetchImpl?: FetchImpl;
+  fetchImpl?: typeof fetch;
 }
 
 export interface FetchedGithubSkillSource {
   rootPath: string;
   sourcePath: string;
-  githubUrl: string;
-  githubPath?: string;
-  ref: string;
-  commit: string;
+  resolved: {
+    githubUrl: string;
+    githubPath?: string;
+    ref: string;
+    commit: string;
+  };
 }
 
 export interface RegistrySkillSource {
-  skillsShId?: string;
-  githubUrl?: string;
+  skillsShId: string;
+  githubUrl: string;
   githubPath?: string;
   ref?: string;
 }
@@ -53,6 +55,15 @@ const githubHeaders = {
 function stringField(payload: Record<string, unknown>, key: string): string | undefined {
   const value = payload[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function firstStringField(payload: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = stringField(payload, key);
+    if (value) return value;
+  }
+
+  return undefined;
 }
 
 function normalizeGithubPath(githubPath?: string): string {
@@ -83,19 +94,24 @@ export function parseGithubRepository(githubUrl: string): GithubRepository | nul
 }
 
 export function extractRegistrySkillSource(payload: Record<string, unknown>): RegistrySkillSource {
+  const skillsShId = firstStringField(payload, ["id", "slug", "name"]);
+  if (!skillsShId) {
+    throw new Error("skills.sh payload is missing an id");
+  }
+
+  const githubUrl = firstStringField(payload, ["githubUrl", "github_url", "repositoryUrl", "repoUrl", "sourceUrl"]);
+  if (!githubUrl) {
+    throw new Error("skills.sh payload is missing a GitHub URL");
+  }
+
+  const githubPath = firstStringField(payload, ["githubPath", "github_path", "path", "skillPath", "directory"]);
+  const ref = firstStringField(payload, ["ref", "branch", "tag"]);
+
   return {
-    ...(stringField(payload, "id") ?? stringField(payload, "slug")
-      ? { skillsShId: stringField(payload, "id") ?? stringField(payload, "slug") }
-      : {}),
-    ...(stringField(payload, "githubUrl") ?? stringField(payload, "repositoryUrl")
-      ? { githubUrl: stringField(payload, "githubUrl") ?? stringField(payload, "repositoryUrl") }
-      : {}),
-    ...(stringField(payload, "githubPath") ?? stringField(payload, "path")
-      ? { githubPath: stringField(payload, "githubPath") ?? stringField(payload, "path") }
-      : {}),
-    ...(stringField(payload, "ref") ?? stringField(payload, "branch")
-      ? { ref: stringField(payload, "ref") ?? stringField(payload, "branch") }
-      : {})
+    skillsShId,
+    githubUrl,
+    ...(githubPath ? { githubPath } : {}),
+    ...(ref ? { ref } : {})
   };
 }
 
@@ -155,10 +171,12 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
     return {
       rootPath,
       sourcePath,
-      githubUrl: input.githubUrl,
-      ...(githubPath ? { githubPath } : {}),
-      ref,
-      commit
+      resolved: {
+        githubUrl: input.githubUrl,
+        ...(githubPath ? { githubPath } : {}),
+        ref,
+        commit
+      }
     };
   } catch (error) {
     await fs.remove(rootPath);
