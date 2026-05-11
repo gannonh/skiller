@@ -149,9 +149,24 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
           </Button>
         </div>
         <form className="grid gap-2 md:grid-cols-[minmax(16rem,1fr)_12rem_10rem_auto]" onSubmit={installGithub}>
-          <Input value={githubUrl} onChange={(event) => setGithubUrl(event.target.value)} aria-label="GitHub URL" />
-          <Input value={githubPath} onChange={(event) => setGithubPath(event.target.value)} aria-label="Path" />
-          <Input value={githubRef} onChange={(event) => setGithubRef(event.target.value)} aria-label="Ref" />
+          <Input
+            value={githubUrl}
+            onChange={(event) => setGithubUrl(event.target.value)}
+            aria-label="GitHub URL"
+            placeholder="GitHub URL"
+          />
+          <Input
+            value={githubPath}
+            onChange={(event) => setGithubPath(event.target.value)}
+            aria-label="Path"
+            placeholder="Path"
+          />
+          <Input
+            value={githubRef}
+            onChange={(event) => setGithubRef(event.target.value)}
+            aria-label="Ref"
+            placeholder="Ref"
+          />
           <Button type="submit" disabled={isInstalling || githubUrl.trim() === ""}>
             Add from GitHub
           </Button>
