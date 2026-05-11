@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("skiller", {
   saveConfig: (config: { libraryPath?: string; keepAllSkillsUpdated?: boolean; targets?: Array<{ path: string; enabled: boolean }> }) =>
     ipcRenderer.invoke("config:save", config),
   checkUpdates: () => ipcRenderer.invoke("updates:check"),
+  updateSkill: (skillId: string) => ipcRenderer.invoke("updates:apply", skillId),
   installLocal: () => ipcRenderer.invoke("library:install-local"),
   installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => ipcRenderer.invoke("library:install-github", input),
   discoverGithub: (githubUrl: string) => ipcRenderer.invoke("library:discover-github", githubUrl),

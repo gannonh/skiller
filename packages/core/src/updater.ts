@@ -1,4 +1,5 @@
 import { MetadataStore } from "./metadata-store.js";
+import { githubFailureDetail, githubRequestHeaders } from "./github-api.js";
 import type { SkillMetadata, SkillSource, SkillerConfig } from "./types.js";
 
 export interface UpdateCheckSkill {
@@ -83,16 +84,13 @@ export async function resolveGithubRemoteCommit(source: SkillSource): Promise<st
   const response = await fetch(
     `https://api.github.com/repos/${repository.owner}/${repository.repo}/commits/${encodeURIComponent(source.ref)}`,
     {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "skiller"
-      },
+      headers: await githubRequestHeaders(),
       signal: controller.signal
     }
   ).finally(() => clearTimeout(timer));
 
   if (!response.ok) {
-    throw new Error(`GitHub update check failed: ${response.status} ${response.statusText}`);
+    throw new Error(`GitHub update check failed: ${await githubFailureDetail(response)}`);
   }
 
   const payload = (await response.json()) as { sha?: unknown };

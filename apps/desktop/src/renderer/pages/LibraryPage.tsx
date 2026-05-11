@@ -20,25 +20,20 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import { skillerApi, type SkillMetadata } from "../lib/api.js";
-import { isUpdateable, sourceDetail, sourceLabel } from "../lib/skill-source.js";
+import { sourceDetail, sourceLabel } from "../lib/skill-source.js";
 import type { DiscoveredGithubSkill } from "@skiller/core";
 
-type SortColumn = "name" | "source" | "status" | "updates" | "enabled" | "actions";
+type SortColumn = "name" | "source" | "status" | "enabled" | "actions";
 type SortDirection = "asc" | "desc";
 
 function statusLabel(skill: SkillMetadata): string {
   return skill.validation?.valid ? "valid" : "invalid";
 }
 
-function updatesLabel(skill: SkillMetadata): string {
-  return isUpdateable(skill) ? "updateable" : "manual";
-}
-
 function sortValue(skill: SkillMetadata, column: SortColumn): string {
   if (column === "name") return skill.name || skill.id;
   if (column === "source") return `${sourceLabel(skill)} ${sourceDetail(skill)}`;
   if (column === "status") return statusLabel(skill);
-  if (column === "updates") return updatesLabel(skill);
   if (column === "enabled") return skill.enabled ? "enabled" : "disabled";
   return `${skill.name || skill.id} ${skill.id}`;
 }
@@ -297,7 +292,6 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                 <SortableTableHead column="name">Name</SortableTableHead>
                 <SortableTableHead column="source">Source</SortableTableHead>
                 <SortableTableHead column="status">Status</SortableTableHead>
-                <SortableTableHead column="updates">Updates</SortableTableHead>
                 <SortableTableHead column="enabled">Enabled</SortableTableHead>
                 <SortableTableHead column="actions">Actions</SortableTableHead>
               </TableRow>
@@ -318,11 +312,6 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                     ) : (
                       <Badge variant="destructive">{statusLabel(skill)}</Badge>
                     )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={isUpdateable(skill) ? "outline" : "secondary"}>
-                      {updatesLabel(skill)}
-                    </Badge>
                   </TableCell>
                   <TableCell>
                     <Switch
@@ -347,7 +336,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
               ))}
               {sortedSkills.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground">
+                  <TableCell colSpan={5} className="text-muted-foreground">
                     No skills installed.
                   </TableCell>
                 </TableRow>

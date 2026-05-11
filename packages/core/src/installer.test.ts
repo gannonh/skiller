@@ -2,7 +2,7 @@ import fs from "fs-extra";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installGithubSkill, installLocalSkill, installSkillsShSkill } from "./installer.js";
+import { installGithubSkill, installLocalSkill, installSkillsShSkill, updateInstalledSkill } from "./installer.js";
 
 let tmp: string;
 
@@ -494,6 +494,208 @@ describe("remote installers", () => {
       githubUrl: "https://github.com/example/skills",
       ref: "HEAD",
       commit: "abc123"
+    });
+  });
+});
+
+describe("updateInstalledSkill", () => {
+  it("replaces a GitHub skill in place and updates its provenance", async () => {
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(path.join(library, "browser"));
+    await fs.writeFile(path.join(library, "browser", "SKILL.md"), "---\nname: browser\ndescription: Old.\n---\n");
+    await fs.writeJson(path.join(library, "skiller.manifest.json"), {
+      version: 1,
+      skills: [
+        {
+          id: "browser",
+          name: "browser",
+          description: "Old.",
+          libraryPath: path.join(library, "browser"),
+          source: {
+            type: "github",
+            githubUrl: "https://github.com/example/skills",
+            githubPath: "skills/browser",
+            ref: "main",
+            commit: "abc123"
+          },
+          installedAt: "2026-05-09T00:00:00.000Z",
+          keepUpdated: true,
+          enabled: false,
+          validation: { valid: true, issues: [] }
+        }
+      ]
+    });
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "def456" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/def456?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "skills/browser/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/def456/skills/browser/SKILL.md") {
+        return new Response("---\nname: browser\ndescription: New.\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const metadata = await updateInstalledSkill({
+      skillId: "browser",
+      libraryPath: library,
+      fetchImpl
+    });
+
+    expect(metadata).toMatchObject({
+      id: "browser",
+      name: "browser",
+      description: "New.",
+      source: {
+        type: "github",
+        githubUrl: "https://github.com/example/skills",
+        githubPath: "skills/browser",
+        ref: "main",
+        commit: "def456"
+      },
+      installedAt: "2026-05-09T00:00:00.000Z",
+      keepUpdated: true,
+      enabled: false
+    });
+    await expect(fs.readFile(path.join(library, "browser", "SKILL.md"), "utf8")).resolves.toContain("New.");
+  });
+
+  it("rejects skills without an updateable source", async () => {
+    const source = path.join(tmp, "source");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(source);
+    await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: local\n---\n");
+    await installLocalSkill({ sourcePath: source, libraryPath: library });
+
+    await expect(updateInstalledSkill({ skillId: "local", libraryPath: library })).rejects.toThrow(
+      "Skill cannot be updated: local"
+    );
+  });
+
+  it("rejects missing skills", async () => {
+    const library = path.join(tmp, "library");
+
+    await expect(updateInstalledSkill({ skillId: "missing", libraryPath: library })).rejects.toThrow(
+      "Skill not found: missing"
+    );
+  });
+
+  it("replaces a skills.sh skill in place and preserves the registry id", async () => {
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(path.join(library, "registry-browser"));
+    await fs.writeFile(path.join(library, "registry-browser", "SKILL.md"), "---\nname: registry-browser\n---\n");
+    await fs.writeJson(path.join(library, "skiller.manifest.json"), {
+      version: 1,
+      skills: [
+        {
+          id: "registry-browser",
+          name: "registry-browser",
+          libraryPath: path.join(library, "registry-browser"),
+          source: {
+            type: "skills.sh",
+            skillsShId: "registry-browser",
+            githubUrl: "https://github.com/example/skills",
+            githubPath: "skills/registry-browser",
+            ref: "main",
+            commit: "abc123"
+          },
+          installedAt: "2026-05-09T00:00:00.000Z",
+          keepUpdated: true,
+          enabled: true,
+          validation: { valid: true, issues: [] }
+        }
+      ]
+    });
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "def456" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/def456?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "skills/registry-browser/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/def456/skills/registry-browser/SKILL.md") {
+        return new Response("---\nname: registry-browser\ndescription: New.\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const metadata = await updateInstalledSkill({
+      skillId: "registry-browser",
+      libraryPath: library,
+      fetchImpl
+    });
+
+    expect(metadata.source).toMatchObject({
+      type: "skills.sh",
+      skillsShId: "registry-browser",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "skills/registry-browser",
+      ref: "main",
+      commit: "def456"
+    });
+  });
+
+  it("updates a root GitHub skill with global fetch and stamps last checked metadata", async () => {
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(path.join(library, "root-skill"));
+    await fs.writeFile(path.join(library, "root-skill", "SKILL.md"), "---\nname: root-skill\n---\n");
+    await fs.writeJson(path.join(library, "skiller.manifest.json"), {
+      version: 1,
+      skills: [
+        {
+          id: "root-skill",
+          name: "Root Skill",
+          libraryPath: path.join(library, "root-skill"),
+          source: {
+            type: "github",
+            githubUrl: "https://github.com/example/skills",
+            ref: "main",
+            commit: "abc123"
+          },
+          installedAt: "2026-05-09T00:00:00.000Z",
+          lastCheckedAt: "2026-05-10T00:00:00.000Z",
+          keepUpdated: true,
+          enabled: true,
+          validation: { valid: true, issues: [] }
+        }
+      ]
+    });
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "def456" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/def456?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/def456/SKILL.md") {
+        return new Response("---\nname: root-skill\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+
+    const metadata = await updateInstalledSkill({
+      skillId: "Root Skill",
+      libraryPath: library
+    });
+
+    expect(metadata.lastCheckedAt).not.toBe("2026-05-10T00:00:00.000Z");
+    expect(metadata.source).toMatchObject({
+      type: "github",
+      githubUrl: "https://github.com/example/skills",
+      ref: "main",
+      commit: "def456"
     });
   });
 });

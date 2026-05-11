@@ -27,6 +27,7 @@ export interface SkillMetadata {
   libraryPath: string;
   source: SkillSource;
   installedAt: string;
+  updatedAt?: string;
   lastCheckedAt?: string;
   contentHash?: string;
   keepUpdated: boolean;
@@ -73,6 +74,7 @@ export interface SkillerApi {
   getConfig: () => Promise<SkillerConfig>;
   saveConfig: (config: ConfigUpdate) => Promise<SkillerConfig>;
   checkUpdates: () => Promise<UpdateCheckResult>;
+  updateSkill: (skillId: string) => Promise<SkillMetadata>;
   installLocal: () => Promise<SkillMetadata | null>;
   installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => Promise<SkillMetadata>;
   discoverGithub: (githubUrl: string) => Promise<DiscoverGithubSkillsResult>;
@@ -209,23 +211,31 @@ function createBrowserPreviewApi(): SkillerApi {
     libraryPath: string;
     source: SkillSource;
     keepUpdated: boolean;
-  }): SkillMetadata => ({
-    id: input.id,
-    name: input.name,
-    description: input.description,
-    libraryPath: input.libraryPath,
-    source: input.source,
-    installedAt: new Date().toISOString(),
-    contentHash: "preview",
-    keepUpdated: input.keepUpdated,
-    enabled: true,
-    validation: { valid: true, issues: [] }
-  });
+  }): SkillMetadata => {
+    const now = new Date().toISOString();
+    return {
+      id: input.id,
+      name: input.name,
+      description: input.description,
+      libraryPath: input.libraryPath,
+      source: input.source,
+      installedAt: now,
+      updatedAt: now,
+      contentHash: "preview",
+      keepUpdated: input.keepUpdated,
+      enabled: true,
+      validation: { valid: true, issues: [] }
+    };
+  };
 
   const addPreviewSkill = (metadata: SkillMetadata): SkillMetadata => {
     fallbackSkills.push(metadata);
     return metadata;
   };
+
+  const isPreviewUpdateable = (skill: SkillMetadata): skill is SkillMetadata & {
+    source: Extract<SkillSource, { type: "github" | "skills.sh" }>;
+  } => skill.source.type === "github" || skill.source.type === "skills.sh";
 
   return {
     listLibrary: async () => fallbackSkills,
@@ -252,13 +262,35 @@ function createBrowserPreviewApi(): SkillerApi {
       config = { ...config, ...update };
       return config;
     },
-    checkUpdates: async () => ({
-      checkedAt: new Date().toISOString(),
-      considered: fallbackSkills.map((skill) => ({ id: skill.id, name: skill.name })),
-      available: [],
-      updated: [],
-      errors: []
-    }),
+    checkUpdates: async () => {
+      const available = fallbackSkills
+        .filter(isPreviewUpdateable)
+        .filter((skill) => skill.source.commit === "preview")
+        .map((skill) => ({
+          id: skill.id,
+          name: skill.name,
+          currentCommit: skill.source.commit,
+          remoteCommit: "preview-updated"
+        }));
+
+      return {
+        checkedAt: new Date().toISOString(),
+        considered: fallbackSkills.map((skill) => ({ id: skill.id, name: skill.name })),
+        available,
+        updated: [],
+        errors: []
+      };
+    },
+    updateSkill: async (skillId) => {
+      const skill = fallbackSkills.find((candidate) => candidate.id === skillId || candidate.name === skillId);
+      if (!skill) throw new Error(`Skill not found: ${skillId}`);
+      if (skill.source.type === "github" || skill.source.type === "skills.sh") {
+        skill.source.commit = "preview-updated";
+        skill.contentHash = "preview-updated";
+        skill.updatedAt = new Date().toISOString();
+      }
+      return skill;
+    },
     installLocal: async () => null,
     installGithub: async (input) => {
       const id = input.githubPath?.split("/").filter(Boolean).at(-1) ?? "github-preview";

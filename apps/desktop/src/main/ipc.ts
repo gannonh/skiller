@@ -9,7 +9,8 @@ import {
   installSkillsShSkill,
   loadConfig,
   saveConfig,
-  scanTargets
+  scanTargets,
+  updateInstalledSkill
 } from "@skiller/core";
 import type { SkillerConfig, TargetConfig } from "@skiller/core";
 import { checkDesktopUpdates } from "./update-check.js";
@@ -165,6 +166,16 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("updates:check", async () => {
     return checkDesktopUpdates();
+  });
+
+  ipcMain.handle("updates:apply", async (_event, skillId: string) => {
+    const config = await loadConfig();
+    const metadata = await updateInstalledSkill({
+      skillId,
+      libraryPath: expandHome(config.libraryPath)
+    });
+    await scanConfig(config);
+    return metadata;
   });
 
   ipcMain.handle("discover:leaderboard", async (_event, type: "all-time" | "trending" | "hot") => {

@@ -44,6 +44,7 @@ export interface SkillMetadata {
   libraryPath: string;
   source: SkillSource;
   installedAt: string;
+  updatedAt?: string;
   lastCheckedAt?: string;
   contentHash?: string;
   keepUpdated: boolean;

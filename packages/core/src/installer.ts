@@ -31,6 +31,12 @@ export interface InstallSkillsShSkillInput {
   fetchImpl?: typeof fetch;
 }
 
+export interface UpdateInstalledSkillInput {
+  skillId: string;
+  libraryPath: string;
+  fetchImpl?: typeof fetch;
+}
+
 interface SkillInfo {
   name: string;
   description?: string;
@@ -41,6 +47,8 @@ interface InstallSkillFromDirectoryInput {
   libraryPath: string;
   source: SkillSource;
   keepUpdated: boolean;
+  skillId?: string;
+  existingMetadata?: SkillMetadata;
 }
 
 function stringField(frontmatter: Record<string, unknown>, key: string): string | undefined {
@@ -103,9 +111,10 @@ async function installSkillFromDirectory(input: InstallSkillFromDirectoryInput):
   const skillMd = await fs.readFile(path.join(input.sourcePath, "SKILL.md"), "utf8");
   const skillInfo = parseSkillInfo(skillMd, path.basename(input.sourcePath));
   const slug = slugifySkillId(skillInfo.name);
-  const id = await uniqueSkillId(input.libraryPath, slug);
+  const id = input.skillId ?? await uniqueSkillId(input.libraryPath, slug);
   const librarySkillPath = await copySkillToLibrary(input.sourcePath, input.libraryPath, id);
   const validation = await validateSkill(librarySkillPath);
+  const now = new Date().toISOString();
 
   const metadata: SkillMetadata = {
     id,
@@ -113,10 +122,12 @@ async function installSkillFromDirectory(input: InstallSkillFromDirectoryInput):
     ...(skillInfo.description ? { description: skillInfo.description } : {}),
     libraryPath: librarySkillPath,
     source: input.source,
-    installedAt: new Date().toISOString(),
+    installedAt: input.existingMetadata?.installedAt ?? now,
+    updatedAt: now,
+    ...(input.existingMetadata?.lastCheckedAt ? { lastCheckedAt: now } : {}),
     contentHash: await hashDirectory(librarySkillPath),
     keepUpdated: input.keepUpdated,
-    enabled: true,
+    enabled: input.existingMetadata?.enabled ?? true,
     validation
   };
 
@@ -166,6 +177,62 @@ export async function installSkillsShSkill(input: InstallSkillsShSkillInput): Pr
       libraryPath: input.libraryPath,
       source: { type: "skills.sh", skillsShId: registrySource.skillsShId, ...fetched.resolved },
       keepUpdated: true
+    });
+  } finally {
+    if (rootPath) await fs.remove(rootPath);
+  }
+}
+
+function hasUpdateableSource(source: SkillSource): source is SkillSource & {
+  type: "github" | "skills.sh";
+  githubUrl: string;
+  ref: string;
+  commit: string;
+} {
+  return (
+    (source.type === "github" || source.type === "skills.sh") &&
+    typeof source.githubUrl === "string" &&
+    source.githubUrl.length > 0 &&
+    typeof source.ref === "string" &&
+    source.ref.length > 0 &&
+    typeof source.commit === "string" &&
+    source.commit.length > 0
+  );
+}
+
+export async function updateInstalledSkill(input: UpdateInstalledSkillInput): Promise<SkillMetadata> {
+  const store = new MetadataStore(input.libraryPath);
+  const existing = (await store.list()).find((skill) => skill.id === input.skillId || skill.name === input.skillId);
+
+  if (!existing) {
+    throw new Error(`Skill not found: ${input.skillId}`);
+  }
+
+  if (!hasUpdateableSource(existing.source)) {
+    throw new Error(`Skill cannot be updated: ${input.skillId}`);
+  }
+
+  let rootPath: string | undefined;
+
+  try {
+    const fetched = await fetchGithubSkillSource({
+      githubUrl: existing.source.githubUrl,
+      ...(existing.source.githubPath ? { githubPath: existing.source.githubPath } : {}),
+      ref: existing.source.ref,
+      ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {})
+    });
+    rootPath = fetched.rootPath;
+
+    return await installSkillFromDirectory({
+      sourcePath: fetched.sourcePath,
+      libraryPath: input.libraryPath,
+      source:
+        existing.source.type === "skills.sh"
+          ? { type: "skills.sh", skillsShId: existing.source.skillsShId, ...fetched.resolved }
+          : { type: "github", ...fetched.resolved },
+      keepUpdated: existing.keepUpdated,
+      skillId: existing.id,
+      existingMetadata: existing
     });
   } finally {
     if (rootPath) await fs.remove(rootPath);

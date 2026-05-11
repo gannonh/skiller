@@ -30,7 +30,7 @@ test("sorts library columns with name as the default", async ({ page }) => {
   await page.getByRole("button", { name: "Install selected" }).click();
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
 
-  for (const column of ["Name", "Source", "Status", "Updates", "Enabled", "Actions"]) {
+  for (const column of ["Name", "Source", "Status", "Enabled", "Actions"]) {
     await expect(page.getByRole("button", { name: `Sort by ${column}` })).toBeVisible();
   }
 
@@ -181,9 +181,108 @@ test("lists updateable skills on the Updates page", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();
   await page.getByRole("row", { name: /agent-browser/ }).getByRole("button", { name: "Install" }).click();
-  await page.getByRole("button", { name: "Updates" }).click();
+  await page.getByRole("button", { name: "Updates", exact: true }).click();
 
   await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sort by Last Updated" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "agent-browser" })).toBeVisible();
   await expect(page.getByText("Registry")).toBeVisible();
+  await expect(page.getByText("Skills added from GitHub or skills.sh can be updated")).toBeVisible();
+  await expect(page.getByText("Keep all skills updated")).toHaveCount(0);
+});
+
+test("updates an available skill from the Updates page", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByRole("row", { name: /agent-browser/ }).getByRole("button", { name: "Install" }).click();
+  await page.getByRole("button", { name: "Updates", exact: true }).click();
+  await page.getByRole("button", { name: "Check for Updates" }).click();
+
+  const row = page.getByRole("row", { name: /agent-browser/ });
+  await expect(row.getByRole("button", { name: "Update agent-browser" })).toBeVisible();
+  await row.getByRole("button", { name: "Update agent-browser" }).click();
+
+  await expect(row.getByRole("button", { name: "updated" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Library" }).click();
+  await page.getByRole("button", { name: "Updates", exact: true }).click();
+  await expect(page.getByRole("row", { name: /agent-browser/ }).getByText("current")).toBeVisible();
+});
+
+test("shows update check errors without marking rows current", async ({ page }) => {
+  await page.addInitScript(() => {
+    const skill = {
+      id: "rate-limited",
+      name: "rate-limited",
+      libraryPath: "/tmp/rate-limited",
+      source: {
+        type: "github",
+        githubUrl: "https://github.com/example/skills",
+        githubPath: "skills/rate-limited",
+        ref: "HEAD",
+        commit: "abc123"
+      },
+      installedAt: "2026-05-11T00:00:00.000Z",
+      updatedAt: "2026-05-11T00:00:00.000Z",
+      keepUpdated: true,
+      enabled: true,
+      validation: { valid: true, issues: [] }
+    };
+    window.skiller = {
+      listLibrary: async () => [skill],
+      setSkillEnabled: async () => [skill],
+      deleteSkill: async () => [skill],
+      scanTargets: async () => ({ imported: [], enabled: [], disabled: [], errors: [] }),
+      saveTargets: async (targets) => ({
+        libraryPath: "~/skiller",
+        targets,
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      getConfig: async () => ({
+        libraryPath: "~/skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      saveConfig: async () => ({
+        libraryPath: "~/skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      checkUpdates: async () => ({
+        checkedAt: "2026-05-11T00:00:00.000Z",
+        considered: [{ id: "rate-limited", name: "rate-limited" }],
+        available: [],
+        updated: [],
+        errors: [{ id: "rate-limited", message: "GitHub update check failed: 403 rate limit exceeded" }]
+      }),
+      updateSkill: async () => skill,
+      installLocal: async () => null,
+      installGithub: async () => skill,
+      discoverGithub: async () => ({ repositoryOnly: false, githubUrl: "", ref: "", commit: "", skills: [] }),
+      installRegistry: async () => skill,
+      leaderboard: async () => ({ skills: [] }),
+      search: async () => ({ skills: [] }),
+      registrySkill: async () => ({}),
+      registryAudit: async () => ({}),
+      onCheckUpdates: () => () => undefined,
+      onScanError: () => () => undefined
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Updates", exact: true }).click();
+  await page.getByRole("button", { name: "Check for Updates" }).click();
+
+  const row = page.getByRole("row", { name: /rate-limited/ });
+  await expect(row.getByText("error")).toBeVisible();
+  await expect(row.getByText("current")).toHaveCount(0);
+  await expect(page.getByText(/1 errors/)).toBeVisible();
 });

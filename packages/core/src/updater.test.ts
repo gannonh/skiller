@@ -385,6 +385,44 @@ describe("checkForSkillUpdates", () => {
     );
   });
 
+  it("authenticates github commit checks with an environment token", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "token123");
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ sha: "def456" })));
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await resolveGithubRemoteCommit({
+      type: "github",
+      githubUrl: "https://github.com/example/skill",
+      ref: "main",
+      commit: "abc123"
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.github.com/repos/example/skill/commits/main",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer token123" })
+      })
+    );
+  });
+
+  it("explains rate limited github commit checks with authentication guidance", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("rate limited", { status: 403, statusText: "rate limit exceeded" }))
+    );
+
+    await expect(
+      resolveGithubRemoteCommit({
+        type: "github",
+        githubUrl: "https://github.com/example/skill",
+        ref: "main",
+        commit: "abc123"
+      })
+    ).rejects.toThrow(
+      'GitHub update check failed: 403 rate limit exceeded. GitHub API rate limit exceeded. Make sure you are authenticated with GitHub by running "gh auth status" or set GITHUB_TOKEN, then try again.'
+    );
+  });
+
   it("returns null for unresolvable github sources", async () => {
     await expect(resolveGithubRemoteCommit({ type: "local", path: "/source/local" })).resolves.toBeNull();
     await expect(
