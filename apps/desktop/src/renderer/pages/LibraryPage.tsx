@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Delete02Icon } from "@hugeicons/core-free-icons";
+import { Delete02Icon, Sorting01Icon, SortingDownIcon, SortingUpIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert";
 import { Badge } from "@workspace/ui/components/badge";
@@ -22,6 +22,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { skillerApi, type SkillMetadata } from "../lib/api.js";
 import type { DiscoveredGithubSkill } from "@skiller/core";
 
+type SortColumn = "name" | "source" | "status" | "updates" | "enabled" | "actions";
+type SortDirection = "asc" | "desc";
+
 function sourceLabel(skill: SkillMetadata): string {
   if (skill.source.type === "skills.sh") return "Registry";
   if (skill.source.type === "github") return "GitHub";
@@ -43,6 +46,38 @@ function isUpdateable(skill: SkillMetadata): boolean {
   );
 }
 
+function statusLabel(skill: SkillMetadata): string {
+  return skill.validation?.valid ? "valid" : "invalid";
+}
+
+function updatesLabel(skill: SkillMetadata): string {
+  return isUpdateable(skill) ? "updateable" : "manual";
+}
+
+function sortValue(skill: SkillMetadata, column: SortColumn): string {
+  if (column === "name") return skill.name || skill.id;
+  if (column === "source") return `${sourceLabel(skill)} ${sourceDetail(skill)}`;
+  if (column === "status") return statusLabel(skill);
+  if (column === "updates") return updatesLabel(skill);
+  if (column === "enabled") return skill.enabled ? "enabled" : "disabled";
+  return `${skill.name || skill.id} ${skill.id}`;
+}
+
+function sortSkills(skills: SkillMetadata[], column: SortColumn, direction: SortDirection): SkillMetadata[] {
+  return [...skills].sort((left, right) => {
+    const primary = sortValue(left, column).localeCompare(sortValue(right, column), undefined, {
+      numeric: true,
+      sensitivity: "base"
+    });
+    const fallback = (left.name || left.id).localeCompare(right.name || right.id, undefined, {
+      numeric: true,
+      sensitivity: "base"
+    });
+    const result = primary || fallback || left.id.localeCompare(right.id);
+    return direction === "asc" ? result : -result;
+  });
+}
+
 export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => void }) {
   const [skills, setSkills] = useState<SkillMetadata[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +88,8 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [githubChoices, setGithubChoices] = useState<DiscoveredGithubSkill[]>([]);
   const [selectedGithubPaths, setSelectedGithubPaths] = useState<Set<string>>(() => new Set());
   const [isGithubSheetOpen, setIsGithubSheetOpen] = useState(false);
+  const [sortColumn, setSortColumn] = useState<SortColumn>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   useEffect(() => {
     let mounted = true;
@@ -74,14 +111,48 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   }, []);
 
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
+  const sortedSkills = useMemo(() => sortSkills(skills, sortColumn, sortDirection), [skills, sortColumn, sortDirection]);
   const selectedGithubSkills = useMemo(
     () => githubChoices.filter((skill) => selectedGithubPaths.has(skill.path)),
     [githubChoices, selectedGithubPaths]
   );
 
+  function updateSort(column: SortColumn) {
+    if (column === sortColumn) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortColumn(column);
+    setSortDirection("asc");
+  }
+
+  function sortIcon(column: SortColumn) {
+    if (column !== sortColumn) return Sorting01Icon;
+    return sortDirection === "asc" ? SortingUpIcon : SortingDownIcon;
+  }
+
+  function SortableTableHead({ column, children }: { column: SortColumn; children: string }) {
+    const active = column === sortColumn;
+    return (
+      <TableHead aria-sort={active ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-8 px-2"
+          aria-label={`Sort by ${children}`}
+          onClick={() => updateSort(column)}
+        >
+          {children}
+          <HugeiconsIcon icon={sortIcon(column)} strokeWidth={2} data-icon="inline-end" />
+        </Button>
+      </TableHead>
+    );
+  }
+
   async function refreshLibrary() {
     const result = await skillerApi.listLibrary();
-    setSkills(result);
+    setSkills([...result]);
     setError(null);
     return result;
   }
@@ -167,7 +238,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setError(null);
     try {
       const updatedSkills = await skillerApi.setSkillEnabled(skillId, enabled);
-      setSkills(updatedSkills);
+      setSkills([...updatedSkills]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -184,7 +255,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setError(null);
     try {
       const updatedSkills = await skillerApi.deleteSkill(skillId);
-      setSkills(updatedSkills);
+      setSkills([...updatedSkills]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -243,16 +314,16 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Updates</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead>Actions</TableHead>
+                <SortableTableHead column="name">Name</SortableTableHead>
+                <SortableTableHead column="source">Source</SortableTableHead>
+                <SortableTableHead column="status">Status</SortableTableHead>
+                <SortableTableHead column="updates">Updates</SortableTableHead>
+                <SortableTableHead column="enabled">Enabled</SortableTableHead>
+                <SortableTableHead column="actions">Actions</SortableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {skills.map((skill) => (
+              {sortedSkills.map((skill) => (
                 <TableRow key={skill.id}>
                   <TableCell>{skill.name || skill.id}</TableCell>
                   <TableCell>
@@ -263,14 +334,14 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                   </TableCell>
                   <TableCell>
                     {skill.validation?.valid ? (
-                      <Badge variant="outline">valid</Badge>
+                      <Badge variant="outline">{statusLabel(skill)}</Badge>
                     ) : (
-                      <Badge variant="destructive">invalid</Badge>
+                      <Badge variant="destructive">{statusLabel(skill)}</Badge>
                     )}
                   </TableCell>
                   <TableCell>
                     <Badge variant={isUpdateable(skill) ? "outline" : "secondary"}>
-                      {isUpdateable(skill) ? "updateable" : "manual"}
+                      {updatesLabel(skill)}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -294,7 +365,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                   </TableCell>
                 </TableRow>
               ))}
-              {skills.length === 0 ? (
+              {sortedSkills.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-muted-foreground">
                     No skills installed.

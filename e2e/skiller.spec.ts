@@ -18,6 +18,34 @@ test("deletes a library skill from the browser preview API", async ({ page }) =>
   await expect(page.getByRole("cell", { name: "example-skill", exact: true })).toHaveCount(0);
 });
 
+test("sorts library columns with name as the default", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByLabel("GitHub URL").fill("https://github.com/example/skills");
+  await page.getByRole("button", { name: "Add from GitHub" }).click();
+
+  await expect(page.getByRole("heading", { name: "GitHub Skills" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /alpha-skill/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /beta-skill/ })).toBeVisible();
+  await page.getByRole("button", { name: "Install selected" }).click();
+  await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
+
+  for (const column of ["Name", "Source", "Status", "Updates", "Enabled", "Actions"]) {
+    await expect(page.getByRole("button", { name: `Sort by ${column}` })).toBeVisible();
+  }
+
+  const rows = page.locator("tbody tr");
+  await expect(rows.nth(0).locator("td").first()).toHaveText("alpha-skill");
+  await expect(rows.nth(1).locator("td").first()).toHaveText("beta-skill");
+  await expect(rows.nth(2).locator("td").first()).toHaveText("example-skill");
+
+  await page.getByRole("button", { name: "Sort by Name" }).click();
+
+  await expect(rows.nth(0).locator("td").first()).toHaveText("example-skill");
+  await expect(rows.nth(1).locator("td").first()).toHaveText("beta-skill");
+  await expect(rows.nth(2).locator("td").first()).toHaveText("alpha-skill");
+});
+
 test("shows configured target directories and refreshes scans", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Targets" }).click();
