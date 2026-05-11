@@ -14,5 +14,7 @@ describe("desktop preload", () => {
     expect(preloadSource).toContain("discoverGithub");
     expect(preloadSource).toContain("installRegistry");
     expect(preloadSource).toContain("deleteSkill");
+    expect(preloadSource).toContain("registrySkill");
+    expect(preloadSource).toContain("registryAudit");
   });
 });

@@ -18,6 +18,7 @@ function mockFetch(handler: (url: string, init?: RequestInit) => Promise<Respons
 }
 
 afterEach(async () => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   await Promise.all(tempRoots.splice(0).map((dir) => fs.remove(dir)));
@@ -306,6 +307,46 @@ describe("discoverGithubSkills", () => {
       "https://api.github.com/repos/example/skills/commits/HEAD",
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: "Bearer token-from-gh" })
+      })
+    );
+  });
+
+  it("refreshes gh cli tokens after the token cache expires", async () => {
+    const binPath = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-gh-refresh-bin-"));
+    tempRoots.push(binPath);
+    const tokenPath = path.join(binPath, "token.txt");
+    const ghPath = path.join(binPath, "gh");
+    await fs.writeFile(tokenPath, "token-one");
+    await fs.writeFile(ghPath, `#!/bin/sh\nread token < "${tokenPath}"\nprintf "$token"\n`);
+    await fs.chmod(ghPath, 0o755);
+    vi.stubEnv("PATH", binPath);
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GH_TOKEN", "");
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    await vi.resetModules();
+    const { discoverGithubSkills: freshDiscoverGithubSkills } = await import("./source-fetcher.js");
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [] }));
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await freshDiscoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl });
+    await fs.writeFile(tokenPath, "token-two");
+    now.mockReturnValue(5 * 60 * 1000 + 1);
+    await freshDiscoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      3,
+      "https://api.github.com/repos/example/skills/commits/HEAD",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer token-two" })
       })
     );
   });
@@ -647,6 +688,49 @@ describe("fetchGithubSkillSource", () => {
       githubUrl: "https://github.com/gannonh/skills",
       githubPath: "fix-github-ci",
       ref: "main",
+      commit: "commit123"
+    });
+  });
+
+  it("downloads a skill from a github tree url with a slash-containing ref", async () => {
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/gannonh/skills/commits/feature%2Fnew-ui") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/gannonh/skills/git/trees/commit123?recursive=1") {
+        return new Response(
+          JSON.stringify({
+            tree: [
+              { path: "fix-github-ci/SKILL.md", type: "blob" },
+              { path: "fix-github-ci/scripts/fix.sh", type: "blob" }
+            ]
+          })
+        );
+      }
+
+      if (url === "https://raw.githubusercontent.com/gannonh/skills/commit123/fix-github-ci/SKILL.md") {
+        return new Response("# Fix GitHub CI");
+      }
+
+      if (url === "https://raw.githubusercontent.com/gannonh/skills/commit123/fix-github-ci/scripts/fix.sh") {
+        return new Response("echo fix");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const fetched = await fetchGithubSkillSource({
+      githubUrl: "https://github.com/gannonh/skills/tree/feature/new-ui/fix-github-ci",
+      fetchImpl
+    });
+    tempRoots.push(fetched.rootPath);
+
+    await expect(fs.readFile(path.join(fetched.sourcePath, "SKILL.md"), "utf8")).resolves.toBe("# Fix GitHub CI");
+    expect(fetched.resolved).toEqual({
+      githubUrl: "https://github.com/gannonh/skills",
+      githubPath: "fix-github-ci",
+      ref: "feature/new-ui",
       commit: "commit123"
     });
   });
@@ -1096,6 +1180,17 @@ describe("fetchGithubSkillSource", () => {
         fetchImpl: mockFetch(() => new Response("missing", { status: 404, statusText: "Not Found" }))
       })
     ).rejects.toThrow("Invalid GitHub repository URL");
+  });
+
+  it("wraps non-error commit lookup failures", async () => {
+    await expect(
+      fetchGithubSkillSource({
+        githubUrl: "https://github.com/example/skills",
+        fetchImpl: mockFetch(() => {
+          throw "network down";
+        })
+      })
+    ).rejects.toThrow("GitHub commit lookup failed");
   });
 
   it("rejects failed github blob downloads", async () => {

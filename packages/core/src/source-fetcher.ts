@@ -14,6 +14,12 @@ interface GithubSourceLocation extends GithubRepository {
   githubUrl: string;
   githubPath?: string;
   ref?: string;
+  refCandidates?: GithubSourceRefCandidate[];
+}
+
+interface GithubSourceRefCandidate {
+  ref: string;
+  githubPath?: string;
 }
 
 export type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
@@ -97,20 +103,23 @@ const githubHeaders = {
   Accept: "application/vnd.github+json",
   "User-Agent": "skiller"
 };
-let cachedGhToken: string | null | undefined;
+const GH_TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
+const GH_TOKEN_FAILURE_CACHE_TTL_MS = 60 * 1000;
+let cachedGhToken: { value: string | null; expiresAt: number } | undefined;
 
 async function githubAuthToken(): Promise<string | undefined> {
   const envToken = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
   if (envToken?.trim()) return envToken.trim();
-  if (cachedGhToken !== undefined) return cachedGhToken ?? undefined;
+  const now = Date.now();
+  if (cachedGhToken !== undefined && cachedGhToken.expiresAt > now) return cachedGhToken.value ?? undefined;
 
   try {
     const { stdout } = await execFileAsync("gh", ["auth", "token"], { timeout: 1000 });
     const token = stdout.trim();
-    cachedGhToken = token || null;
+    cachedGhToken = { value: token || null, expiresAt: now + GH_TOKEN_CACHE_TTL_MS };
     return token || undefined;
   } catch {
-    cachedGhToken = null;
+    cachedGhToken = { value: null, expiresAt: now + GH_TOKEN_FAILURE_CACHE_TTL_MS };
     return undefined;
   }
 }
@@ -181,6 +190,21 @@ function pathFromSkillFile(githubPath: string): string {
   return skillDir === "." ? "" : skillDir;
 }
 
+function githubRefCandidates(segments: string[], kind: "tree" | "blob" | "raw"): GithubSourceRefCandidate[] {
+  return segments
+    .map((_, index) => {
+      const ref = segments.slice(0, segments.length - index).join("/");
+      const remainingPath = segments.slice(segments.length - index).join("/");
+      const githubPath = kind === "tree" ? normalizeGithubPath(remainingPath) : pathFromSkillFile(remainingPath);
+
+      return {
+        ref,
+        ...(githubPath ? { githubPath } : {})
+      };
+    })
+    .filter((candidate) => candidate.ref.length > 0);
+}
+
 function parseSkillInfo(markdown: string, fallback: string): SkillInfo {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!match) return { name: fallback };
@@ -224,15 +248,15 @@ function parseGithubSourceUrl(githubUrl: string): GithubSourceLocation | null {
     const kind = segments[2];
 
     if ((kind === "tree" || kind === "blob") && segments.length >= 4) {
-      const ref = segments[3]!;
-      const githubPath = kind === "blob" ? pathFromSkillFile(segments.slice(4).join("/")) : normalizeGithubPath(segments.slice(4).join("/"));
+      const refCandidates = githubRefCandidates(segments.slice(3), kind);
+      const firstCandidate = refCandidates[0]!;
 
       return {
         owner,
         repo,
         githubUrl: baseUrl,
-        ref,
-        ...(githubPath ? { githubPath } : {})
+        ref: firstCandidate.ref,
+        refCandidates
       };
     }
 
@@ -244,15 +268,15 @@ function parseGithubSourceUrl(githubUrl: string): GithubSourceLocation | null {
 
     const owner = segments[0]!;
     const repo = normalizeRepoName(segments[1]!);
-    const ref = segments[2]!;
-    const githubPath = pathFromSkillFile(segments.slice(3).join("/"));
+    const refCandidates = githubRefCandidates(segments.slice(2), "raw");
+    const firstCandidate = refCandidates[0]!;
 
     return {
       owner,
       repo,
       githubUrl: `https://github.com/${owner}/${repo}`,
-      ref,
-      ...(githubPath ? { githubPath } : {})
+      ref: firstCandidate.ref,
+      refCandidates
     };
   }
 
@@ -319,6 +343,16 @@ async function readJson(fetchImpl: FetchImpl, url: string, context: string): Pro
   return response.json();
 }
 
+async function readCommit(fetchImpl: FetchImpl, owner: string, repo: string, ref: string): Promise<string> {
+  const commitUrl = `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`;
+  const commitPayload = (await readJson(fetchImpl, commitUrl, "GitHub commit lookup")) as GithubCommitPayload;
+  if (typeof commitPayload.sha !== "string" || commitPayload.sha.length === 0) {
+    throw new Error("GitHub commit lookup did not return a commit sha");
+  }
+
+  return commitPayload.sha;
+}
+
 async function resolveGithubTree(input: {
   githubUrl: string;
   fetchImpl: FetchImpl;
@@ -334,21 +368,44 @@ async function resolveGithubTree(input: {
     throw new Error("Invalid GitHub repository URL");
   }
 
-  const ref = input.ref ?? source.ref ?? "HEAD";
-  const commitUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/commits/${encodeURIComponent(ref)}`;
-  const commitPayload = (await readJson(input.fetchImpl, commitUrl, "GitHub commit lookup")) as GithubCommitPayload;
-  if (typeof commitPayload.sha !== "string" || commitPayload.sha.length === 0) {
-    throw new Error("GitHub commit lookup did not return a commit sha");
+  const refCandidates = input.ref ? [{ ref: input.ref }] : source.refCandidates;
+  const candidates = refCandidates?.length ? refCandidates : [{ ref: source.ref ?? "HEAD" }];
+  let selected: GithubSourceRefCandidate | undefined;
+  let commit = "";
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    try {
+      commit = await readCommit(input.fetchImpl, source.owner, source.repo, candidate.ref);
+      selected = candidate;
+      break;
+    } catch (error) {
+      lastError = error;
+    }
   }
 
-  const commit = commitPayload.sha;
+  if (!selected) {
+    throw lastError instanceof Error ? lastError : new Error("GitHub commit lookup failed");
+  }
+
   const treeUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/git/trees/${encodeURIComponent(
     commit
   )}?recursive=1`;
   const treePayload = (await readJson(input.fetchImpl, treeUrl, "GitHub tree lookup")) as GithubTreePayload;
   const entries = Array.isArray(treePayload.tree) ? (treePayload.tree as GithubTreeEntry[]) : [];
 
-  return { source, ref, commit, entries };
+  return {
+    source: {
+      owner: source.owner,
+      repo: source.repo,
+      githubUrl: source.githubUrl,
+      ...(source.ref ? { ref: selected.ref } : {}),
+      ...(selected.githubPath ? { githubPath: selected.githubPath } : {})
+    },
+    ref: selected.ref,
+    commit,
+    entries
+  };
 }
 
 async function readRawGithubBlob(input: {
@@ -518,7 +575,7 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
       }
 
       const destination = path.join(sourcePath, blob.relativePath);
-      if (!destination.startsWith(`${sourcePath}${path.sep}`) && destination !== sourcePath) {
+      if (!destination.startsWith(`${sourcePath}${path.sep}`)) {
         throw new Error("GitHub source contains an invalid path");
       }
 

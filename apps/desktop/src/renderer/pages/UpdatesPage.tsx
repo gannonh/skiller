@@ -5,27 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@work
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import { skillerApi, type SkillMetadata, type UpdateCheckSkill } from "../lib/api.js";
-
-function sourceLabel(skill: SkillMetadata): string {
-  if (skill.source.type === "skills.sh") return "Registry";
-  if (skill.source.type === "github") return "GitHub";
-  if (skill.source.type === "local") return "Local";
-  return "Unknown";
-}
-
-function sourceDetail(skill: SkillMetadata): string {
-  if (skill.source.type === "local") return skill.source.path;
-  if (skill.source.type === "unknown") return skill.source.discoveredFrom ?? "Untracked source";
-  if (skill.source.githubPath) return `${skill.source.githubUrl}/${skill.source.githubPath}`;
-  return skill.source.githubUrl;
-}
-
-function isUpdateable(skill: SkillMetadata): boolean {
-  return (
-    (skill.source.type === "github" || skill.source.type === "skills.sh") &&
-    Boolean(skill.source.githubUrl && skill.source.ref && skill.source.commit)
-  );
-}
+import { isUpdateable, sourceDetail, sourceLabel } from "../lib/skill-source.js";
 
 export function UpdatesPage() {
   const [keepUpdated, setKeepUpdated] = useState(false);
@@ -46,7 +26,13 @@ export function UpdatesPage() {
         setStatus(caught instanceof Error ? caught.message : String(caught));
       });
 
-    void skillerApi.listLibrary().then((result) => setSkills(result));
+    void skillerApi
+      .listLibrary()
+      .then((result) => setSkills(result))
+      .catch((caught: unknown) => {
+        setSkills([]);
+        setStatus(caught instanceof Error ? caught.message : String(caught));
+      });
 
     return skillerApi.onCheckUpdates(() => {
       void checkUpdates();
@@ -135,7 +121,11 @@ export function UpdatesPage() {
                   </TableCell>
                   <TableCell>
                     <Badge variant={update ? "default" : "outline"}>
-                      {update ? `${update.currentCommit} -> ${update.remoteCommit}` : "current"}
+                      {update
+                        ? update.currentCommit && update.remoteCommit
+                          ? `${update.currentCommit} -> ${update.remoteCommit}`
+                          : "update available"
+                        : "current"}
                     </Badge>
                   </TableCell>
                 </TableRow>

@@ -20,31 +20,11 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import { skillerApi, type SkillMetadata } from "../lib/api.js";
+import { isUpdateable, sourceDetail, sourceLabel } from "../lib/skill-source.js";
 import type { DiscoveredGithubSkill } from "@skiller/core";
 
 type SortColumn = "name" | "source" | "status" | "updates" | "enabled" | "actions";
 type SortDirection = "asc" | "desc";
-
-function sourceLabel(skill: SkillMetadata): string {
-  if (skill.source.type === "skills.sh") return "Registry";
-  if (skill.source.type === "github") return "GitHub";
-  if (skill.source.type === "local") return "Local";
-  return "Unknown";
-}
-
-function sourceDetail(skill: SkillMetadata): string {
-  if (skill.source.type === "local") return skill.source.path;
-  if (skill.source.type === "unknown") return skill.source.discoveredFrom ?? "Untracked source";
-  if (skill.source.githubPath) return `${skill.source.githubUrl}/${skill.source.githubPath}`;
-  return skill.source.githubUrl;
-}
-
-function isUpdateable(skill: SkillMetadata): boolean {
-  return (
-    (skill.source.type === "github" || skill.source.type === "skills.sh") &&
-    Boolean(skill.source.githubUrl && skill.source.ref && skill.source.commit)
-  );
-}
 
 function statusLabel(skill: SkillMetadata): string {
   return skill.validation?.valid ? "valid" : "invalid";

@@ -53,32 +53,39 @@ function normalizeSource(metadata: SkillMetadata): SkillSource {
     const skillsShId = stringField(record, "skillsShId") ?? metadata.id;
     const githubUrl = stringField(record, "githubUrl");
     if (!githubUrl) return { type: "unknown" };
+    const githubPath = stringField(record, "githubPath");
+    const ref = stringField(record, "ref");
+    const commit = stringField(record, "commit");
 
     return {
       type: "skills.sh",
       skillsShId,
       githubUrl,
-      ...(stringField(record, "githubPath") ? { githubPath: stringField(record, "githubPath") } : {}),
-      ...(stringField(record, "ref") ? { ref: stringField(record, "ref") } : {}),
-      ...(stringField(record, "commit") ? { commit: stringField(record, "commit") } : {})
+      ...(githubPath ? { githubPath } : {}),
+      ...(ref ? { ref } : {}),
+      ...(commit ? { commit } : {})
     };
   }
 
   if (record.type === "github") {
     const githubUrl = stringField(record, "githubUrl");
     if (!githubUrl) return { type: "unknown" };
+    const githubPath = stringField(record, "githubPath");
+    const ref = stringField(record, "ref");
+    const commit = stringField(record, "commit");
 
     return {
       type: "github",
       githubUrl,
-      ...(stringField(record, "githubPath") ? { githubPath: stringField(record, "githubPath") } : {}),
-      ...(stringField(record, "ref") ? { ref: stringField(record, "ref") } : {}),
-      ...(stringField(record, "commit") ? { commit: stringField(record, "commit") } : {})
+      ...(githubPath ? { githubPath } : {}),
+      ...(ref ? { ref } : {}),
+      ...(commit ? { commit } : {})
     };
   }
 
   if (record.type === "local") {
-    return { type: "local", path: stringField(record, "path") ?? metadata.libraryPath };
+    const sourcePath = stringField(record, "path");
+    return { type: "local", path: sourcePath ?? metadata.libraryPath };
   }
 
   if (record.type === "unknown") {
