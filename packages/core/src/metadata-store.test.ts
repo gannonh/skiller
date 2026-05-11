@@ -12,7 +12,7 @@ function metadataFor(libraryPath: string): SkillMetadata {
     id: "example-skill",
     name: "Example Skill",
     libraryPath,
-    source: { type: "local" },
+    source: { type: "local", path: libraryPath },
     installedAt: "2026-05-09T00:00:00.000Z",
     keepUpdated: false,
     validation: { valid: true, issues: [] },
@@ -72,6 +72,68 @@ describe("MetadataStore", () => {
     });
 
     expect(await store.list()).toEqual([metadataFor(skillPath)]);
+  });
+
+  it("normalizes source records from the root manifest", async () => {
+    const libraryPath = await makeTempDir();
+    const localPath = path.join(libraryPath, "local-skill");
+    const githubPath = path.join(libraryPath, "github-skill");
+    const unknownPath = path.join(libraryPath, "unknown-skill");
+    await fs.ensureDir(localPath);
+    await fs.ensureDir(githubPath);
+    await fs.ensureDir(unknownPath);
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skills: [
+        { ...metadataFor(localPath), id: "local-skill", name: "Local Skill", source: { type: "local" } },
+        {
+          ...metadataFor(githubPath),
+          id: "github-skill",
+          name: "GitHub Skill",
+          source: {
+            type: "github",
+            githubUrl: "https://github.com/example/skills",
+            githubPath: "skills/github-skill",
+            ref: "main",
+            commit: "abc123"
+          }
+        },
+        {
+          ...metadataFor(unknownPath),
+          id: "unknown-skill",
+          name: "Unknown Skill",
+          source: { type: "missing-type", value: 1 }
+        }
+      ]
+    });
+
+    await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([
+      {
+        ...metadataFor(localPath),
+        id: "local-skill",
+        name: "Local Skill",
+        source: { type: "local", path: localPath }
+      },
+      {
+        ...metadataFor(githubPath),
+        id: "github-skill",
+        name: "GitHub Skill",
+        source: {
+          type: "github",
+          githubUrl: "https://github.com/example/skills",
+          githubPath: "skills/github-skill",
+          ref: "main",
+          commit: "abc123"
+        }
+      },
+      {
+        ...metadataFor(unknownPath),
+        id: "unknown-skill",
+        name: "Unknown Skill",
+        source: { type: "unknown" }
+      }
+    ]);
   });
 
   it("treats malformed manifest skills as empty", async () => {

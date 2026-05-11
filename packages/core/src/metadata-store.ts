@@ -1,7 +1,7 @@
 import fs from "fs-extra";
 import { open } from "node:fs/promises";
 import path from "node:path";
-import type { SkillMetadata } from "./types.js";
+import type { SkillMetadata, SkillSource } from "./types.js";
 
 const MANIFEST_FILE = "skiller.manifest.json";
 const LEGACY_METADATA_FILE = "skiller.metadata.json";
@@ -38,9 +38,61 @@ function isPathInside(parentPath: string, childPath: string): boolean {
   return relativePath !== "" && !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
 }
 
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function normalizeSource(metadata: SkillMetadata): SkillSource {
+  const source = metadata.source as unknown;
+  if (typeof source !== "object" || source === null) return { type: "unknown" };
+
+  const record = source as Record<string, unknown>;
+
+  if (record.type === "skills.sh") {
+    const skillsShId = stringField(record, "skillsShId") ?? metadata.id;
+    const githubUrl = stringField(record, "githubUrl");
+    if (!githubUrl) return { type: "unknown" };
+
+    return {
+      type: "skills.sh",
+      skillsShId,
+      githubUrl,
+      ...(stringField(record, "githubPath") ? { githubPath: stringField(record, "githubPath") } : {}),
+      ...(stringField(record, "ref") ? { ref: stringField(record, "ref") } : {}),
+      ...(stringField(record, "commit") ? { commit: stringField(record, "commit") } : {})
+    };
+  }
+
+  if (record.type === "github") {
+    const githubUrl = stringField(record, "githubUrl");
+    if (!githubUrl) return { type: "unknown" };
+
+    return {
+      type: "github",
+      githubUrl,
+      ...(stringField(record, "githubPath") ? { githubPath: stringField(record, "githubPath") } : {}),
+      ...(stringField(record, "ref") ? { ref: stringField(record, "ref") } : {}),
+      ...(stringField(record, "commit") ? { commit: stringField(record, "commit") } : {})
+    };
+  }
+
+  if (record.type === "local") {
+    return { type: "local", path: stringField(record, "path") ?? metadata.libraryPath };
+  }
+
+  if (record.type === "unknown") {
+    const discoveredFrom = stringField(record, "discoveredFrom");
+    return discoveredFrom ? { type: "unknown", discoveredFrom } : { type: "unknown" };
+  }
+
+  return { type: "unknown" };
+}
+
 function normalizeMetadata(metadata: SkillMetadata): SkillMetadata {
   return {
     ...metadata,
+    source: normalizeSource(metadata),
     enabled: typeof metadata.enabled === "boolean" ? metadata.enabled : true
   };
 }
