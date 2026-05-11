@@ -1,0 +1,19 @@
+# Changelog
+
+## Skiller Desktop v0.1.0 - 2026-05-11
+
+### Added
+
+- Desktop app for managing a master agent skill library.
+- Local folder, GitHub, and skills.sh skill installs.
+- skills.sh discovery with search, leaderboard views, and install actions.
+- Target directory management for syncing enabled skills into agent skill folders.
+- Skill update checks and updates for GitHub and skills.sh installs.
+- macOS and Linux release artifacts published from GitHub Releases.
+
+### Install Notes
+
+- macOS Apple silicon: download `Skiller-Desktop-arm64.dmg`.
+- macOS Intel: download `Skiller-Desktop-x64.dmg`.
+- Linux x64: download `Skiller-Desktop-x86_64.AppImage` or `Skiller-Desktop-amd64.deb`.
+- Linux arm64: download `Skiller-Desktop-arm64.AppImage` or `Skiller-Desktop-arm64.deb`.

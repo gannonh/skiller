@@ -287,6 +287,37 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
+      - name: Extract release notes
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const version = process.env.VERSION;
+          const changelog = fs.readFileSync("CHANGELOG.md", "utf8");
+          const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const headingPattern = new RegExp(`^##\\s+Skiller Desktop v${escapeRegex(version)}(?:\\s+-\\s+.*)?$`, "m");
+          const match = changelog.match(headingPattern);
+
+          if (!match || match.index === undefined) {
+            throw new Error(`Missing changelog entry for Skiller Desktop v${version}`);
+          }
+
+          const start = match.index;
+          const bodyStart = start + match[0].length;
+          const nextHeadingOffset = changelog.slice(bodyStart).search(/\n##\s+/);
+          const end = nextHeadingOffset === -1 ? changelog.length : bodyStart + nextHeadingOffset;
+          const notes = changelog.slice(start, end).trim();
+
+          if (!notes.includes("\n")) {
+            throw new Error(`Changelog entry for Skiller Desktop v${version} is empty`);
+          }
+
+          fs.writeFileSync("release-notes.md", `${notes}\n`);
+          NODE
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -297,4 +328,4 @@ jobs:
           gh release create "$TAG" release-artifacts/* \
             --target "$GITHUB_SHA" \
             --title "Skiller Desktop v$VERSION" \
-            --notes "Skiller Desktop v$VERSION"
+            --notes-file release-notes.md
