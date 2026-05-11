@@ -27,6 +27,11 @@ describe("installLocalSkill", () => {
     expect(metadata.name).toBe("local");
     expect(metadata.source.type).toBe("local");
     await expect(fs.pathExists(path.join(library, "local", "SKILL.md"))).resolves.toBe(true);
+    await expect(fs.pathExists(path.join(library, "local", "skiller.metadata.json"))).resolves.toBe(false);
+    await expect(fs.readJson(path.join(library, "skiller.manifest.json"))).resolves.toMatchObject({
+      version: 1,
+      skills: [{ id: "local" }]
+    });
   });
 
   it("preserves the parsed display name in metadata", async () => {

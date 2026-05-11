@@ -3,12 +3,12 @@ import type { FSWatcher } from "chokidar";
 import type { SkillerConfig } from "./types.js";
 
 export function watchTargetDirectories(
-  config: Pick<SkillerConfig, "targetDirectories">,
+  targetDirectories: string[],
   onChange: () => void,
   onError?: (error: unknown) => void
 ): FSWatcher {
   return chokidar
-    .watch(config.targetDirectories, {
+    .watch(targetDirectories, {
       ignoreInitial: true,
       depth: 2,
       awaitWriteFinish: true

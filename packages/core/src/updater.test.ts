@@ -18,7 +18,7 @@ async function makeTempDir(): Promise<string> {
 function configFor(libraryPath: string, keepAllSkillsUpdated = false): SkillerConfig {
   return {
     libraryPath,
-    targetDirectories: [],
+    targets: [],
     updateSchedule: { intervalHours: 24 },
     keepAllSkillsUpdated,
     launchAtLogin: false,
@@ -40,7 +40,7 @@ function metadataFor(
     installedAt: "2026-05-09T00:00:00.000Z",
     keepUpdated,
     validation: { valid: true, issues: [] },
-    enabledTargets: []
+    enabled: true
   };
 }
 

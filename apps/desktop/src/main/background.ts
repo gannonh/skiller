@@ -28,7 +28,7 @@ export async function startBackgroundJobs(
 ): Promise<Array<{ stop: () => void }>> {
   const deps = { ...defaultDependencies, ...dependencies };
   const config = await deps.loadConfig();
-  const expandedTargets = config.targetDirectories.map((target) => deps.expandHome(target));
+  const expandedTargetPaths = config.targets.map((target) => deps.expandHome(target.path));
 
   const runScan = () => {
     void deps
@@ -36,7 +36,7 @@ export async function startBackgroundJobs(
       .then((scanConfig) =>
         deps.scanTargets({
           libraryPath: deps.expandHome(scanConfig.libraryPath),
-          targetDirectories: scanConfig.targetDirectories.map((target) => deps.expandHome(target))
+          targets: scanConfig.targets.map((target) => ({ ...target, path: deps.expandHome(target.path) }))
         })
       )
       .catch((error: unknown) => {
@@ -50,7 +50,7 @@ export async function startBackgroundJobs(
   runScan();
 
   // Target directory watchers are created from startup config; each scan reloads current config.
-  const watcher = deps.watchTargetDirectories({ targetDirectories: expandedTargets }, runScan, (error) => {
+  const watcher = deps.watchTargetDirectories(expandedTargetPaths, runScan, (error) => {
     console.error("Target watcher failed", error);
     window.webContents.send("background:scan-error", {
       message: error instanceof Error ? error.message : String(error)

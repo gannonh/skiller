@@ -31,12 +31,15 @@ describe("config", () => {
     expect(defaultTargetDirectories()).toEqual([
       "~/.agents/skills",
       "~/.claude/skills",
-      "~/.codex/skills",
       "~/.cursor/skills",
       "~/.pi/agent/skills",
       "~/.gemini/skills",
       "~/.copilot/skills"
     ]);
+  });
+
+  it("defaults all targets to enabled target records", () => {
+    expect(defaultConfig().targets).toEqual(defaultTargetDirectories().map((targetPath) => ({ path: targetPath, enabled: true })));
   });
 
   it("normalizes empty config values", () => {
@@ -47,12 +50,38 @@ describe("config", () => {
     expect(
       normalizeConfig({
         updateSchedule: { intervalHours: 6 },
-        targetDirectories: ["~/custom-skills"]
+        targets: [{ path: "~/custom-skills", enabled: false }]
       })
     ).toMatchObject({
       updateSchedule: { intervalHours: 6 },
-      targetDirectories: ["~/custom-skills"]
+      targets: [{ path: "~/custom-skills", enabled: false }]
     });
+  });
+
+  it("preserves an explicitly empty target list", () => {
+    expect(normalizeConfig({ targets: [] }).targets).toEqual([]);
+  });
+
+  it("normalizes legacy target directories into enabled target records", () => {
+    expect(normalizeConfig({ targetDirectories: ["~/legacy-skills"] }).targets).toEqual([
+      { path: "~/legacy-skills", enabled: true }
+    ]);
+  });
+
+  it("trims target paths and preserves root-like targets", () => {
+    expect(
+      normalizeConfig({
+        targets: [
+          { path: "~/skills/", enabled: true },
+          { path: " / ", enabled: false },
+          { path: " ~ ", enabled: true }
+        ]
+      }).targets
+    ).toEqual([
+      { path: "~/skills", enabled: true },
+      { path: "/", enabled: false },
+      { path: "~", enabled: true }
+    ]);
   });
 
   it("expands a leading home segment", () => {

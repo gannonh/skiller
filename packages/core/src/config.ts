@@ -10,6 +10,10 @@ export interface ConfigPersistenceOptions {
   configPath?: string;
 }
 
+type ConfigInput = Partial<SkillerConfig> & {
+  targetDirectories?: string[];
+};
+
 export function defaultConfigPath(): string {
   if (process.env.SKILLER_CONFIG_PATH) return process.env.SKILLER_CONFIG_PATH;
 
@@ -27,7 +31,7 @@ export function defaultConfigPath(): string {
 export function defaultConfig(): SkillerConfig {
   return {
     libraryPath: "~/skiller",
-    targetDirectories: defaultTargetDirectories(),
+    targets: defaultTargetDirectories().map((targetPath) => ({ path: targetPath, enabled: true })),
     updateSchedule: { intervalHours: 24 },
     keepAllSkillsUpdated: false,
     launchAtLogin: false,
@@ -35,19 +39,41 @@ export function defaultConfig(): SkillerConfig {
   };
 }
 
-export function normalizeConfig(input: Partial<SkillerConfig>): SkillerConfig {
+function normalizeTargetPath(targetPath: string): string {
+  const trimmed = targetPath.trim();
+  if (trimmed === "/" || trimmed === "~") return trimmed;
+  return trimmed.replace(/[\\/]+$/g, "");
+}
+
+function normalizeTargets(input: ConfigInput, defaults: SkillerConfig): SkillerConfig["targets"] {
+  if (Array.isArray(input.targets)) {
+    return input.targets.map((target) => ({
+      ...target,
+      path: normalizeTargetPath(target.path)
+    }));
+  }
+
+  if (Array.isArray(input.targetDirectories)) {
+    return input.targetDirectories.map((targetPath) => ({
+      path: normalizeTargetPath(targetPath),
+      enabled: true
+    }));
+  }
+
+  return defaults.targets;
+}
+
+export function normalizeConfig(input: ConfigInput): SkillerConfig {
   const defaults = defaultConfig();
+  const { targetDirectories: _targetDirectories, ...currentInput } = input;
   return {
     ...defaults,
-    ...input,
+    ...currentInput,
     updateSchedule: {
       ...defaults.updateSchedule,
       ...input.updateSchedule
     },
-    targetDirectories:
-      input.targetDirectories && input.targetDirectories.length > 0
-        ? input.targetDirectories
-        : defaults.targetDirectories
+    targets: normalizeTargets(input, defaults)
   };
 }
 

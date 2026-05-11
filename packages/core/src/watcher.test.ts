@@ -27,7 +27,7 @@ describe("watchTargetDirectories", () => {
     const onChange = vi.fn();
     const onError = vi.fn();
 
-    watchTargetDirectories({ targetDirectories: ["/skills"] }, onChange, onError);
+    watchTargetDirectories(["/skills"], onChange, onError);
 
     expect(mocks.watch).toHaveBeenCalledWith(["/skills"], {
       ignoreInitial: true,

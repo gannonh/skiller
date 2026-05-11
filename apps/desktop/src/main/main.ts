@@ -1,4 +1,4 @@
-import { BrowserWindow, Tray, app } from "electron";
+import { BrowserWindow, Tray, app, nativeImage } from "electron";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let tray: Tray | null = null;
 let cleanupItems: Array<{ stop: () => void }> = [];
 
+function appIconPath(): string | undefined {
+  const candidates = [
+    join(__dirname, "../../assets/app-icon.png"),
+    join(__dirname, "../../../assets/app-icon.png")
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
 function rendererHtmlPath(): string {
   const builtRenderer = join(__dirname, "../renderer/index.html");
   if (existsSync(builtRenderer)) {
@@ -21,9 +30,11 @@ function rendererHtmlPath(): string {
 }
 
 async function createWindow(): Promise<BrowserWindow> {
+  const icon = appIconPath();
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload.cjs"),
       contextIsolation: true,
@@ -45,6 +56,14 @@ async function createWindow(): Promise<BrowserWindow> {
 }
 
 app.whenReady().then(async () => {
+  const icon = appIconPath();
+  if (icon && process.platform === "darwin" && app.dock) {
+    const dockIcon = nativeImage.createFromPath(icon);
+    if (!dockIcon.isEmpty()) {
+      app.dock.setIcon(dockIcon);
+    }
+  }
+
   registerIpcHandlers();
   const window = await createWindow();
   tray = createTray(window);

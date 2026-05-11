@@ -4,9 +4,12 @@ type ScanError = { message: string };
 
 contextBridge.exposeInMainWorld("skiller", {
   listLibrary: () => ipcRenderer.invoke("library:list"),
+  setSkillEnabled: (skillId: string, enabled: boolean) => ipcRenderer.invoke("library:set-enabled", skillId, enabled),
   scanTargets: () => ipcRenderer.invoke("targets:scan"),
+  saveTargets: (targets: Array<{ path: string; enabled: boolean }>) => ipcRenderer.invoke("targets:save", targets),
   getConfig: () => ipcRenderer.invoke("config:get"),
-  saveConfig: (config: { libraryPath?: string; keepAllSkillsUpdated?: boolean }) => ipcRenderer.invoke("config:save", config),
+  saveConfig: (config: { libraryPath?: string; keepAllSkillsUpdated?: boolean; targets?: Array<{ path: string; enabled: boolean }> }) =>
+    ipcRenderer.invoke("config:save", config),
   checkUpdates: () => ipcRenderer.invoke("updates:check"),
   leaderboard: (type: "all-time" | "trending" | "hot") => ipcRenderer.invoke("discover:leaderboard", type),
   search: (query: string) => ipcRenderer.invoke("discover:search", query),
