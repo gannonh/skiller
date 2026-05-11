@@ -288,6 +288,28 @@ function createBrowserPreviewApi(): SkillerApi {
         };
       }
 
+      if (githubUrl.includes("many-skills")) {
+        return {
+          repositoryOnly: true,
+          githubUrl,
+          ref: "HEAD",
+          commit: "preview",
+          skills: Array.from({ length: 28 }, (_, index) => {
+            const number = String(index + 1).padStart(2, "0");
+            const name = `skill-${number}`;
+            return {
+              name,
+              path: `skills/${name}`,
+              description: `Preview GitHub repository skill ${number}`,
+              githubUrl,
+              githubPath: `skills/${name}`,
+              ref: "HEAD",
+              commit: "preview"
+            };
+          })
+        };
+      }
+
       return {
         repositoryOnly: true,
         githubUrl,

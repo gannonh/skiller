@@ -377,12 +377,12 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
         )}
       </CardContent>
       <Sheet open={isGithubSheetOpen} onOpenChange={setIsGithubSheetOpen}>
-        <SheetContent className="sm:max-w-xl">
-          <SheetHeader>
+        <SheetContent className="overflow-hidden sm:max-w-xl">
+          <SheetHeader className="shrink-0">
             <SheetTitle>GitHub Skills</SheetTitle>
             <SheetDescription>Select skills to install from this repository.</SheetDescription>
           </SheetHeader>
-          <div className="flex flex-col gap-3 px-6">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6">
             {githubChoices.length === 0 ? (
               <Alert>
                 <AlertTitle>No skills found</AlertTitle>
@@ -430,7 +430,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
               </Table>
             )}
           </div>
-          <SheetFooter>
+          <SheetFooter className="shrink-0 border-t bg-popover">
             <Button
               onClick={() => void installSelectedGithubSkills()}
               disabled={isInstalling || selectedGithubSkills.length === 0}

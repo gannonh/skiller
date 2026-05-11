@@ -137,6 +137,25 @@ test("selects skills from a GitHub repository preview", async ({ page }) => {
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toHaveCount(0);
 });
 
+test("keeps GitHub repository install actions visible for long skill lists", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByLabel("GitHub URL").fill("https://github.com/example/many-skills");
+  await page.getByRole("button", { name: "Add from GitHub" }).click();
+
+  await expect(page.getByRole("heading", { name: "GitHub Skills" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /skill-28/ })).toBeVisible();
+
+  const installButton = page.getByRole("button", { name: "Install selected" });
+  await expect(installButton).toBeVisible();
+  const buttonBox = await installButton.boundingBox();
+  const viewport = page.viewportSize();
+
+  expect(buttonBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(viewport!.height);
+});
+
 test("installs a registry result from Discover preview mode", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();
