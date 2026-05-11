@@ -173,19 +173,11 @@ function createBrowserPreviewApi(): SkillerApi {
       updated: [],
       errors: []
     }),
-    installLocal: async () =>
-      addPreviewSkill(createPreviewMetadata({
-        id: `local-preview-${fallbackSkills.length + 1}`,
-        name: "Local Preview Skill",
-        description: "Preview skill installed from a local folder",
-        libraryPath: "~/skiller/local-preview-skill",
-        source: { type: "local", path: "~/skiller/example-skill" },
-        keepUpdated: false
-      })),
+    installLocal: async () => null,
     installGithub: async (input) =>
       addPreviewSkill(createPreviewMetadata({
-        id: `github-preview-${fallbackSkills.length + 1}`,
-        name: "GitHub Preview Skill",
+        id: "github-preview",
+        name: "github-preview",
         description: "Preview skill installed from GitHub",
         libraryPath: "~/skiller/github-preview-skill",
         source: {
@@ -199,8 +191,8 @@ function createBrowserPreviewApi(): SkillerApi {
       })),
     installRegistry: async (skillsShId) =>
       addPreviewSkill(createPreviewMetadata({
-        id: `registry-preview-${fallbackSkills.length + 1}`,
-        name: "Registry Preview Skill",
+        id: skillsShId,
+        name: skillsShId,
         description: "Preview skill installed from skills.sh",
         libraryPath: "~/skiller/registry-preview-skill",
         source: {
