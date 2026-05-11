@@ -16,7 +16,7 @@ export function TargetsPage() {
   const [targets, setTargets] = useState<TargetConfig[]>([]);
   const [newTarget, setNewTarget] = useState("");
   const [isScanning, setIsScanning] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [pendingTargets, setPendingTargets] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     void skillerApi
@@ -32,18 +32,27 @@ export function TargetsPage() {
     });
   }, []);
 
-  async function saveTargets(nextTargets: TargetConfig[], nextStatus: string) {
-    setIsSaving(true);
+  async function saveTargets(nextTargets: TargetConfig[], nextStatus: string, pendingPaths: string[]) {
+    const previousTargets = targets;
+    setTargets(nextTargets);
+    setPendingTargets((current) => new Set([...current, ...pendingPaths]));
     setError(null);
     try {
       const config = await skillerApi.saveTargets(nextTargets);
       setTargets(config.targets);
       setStatus(nextStatus);
     } catch (caught) {
+      setTargets(previousTargets);
       setError(caught instanceof Error ? caught.message : String(caught));
       setStatus("Save failed");
     } finally {
-      setIsSaving(false);
+      setPendingTargets((current) => {
+        const next = new Set(current);
+        for (const pendingPath of pendingPaths) {
+          next.delete(pendingPath);
+        }
+        return next;
+      });
     }
   }
 
@@ -51,21 +60,23 @@ export function TargetsPage() {
     const targetPath = newTarget.trim();
     if (targetPath === "" || targets.some((target) => target.path === targetPath)) return;
 
-    await saveTargets([...targets, { path: targetPath, enabled: true }], "Target added");
+    await saveTargets([...targets, { path: targetPath, enabled: true }], "Target added", [targetPath]);
     setNewTarget("");
   }
 
   async function setTargetEnabled(targetPath: string, enabled: boolean) {
     await saveTargets(
       targets.map((target) => (target.path === targetPath ? { ...target, enabled } : target)),
-      enabled ? "Target enabled" : "Target disabled"
+      enabled ? "Target enabled" : "Target disabled",
+      [targetPath]
     );
   }
 
   async function removeTarget(targetPath: string) {
     await saveTargets(
       targets.filter((target) => target.path !== targetPath),
-      "Target removed"
+      "Target removed",
+      [targetPath]
     );
   }
 
@@ -99,7 +110,7 @@ export function TargetsPage() {
               <Switch
                 checked={target.enabled}
                 onCheckedChange={(checked) => void setTargetEnabled(target.path, checked)}
-                disabled={isSaving}
+                disabled={pendingTargets.has(target.path)}
                 aria-label={`${target.enabled ? "Disable" : "Enable"} ${target.path}`}
               />
               <div className="min-w-0 flex-1 truncate font-mono text-sm">{target.path}</div>
@@ -107,7 +118,7 @@ export function TargetsPage() {
                 variant="ghost"
                 size="icon"
                 onClick={() => void removeTarget(target.path)}
-                disabled={isSaving}
+                disabled={pendingTargets.has(target.path)}
                 aria-label={`Remove ${target.path}`}
                 title="Remove target"
               >
@@ -127,9 +138,12 @@ export function TargetsPage() {
               if (event.key === "Enter") void addTarget();
             }}
             placeholder="~/path/to/skills"
-            disabled={isSaving}
+            disabled={pendingTargets.has(newTarget.trim())}
           />
-          <Button onClick={() => void addTarget()} disabled={isSaving || newTarget.trim() === ""}>
+          <Button
+            onClick={() => void addTarget()}
+            disabled={newTarget.trim() === "" || pendingTargets.has(newTarget.trim())}
+          >
             <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
             Add Target
           </Button>

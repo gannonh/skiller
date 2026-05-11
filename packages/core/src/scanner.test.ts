@@ -92,6 +92,32 @@ describe("scanTargets", () => {
     await expect(fs.pathExists(path.join(disabled, "example"))).resolves.toBe(false);
   });
 
+  it("creates missing enabled target directories before syncing library skills", async () => {
+    const target = path.join(tmp, "missing-target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(library, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: skill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true
+    });
+
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+
+    expect(result.enabled).toEqual([{ skillId: "example", targetPath: target }]);
+    expect(await fs.realpath(path.join(target, "example"))).toBe(await fs.realpath(skill));
+  });
+
   it("removes disabled library skills from enabled targets", async () => {
     const target = path.join(tmp, "target");
     const library = path.join(tmp, "library");
@@ -548,11 +574,13 @@ describe("scanTargets", () => {
     expect(result).toEqual({ imported: [], enabled: [], disabled: [], errors: [] });
   });
 
-  it("skips missing target directories", async () => {
+  it("skips missing disabled target directories", async () => {
     const library = path.join(tmp, "library");
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(path.join(tmp, "missing-target"))] });
+    const target = path.join(tmp, "missing-target");
+    const result = await scanTargets({ libraryPath: library, targets: [disabledTarget(target)] });
 
     expect(result).toEqual({ imported: [], enabled: [], disabled: [], errors: [] });
+    await expect(fs.pathExists(target)).resolves.toBe(false);
   });
 
   it("leaves existing non-symlink target entries in place during library sync", async () => {
@@ -845,6 +873,45 @@ describe("scanTargets", () => {
     expect(result.disabled).toEqual([{ skillId: "example", targetPath: target }]);
   });
 
+  it("uses indexed metadata paths when disabling a target", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(target);
+
+    for (let index = 1; index <= 6; index += 1) {
+      const id = `example-${index}`;
+      const librarySkill = path.join(library, id);
+
+      await fs.ensureDir(librarySkill);
+      await fs.writeFile(path.join(librarySkill, "SKILL.md"), `---\nname: ${id}\ndescription: Example.\n---\n`);
+      await store.save({
+        id,
+        name: id,
+        libraryPath: librarySkill,
+        source: { type: "unknown" },
+        installedAt: "2026-05-10T12:00:00.000Z",
+        contentHash: "hash",
+        keepUpdated: false,
+        validation: { valid: true, issues: [] },
+        enabled: true
+      });
+      await fs.symlink(librarySkill, path.join(target, id));
+    }
+
+    const realpath = vi.spyOn(fs, "realpath");
+
+    try {
+      const result = await scanTargets({ libraryPath: library, targets: [disabledTarget(target)] });
+
+      expect(result.disabled).toHaveLength(6);
+      expect(realpath.mock.calls.length).toBeLessThanOrEqual(25);
+    } finally {
+      realpath.mockRestore();
+    }
+  });
+
   it("skips managed symlinks replaced before disabled-target cleanup", async () => {
     const target = path.join(tmp, "target");
     const library = path.join(tmp, "library");
@@ -889,6 +956,66 @@ describe("scanTargets", () => {
   });
 
   it("skips managed symlinks retargeted before disabled-target cleanup", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const otherLibrarySkill = path.join(library, "other");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+    const originalLstat = fs.lstat;
+    let targetSkillStats = 0;
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(librarySkill);
+    await fs.ensureDir(otherLibrarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await fs.writeFile(path.join(otherLibrarySkill, "SKILL.md"), "---\nname: other\ndescription: Other.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true
+    });
+    await store.save({
+      id: "other",
+      name: "other",
+      libraryPath: otherLibrarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true
+    });
+    await fs.symlink(librarySkill, targetSkill);
+
+    const lstat = vi.spyOn(fs, "lstat").mockImplementation(async (candidate, options) => {
+      if (candidate === targetSkill) {
+        targetSkillStats += 1;
+        if (targetSkillStats === 2) {
+          await fs.remove(targetSkill);
+          await fs.symlink(otherLibrarySkill, targetSkill);
+        }
+      }
+
+      return originalLstat(candidate as never, options as never) as never;
+    });
+
+    try {
+      const result = await scanTargets({ libraryPath: library, targets: [disabledTarget(target)] });
+
+      expect(result.disabled).toEqual([]);
+    } finally {
+      lstat.mockRestore();
+    }
+  });
+
+  it("skips managed symlinks retargeted to unmanaged paths before disabled-target cleanup", async () => {
     const target = path.join(tmp, "target");
     const library = path.join(tmp, "library");
     const unmanaged = path.join(tmp, "unmanaged");

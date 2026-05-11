@@ -2,7 +2,18 @@ import fs from "fs-extra";
 import path from "node:path";
 import type { SkillMetadata } from "./types.js";
 
-const METADATA_FILE = "skiller.metadata.json";
+const MANIFEST_FILE = "skiller.manifest.json";
+const LEGACY_METADATA_FILE = "skiller.metadata.json";
+
+interface SkillManifest {
+  version: 1;
+  skills: SkillMetadata[];
+}
+
+interface LegacyRecords {
+  records: SkillMetadata[];
+  files: string[];
+}
 
 async function resolveEffectivePath(targetPath: string): Promise<string> {
   let existingAncestor = targetPath;
@@ -35,27 +46,61 @@ function normalizeMetadata(metadata: SkillMetadata): SkillMetadata {
 export class MetadataStore {
   constructor(private readonly libraryPath: string) {}
 
-  async list(): Promise<SkillMetadata[]> {
-    const dirExists = await fs.pathExists(this.libraryPath);
-    if (!dirExists) return [];
+  private manifestPath(): string {
+    return path.join(this.libraryPath, MANIFEST_FILE);
+  }
+
+  private async readLegacyRecords(): Promise<LegacyRecords> {
+    if (!(await fs.pathExists(this.libraryPath))) return { records: [], files: [] };
 
     const entries = await fs.readdir(this.libraryPath, { withFileTypes: true });
     const records: SkillMetadata[] = [];
+    const files: string[] = [];
 
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name === ".staging") continue;
 
-      const file = path.join(this.libraryPath, entry.name, METADATA_FILE);
-      if (await fs.pathExists(file)) {
-        try {
-          records.push(normalizeMetadata(await fs.readJson(file)));
-        } catch {
-          continue;
-        }
+      const file = path.join(this.libraryPath, entry.name, LEGACY_METADATA_FILE);
+      if (!(await fs.pathExists(file))) continue;
+
+      try {
+        records.push(normalizeMetadata(await fs.readJson(file)));
+        files.push(file);
+      } catch {
+        continue;
       }
     }
 
-    return records;
+    return { records, files };
+  }
+
+  private async writeManifest(skills: SkillMetadata[]): Promise<void> {
+    const manifest: SkillManifest = {
+      version: 1,
+      skills
+    };
+
+    await fs.writeJson(this.manifestPath(), manifest, { spaces: 2 });
+  }
+
+  private async removeLegacyRecords(files: string[]): Promise<void> {
+    await Promise.all(files.map((file) => fs.remove(file)));
+  }
+
+  async list(): Promise<SkillMetadata[]> {
+    if (!(await fs.pathExists(this.manifestPath()))) {
+      const legacyRecords = await this.readLegacyRecords();
+
+      if (legacyRecords.records.length === 0) return [];
+
+      await this.writeManifest(legacyRecords.records);
+      await this.removeLegacyRecords(legacyRecords.files);
+      return legacyRecords.records;
+    }
+
+    const manifest = (await fs.readJson(this.manifestPath())) as SkillManifest;
+
+    return Array.isArray(manifest.skills) ? manifest.skills.map(normalizeMetadata) : [];
   }
 
   async save(metadata: SkillMetadata): Promise<void> {
@@ -69,7 +114,13 @@ export class MetadataStore {
       throw new Error("Metadata path must be inside the configured library");
     }
 
-    await fs.ensureDir(effectiveMetadataPath);
-    await fs.writeJson(path.join(effectiveMetadataPath, METADATA_FILE), metadata, { spaces: 2 });
+    const currentSkills = await this.list();
+    const existingIndex = currentSkills.findIndex((skill) => skill.id === metadata.id);
+    const nextSkills =
+      existingIndex === -1
+        ? [...currentSkills, metadata]
+        : currentSkills.map((skill, index) => (index === existingIndex ? metadata : skill));
+
+    await this.writeManifest(nextSkills);
   }
 }

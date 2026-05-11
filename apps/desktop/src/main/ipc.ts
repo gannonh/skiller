@@ -11,10 +11,40 @@ function expandTargets(targets: TargetConfig[]): TargetConfig[] {
   return targets.map((target) => ({ ...target, path: expandHome(target.path) }));
 }
 
+function changedTargets(currentTargets: TargetConfig[], nextTargets: TargetConfig[]): TargetConfig[] {
+  const currentByPath = new Map(currentTargets.map((target) => [target.path, target]));
+  const nextByPath = new Map(nextTargets.map((target) => [target.path, target]));
+  const changed: TargetConfig[] = [];
+
+  for (const target of nextTargets) {
+    const current = currentByPath.get(target.path);
+    if (!current || current.enabled !== target.enabled) {
+      changed.push(target);
+    }
+  }
+
+  for (const target of currentTargets) {
+    if (!nextByPath.has(target.path)) {
+      changed.push({ ...target, enabled: false });
+    }
+  }
+
+  return changed;
+}
+
 async function scanConfig(config: SkillerConfig, extraTargets: TargetConfig[] = []) {
   return scanTargets({
     libraryPath: expandHome(config.libraryPath),
     targets: [...expandTargets(config.targets), ...extraTargets]
+  });
+}
+
+async function scanTargetsForConfig(config: SkillerConfig, targets: TargetConfig[]) {
+  if (targets.length === 0) return;
+
+  await scanTargets({
+    libraryPath: expandHome(config.libraryPath),
+    targets: expandTargets(targets)
   });
 }
 
@@ -47,13 +77,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("targets:save", async (_event, targets: TargetConfig[]) => {
     const current = await loadConfig();
-    const nextPaths = new Set(targets.map((target) => target.path));
-    const removedTargets = current.targets
-      .filter((target) => !nextPaths.has(target.path))
-      .map((target) => ({ path: expandHome(target.path), enabled: false }));
+    const changed = changedTargets(current.targets, targets);
     const config = await saveConfig({ targets });
 
-    await scanConfig(config, removedTargets);
+    await scanTargetsForConfig(config, changed);
     return config;
   });
 
