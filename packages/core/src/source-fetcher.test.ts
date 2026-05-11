@@ -107,6 +107,21 @@ describe("extractRegistrySkillSource", () => {
     });
   });
 
+  it("derives github source fields from public skills.sh search rows", () => {
+    expect(
+      extractRegistrySkillSource({
+        id: "vercel-labs/agent-browser/agent-browser",
+        skillId: "agent-browser",
+        name: "agent-browser",
+        source: "vercel-labs/agent-browser"
+      })
+    ).toEqual({
+      skillsShId: "vercel-labs/agent-browser/agent-browser",
+      githubUrl: "https://github.com/vercel-labs/agent-browser",
+      githubPath: "agent-browser"
+    });
+  });
+
   it("rejects payloads without an id", () => {
     expect(() => extractRegistrySkillSource({ githubUrl: "https://github.com/example/skills" })).toThrow(
       "skills.sh payload is missing an id"

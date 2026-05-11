@@ -151,6 +151,68 @@ describe("SkillsShClient", () => {
     expect(fetchImpl).toHaveBeenNthCalledWith(3, "https://skills.sh/api/v1/skills/audit/team/skill%20%231");
   });
 
+  it("falls back to public search data when skill details require authentication", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 401, statusText: "Unauthorized" }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            skills: [
+              {
+                id: "vercel-labs/agent-browser/agent-browser",
+                skillId: "agent-browser",
+                name: "agent-browser",
+                source: "vercel-labs/agent-browser"
+              }
+            ]
+          })
+        )
+      );
+    const client = new SkillsShClient({ fetchImpl });
+
+    await expect(client.skill("agent-browser")).resolves.toEqual({
+      id: "vercel-labs/agent-browser/agent-browser",
+      skillId: "agent-browser",
+      name: "agent-browser",
+      source: "vercel-labs/agent-browser",
+      githubUrl: "https://github.com/vercel-labs/agent-browser",
+      githubPath: "agent-browser"
+    });
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "https://skills.sh/api/v1/skills/agent-browser");
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, "https://skills.sh/api/search?q=agent-browser");
+  });
+
+  it("falls back to public search by the last id segment for full registry ids", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 401, statusText: "Unauthorized" }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ skills: [] })))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            skills: [
+              {
+                id: "vercel-labs/agent-browser/agent-browser",
+                skillId: "agent-browser",
+                name: "agent-browser",
+                source: "vercel-labs/agent-browser"
+              }
+            ]
+          })
+        )
+      );
+    const client = new SkillsShClient({ fetchImpl });
+
+    await expect(client.skill("vercel-labs/agent-browser/agent-browser")).resolves.toMatchObject({
+      id: "vercel-labs/agent-browser/agent-browser",
+      githubUrl: "https://github.com/vercel-labs/agent-browser",
+      githubPath: "agent-browser"
+    });
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, "https://skills.sh/api/search?q=vercel-labs%2Fagent-browser%2Fagent-browser");
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, "https://skills.sh/api/search?q=agent-browser");
+  });
+
   it("uses global fetch when no fetch implementation is provided", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ id: "one" })));
     vi.stubGlobal("fetch", fetchImpl);

@@ -105,17 +105,22 @@ export function parseGithubRepository(githubUrl: string): GithubRepository | nul
 }
 
 export function extractRegistrySkillSource(payload: Record<string, unknown>): RegistrySkillSource {
-  const skillsShId = firstStringField(payload, ["id", "slug", "name"]);
+  const skillsShId = firstStringField(payload, ["id", "skillId", "slug", "name"]);
   if (!skillsShId) {
     throw new Error("skills.sh payload is missing an id");
   }
 
-  const githubUrl = firstStringField(payload, ["githubUrl", "github_url", "repositoryUrl", "repoUrl", "sourceUrl"]);
+  const source = firstStringField(payload, ["source"]);
+  const githubUrl =
+    firstStringField(payload, ["githubUrl", "github_url", "repositoryUrl", "repoUrl", "sourceUrl"]) ??
+    (source ? githubUrlFromRegistrySource(source) : undefined);
   if (!githubUrl) {
     throw new Error("skills.sh payload is missing a GitHub URL");
   }
 
-  const githubPath = firstStringField(payload, ["githubPath", "github_path", "path", "skillPath", "directory"]);
+  const githubPath =
+    firstStringField(payload, ["githubPath", "github_path", "path", "skillPath", "directory"]) ??
+    (source ? githubPathFromRegistrySource(payload, source) : undefined);
   const ref = firstStringField(payload, ["ref", "branch", "tag"]);
 
   return {
@@ -124,6 +129,22 @@ export function extractRegistrySkillSource(payload: Record<string, unknown>): Re
     ...(githubPath ? { githubPath } : {}),
     ...(ref ? { ref } : {})
   };
+}
+
+function githubUrlFromRegistrySource(source: string): string | undefined {
+  if (/^https?:\/\/github\.com\/[^/]+\/[^/]+/.test(source)) return source;
+  if (/^[^/\s]+\/[^/\s]+$/.test(source)) return `https://github.com/${source}`;
+  return undefined;
+}
+
+function githubPathFromRegistrySource(payload: Record<string, unknown>, source: string): string | undefined {
+  const id = stringField(payload, "id");
+  if (id?.startsWith(`${source}/`)) {
+    const path = id.slice(source.length + 1);
+    return path.length > 0 ? path : undefined;
+  }
+
+  return stringField(payload, "skillId") ?? stringField(payload, "name");
 }
 
 export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput): Promise<FetchedGithubSkillSource> {

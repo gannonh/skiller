@@ -270,4 +270,64 @@ describe("remote installers", () => {
     });
     await expect(fs.pathExists(path.join(library, "registry-browser", "SKILL.md"))).resolves.toBe(true);
   });
+
+  it("installs a skills.sh skill from public search fallback data", async () => {
+    const library = path.join(tmp, "library");
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://skills.sh/api/v1/skills/agent-browser") {
+        return new Response("nope", { status: 401, statusText: "Unauthorized" });
+      }
+
+      if (url === "https://skills.sh/api/search?q=agent-browser") {
+        return new Response(
+          JSON.stringify({
+            skills: [
+              {
+                id: "example/skills/agent-browser",
+                skillId: "agent-browser",
+                name: "agent-browser",
+                source: "example/skills"
+              }
+            ]
+          })
+        );
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "abc123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/abc123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "agent-browser/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/abc123/agent-browser/SKILL.md") {
+        return new Response("---\nname: agent-browser\ndescription: Agent browser skill.\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const metadata = await installSkillsShSkill({
+      skillsShId: "agent-browser",
+      libraryPath: library,
+      fetchImpl
+    });
+
+    expect(metadata).toMatchObject({
+      id: "agent-browser",
+      name: "agent-browser",
+      description: "Agent browser skill.",
+      source: {
+        type: "skills.sh",
+        skillsShId: "example/skills/agent-browser",
+        githubUrl: "https://github.com/example/skills",
+        githubPath: "agent-browser",
+        ref: "HEAD",
+        commit: "abc123"
+      },
+      keepUpdated: true
+    });
+    await expect(fs.pathExists(path.join(library, "agent-browser", "SKILL.md"))).resolves.toBe(true);
+  });
 });
