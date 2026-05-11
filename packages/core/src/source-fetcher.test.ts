@@ -10,11 +10,14 @@ import {
 
 const tempRoots: string[] = [];
 
-function mockFetch(handler: (url: string) => Promise<Response> | Response): typeof fetch {
-  return vi.fn(async (input: Parameters<typeof fetch>[0]) => handler(String(input))) as unknown as typeof fetch;
+function mockFetch(handler: (url: string, init?: RequestInit) => Promise<Response> | Response): typeof fetch {
+  return vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    handler(String(input), init)
+  ) as unknown as typeof fetch;
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(tempRoots.splice(0).map((dir) => fs.remove(dir)));
 });
 
@@ -151,6 +154,49 @@ describe("extractRegistrySkillSource", () => {
 });
 
 describe("discoverGithubSkills", () => {
+  it("authenticates github requests with an environment token", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "token123");
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "alpha/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/alpha/SKILL.md") {
+        return new Response("---\nname: Alpha\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await discoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.github.com/repos/example/skills/commits/HEAD",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer token123" })
+      })
+    );
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://raw.githubusercontent.com/example/skills/commit123/alpha/SKILL.md",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer token123" })
+      })
+    );
+  });
+
+  it("explains github rate limit failures with gh authentication guidance", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "token123");
+    const fetchImpl = mockFetch(() => new Response("rate limited", { status: 403, statusText: "rate limit exceeded" }));
+
+    await expect(discoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl })).rejects.toThrow(
+      'GitHub commit lookup failed: 403 rate limit exceeded. GitHub API rate limit exceeded. Make sure you are authenticated with GitHub by running "gh auth status" or set GITHUB_TOKEN, then try again.'
+    );
+  });
+
   it("lists skills from a repository url", async () => {
     const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {

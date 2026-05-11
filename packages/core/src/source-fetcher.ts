@@ -1,6 +1,8 @@
 import fs from "fs-extra";
+import { execFile } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import YAML from "yaml";
 
 export interface GithubRepository {
@@ -89,10 +91,58 @@ interface SkillInfo {
   description?: string;
 }
 
+const execFileAsync = promisify(execFile);
+
 const githubHeaders = {
   Accept: "application/vnd.github+json",
   "User-Agent": "skiller"
 };
+let cachedGhToken: string | null | undefined;
+
+async function githubAuthToken(): Promise<string | undefined> {
+  const envToken = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  if (envToken?.trim()) return envToken.trim();
+  if (cachedGhToken !== undefined) return cachedGhToken ?? undefined;
+
+  try {
+    const { stdout } = await execFileAsync("gh", ["auth", "token"], { timeout: 1000 });
+    const token = stdout.trim();
+    cachedGhToken = token || null;
+    return token || undefined;
+  } catch {
+    cachedGhToken = null;
+    return undefined;
+  }
+}
+
+async function githubRequestHeaders(): Promise<Record<string, string>> {
+  const token = await githubAuthToken();
+  return {
+    ...githubHeaders,
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
+}
+
+async function githubFailureDetail(response: Response): Promise<string> {
+  const statusText = response.statusText || "HTTP error";
+  const message = `${response.status} ${statusText}`;
+  if (response.status !== 403) return message;
+
+  let body = "";
+  try {
+    body = await response.clone().text();
+  } catch {
+    body = "";
+  }
+
+  const rateLimited =
+    response.headers.get("x-ratelimit-remaining") === "0" ||
+    /rate limit/i.test(statusText) ||
+    /rate limit/i.test(body);
+  if (!rateLimited) return message;
+
+  return `${message}. GitHub API rate limit exceeded. Make sure you are authenticated with GitHub by running "gh auth status" or set GITHUB_TOKEN, then try again.`;
+}
 
 function stringField(payload: Record<string, unknown>, key: string): string | undefined {
   const value = payload[key];
@@ -261,9 +311,9 @@ function resolveGithubPath(entries: GithubTreeEntry[], githubPath: string): stri
 }
 
 async function readJson(fetchImpl: FetchImpl, url: string, context: string): Promise<unknown> {
-  const response = await fetchImpl(url, { headers: githubHeaders });
+  const response = await fetchImpl(url, { headers: await githubRequestHeaders() });
   if (!response.ok) {
-    throw new Error(`${context} failed: ${response.status} ${response.statusText}`);
+    throw new Error(`${context} failed: ${await githubFailureDetail(response)}`);
   }
 
   return response.json();
@@ -311,9 +361,9 @@ async function readRawGithubBlob(input: {
   const rawUrl = `https://raw.githubusercontent.com/${input.owner}/${input.repo}/${input.commit}/${encodeEntryPath(
     input.entryPath
   )}`;
-  const response = await input.fetchImpl(rawUrl, { headers: githubHeaders });
+  const response = await input.fetchImpl(rawUrl, { headers: await githubRequestHeaders() });
   if (!response.ok) {
-    throw new Error(`GitHub blob fetch failed: ${response.status} ${response.statusText}`);
+    throw new Error(`GitHub blob fetch failed: ${await githubFailureDetail(response)}`);
   }
 
   return response.text();
@@ -462,9 +512,9 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
       const rawUrl = `https://raw.githubusercontent.com/${repository.owner}/${repository.repo}/${commit}/${encodeEntryPath(
         blob.entryPath
       )}`;
-      const response = await fetchImpl(rawUrl, { headers: githubHeaders });
+      const response = await fetchImpl(rawUrl, { headers: await githubRequestHeaders() });
       if (!response.ok) {
-        throw new Error(`GitHub blob fetch failed: ${response.status} ${response.statusText}`);
+        throw new Error(`GitHub blob fetch failed: ${await githubFailureDetail(response)}`);
       }
 
       const destination = path.join(sourcePath, blob.relativePath);
