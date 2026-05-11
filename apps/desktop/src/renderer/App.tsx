@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from "react";
+import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowReloadHorizontalIcon,
@@ -40,17 +40,16 @@ const pages: Array<{ id: Page; label: string; icon: typeof BookOpenIcon }> = [
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
-const pageComponents: Record<Page, ComponentType> = {
-  library: LibraryPage,
-  discover: DiscoverPage,
-  targets: TargetsPage,
-  updates: UpdatesPage,
-  settings: SettingsPage,
-};
+function renderPage(page: Page, setPage: (page: Page) => void) {
+  if (page === "library") return <LibraryPage onBrowseRegistry={() => setPage("discover")} />;
+  if (page === "discover") return <DiscoverPage />;
+  if (page === "targets") return <TargetsPage />;
+  if (page === "updates") return <UpdatesPage />;
+  return <SettingsPage />;
+}
 
 export function App() {
   const [page, setPage] = useState<Page>("library");
-  const ActivePage = pageComponents[page];
 
   return (
     <TooltipProvider>
@@ -88,7 +87,7 @@ export function App() {
         </Sidebar>
         <SidebarInset>
           <main className="min-h-svh bg-background p-6 text-foreground">
-            <ActivePage />
+            {renderPage(page, setPage)}
           </main>
         </SidebarInset>
         <Toaster />

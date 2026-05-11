@@ -1,11 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@workspace/ui/components/card";
 import { Input } from "@workspace/ui/components/input";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
-import { skillerApi, type DiscoverSkill, type LeaderboardType } from "../lib/api.js";
+import { skillerApi, type DiscoverSkill, type LeaderboardType, type SkillMetadata } from "../lib/api.js";
 
 function skillText(skill: DiscoverSkill, keys: Array<keyof DiscoverSkill>, fallback: string): string {
   for (const key of keys) {
@@ -16,8 +17,14 @@ function skillText(skill: DiscoverSkill, keys: Array<keyof DiscoverSkill>, fallb
   return fallback;
 }
 
+function skillId(skill: DiscoverSkill, fallback: string): string {
+  return skillText(skill, ["id", "slug", "name"], fallback);
+}
+
 export function DiscoverPage() {
   const [skills, setSkills] = useState<DiscoverSkill[]>([]);
+  const [librarySkills, setLibrarySkills] = useState<SkillMetadata[]>([]);
+  const [pendingSkillIds, setPendingSkillIds] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState("");
   const [leaderboardType, setLeaderboardType] = useState<LeaderboardType>("trending");
   const [isLoading, setIsLoading] = useState(true);
@@ -41,12 +48,23 @@ export function DiscoverPage() {
         if (mounted) setIsLoading(false);
       });
 
+    void skillerApi.listLibrary().then((result) => {
+      if (mounted) setLibrarySkills(result);
+    });
+
     return () => {
       mounted = false;
     };
   }, [leaderboardType]);
 
   const rows = useMemo(() => skills.slice(0, 10), [skills]);
+  const installedRegistryIds = useMemo(
+    () =>
+      new Set(
+        librarySkills.flatMap((skill) => (skill.source.type === "skills.sh" ? [skill.source.skillsShId] : []))
+      ),
+    [librarySkills]
+  );
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,10 +82,30 @@ export function DiscoverPage() {
     }
   }
 
+  async function installRegistry(id: string) {
+    setPendingSkillIds((current) => new Set(current).add(id));
+    setStatus(`Installing ${id}`);
+    try {
+      const metadata = await skillerApi.installRegistry(id);
+      setLibrarySkills((current) => [...current.filter((skill) => skill.id !== metadata.id), metadata]);
+      setStatus(`Installed ${metadata.name}`);
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPendingSkillIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Discover</CardTitle>
+        <CardTitle role="heading" aria-level={2}>
+          Discover
+        </CardTitle>
         <CardDescription>{status}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -95,20 +133,39 @@ export function DiscoverPage() {
               <TableRow>
                 <TableHead>Skill</TableHead>
                 <TableHead>Description</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((skill, index) => (
-                <TableRow key={skillText(skill, ["id", "name", "slug"], `skill-${index}`)}>
-                  <TableCell>{skillText(skill, ["name", "title", "id", "slug"], "Untitled skill")}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {skillText(skill, ["description", "summary"], "No description")}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {rows.map((skill, index) => {
+                const id = skillId(skill, `skill-${index}`);
+                const installed = installedRegistryIds.has(id);
+                const pending = pendingSkillIds.has(id);
+                return (
+                  <TableRow key={id}>
+                    <TableCell>{skillText(skill, ["name", "title", "id", "slug"], "Untitled skill")}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {skillText(skill, ["description", "summary"], "No description")}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">Registry</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant={installed ? "outline" : "default"}
+                        disabled={installed || pending}
+                        onClick={() => void installRegistry(id)}
+                      >
+                        {installed ? "Installed" : pending ? "Installing" : "Install"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={2} className="text-muted-foreground">
+                  <TableCell colSpan={4} className="text-muted-foreground">
                     No skills found.
                   </TableCell>
                 </TableRow>

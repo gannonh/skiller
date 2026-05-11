@@ -53,3 +53,36 @@ test("searches discover results", async ({ page }) => {
   await expect(page.getByRole("cell", { name: "browser-use" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "find-skills" })).toHaveCount(0);
 });
+
+test("shows provenance in the library and navigates to discover", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
+  await expect(page.getByText("Local", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Browse registry" }).click();
+  await expect(page.getByRole("heading", { name: "Discover" })).toBeVisible();
+});
+
+test("installs a registry result from Discover preview mode", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+
+  await page.getByRole("row", { name: /agent-browser/ }).getByRole("button", { name: "Install" }).click();
+  await expect(page.getByRole("row", { name: /agent-browser/ }).getByRole("button", { name: "Installed" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Library" }).click();
+  await expect(page.getByRole("cell", { name: "agent-browser", exact: true })).toBeVisible();
+  await expect(page.getByText("Registry", { exact: true })).toBeVisible();
+});
+
+test("lists updateable skills on the Updates page", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByRole("row", { name: /agent-browser/ }).getByRole("button", { name: "Install" }).click();
+  await page.getByRole("button", { name: "Updates" }).click();
+
+  await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "agent-browser" })).toBeVisible();
+  await expect(page.getByText("Registry")).toBeVisible();
+});
