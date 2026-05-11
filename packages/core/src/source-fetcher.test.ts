@@ -1,4 +1,5 @@
 import fs from "fs-extra";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   extractRegistrySkillSource,
@@ -172,6 +173,46 @@ describe("fetchGithubSkillSource", () => {
       "https://raw.githubusercontent.com/example/skills/commit123/skills/other/SKILL.md",
       expect.anything()
     );
+  });
+
+  it("preserves executable mode for github source files", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(
+          JSON.stringify({
+            tree: [
+              { path: "skills/agent-browser/SKILL.md", type: "blob", mode: "100644" },
+              { path: "skills/agent-browser/scripts/run.mjs", type: "blob", mode: "100755" }
+            ]
+          })
+        );
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/agent-browser/SKILL.md") {
+        return new Response("# Agent Browser");
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/agent-browser/scripts/run.mjs") {
+        return new Response("console.log('run');");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const fetched = await fetchGithubSkillSource({
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "skills/agent-browser",
+      ref: "main",
+      fetchImpl
+    });
+    tempRoots.push(fetched.rootPath);
+
+    const stat = await fs.stat(path.join(fetched.sourcePath, "scripts", "run.mjs"));
+    expect(stat.mode & 0o111).not.toBe(0);
   });
 
   it("rejects a tree without SKILL.md", async () => {

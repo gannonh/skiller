@@ -39,6 +39,7 @@ interface GithubCommitPayload {
 }
 
 interface GithubTreeEntry {
+  mode?: unknown;
   path?: unknown;
   type?: unknown;
 }
@@ -138,9 +139,14 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
   const entries = Array.isArray(treePayload.tree) ? (treePayload.tree as GithubTreeEntry[]) : [];
   const blobs = entries
     .filter((entry) => entry.type === "blob" && typeof entry.path === "string")
-    .map((entry) => entry.path as string)
-    .map((entryPath) => ({ entryPath, relativePath: entryRelativePath(entryPath, githubPath) }))
-    .filter((entry): entry is { entryPath: string; relativePath: string } => entry.relativePath !== null);
+    .map((entry) => ({
+      entryPath: entry.path as string,
+      mode: typeof entry.mode === "string" ? entry.mode : undefined
+    }))
+    .map((entry) => ({ ...entry, relativePath: entryRelativePath(entry.entryPath, githubPath) }))
+    .filter(
+      (entry): entry is { entryPath: string; mode?: string; relativePath: string } => entry.relativePath !== null
+    );
 
   const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-source-"));
   const sourcePath = path.join(rootPath, "source");
@@ -166,6 +172,9 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
 
       await fs.ensureDir(path.dirname(destination));
       await fs.writeFile(destination, Buffer.from(await response.arrayBuffer()));
+      if (blob.mode === "100755") {
+        await fs.chmod(destination, 0o755);
+      }
     }
 
     return {
