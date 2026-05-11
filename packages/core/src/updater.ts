@@ -55,14 +55,14 @@ function toUpdateCheckSkill(metadata: SkillMetadata): UpdateCheckSkill {
   };
 }
 
-function hasResolvableGithubSource(source: SkillSource): source is SkillSource & {
-  type: "github";
+function hasUpdateableSource(source: SkillSource): source is SkillSource & {
+  type: "github" | "skills.sh";
   githubUrl: string;
   ref: string;
   commit: string;
 } {
   return (
-    source.type === "github" &&
+    (source.type === "github" || source.type === "skills.sh") &&
     typeof source.githubUrl === "string" &&
     source.githubUrl.length > 0 &&
     typeof source.ref === "string" &&
@@ -73,7 +73,7 @@ function hasResolvableGithubSource(source: SkillSource): source is SkillSource &
 }
 
 export async function resolveGithubRemoteCommit(source: SkillSource): Promise<string | null> {
-  if (!hasResolvableGithubSource(source)) return null;
+  if (!hasUpdateableSource(source)) return null;
 
   const repository = parseGithubRepository(source.githubUrl);
   if (!repository) return null;
@@ -103,14 +103,16 @@ export async function checkForSkillUpdates(input: CheckForSkillUpdatesInput): Pr
   const checkedAt = (input.now ?? (() => new Date()))().toISOString();
   const store = input.metadataStore ?? new MetadataStore(input.libraryPath);
   const skills = await store.list();
-  const selected = skills.filter((metadata) => shouldConsiderSkill(metadata, input.config, input.skillId));
+  const selected = skills.filter(
+    (metadata) => shouldConsiderSkill(metadata, input.config, input.skillId) && hasUpdateableSource(metadata.source)
+  );
   const considered = selected.map(toUpdateCheckSkill);
   const available: UpdateCheckSkill[] = [];
   const errors: UpdateCheckError[] = [];
   const remoteResolver = input.remoteResolver ?? resolveGithubRemoteCommit;
 
   for (const metadata of selected) {
-    if (hasResolvableGithubSource(metadata.source)) {
+    if (hasUpdateableSource(metadata.source)) {
       try {
         const remoteCommit = await remoteResolver(metadata.source, metadata);
         if (remoteCommit && remoteCommit !== metadata.source.commit) {

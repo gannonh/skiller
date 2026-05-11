@@ -56,6 +56,7 @@ describe("scanTargets", () => {
     const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
 
     expect(result.imported).toHaveLength(1);
+    expect(result.imported[0]?.source).toEqual({ type: "unknown", discoveredFrom: skill });
     expect(await fs.pathExists(path.join(library, "example", "SKILL.md"))).toBe(true);
     expect((await fs.lstat(skill)).isSymbolicLink()).toBe(true);
   });

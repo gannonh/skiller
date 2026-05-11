@@ -278,7 +278,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
             id,
             name: id,
             libraryPath: librarySkillPath,
-            source: { type: "unknown" },
+            source: { type: "unknown", discoveredFrom: targetSkillPath },
             installedAt: new Date().toISOString(),
             contentHash: await hashDirectory(librarySkillPath),
             keepUpdated: false,

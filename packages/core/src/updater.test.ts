@@ -30,7 +30,7 @@ function metadataFor(
   libraryPath: string,
   id: string,
   keepUpdated: boolean,
-  source: SkillMetadata["source"] = { type: "local" }
+  source: SkillMetadata["source"] = { type: "local", path: path.join(libraryPath, id) }
 ): SkillMetadata {
   return {
     id,
@@ -53,12 +53,20 @@ describe("checkForSkillUpdates", () => {
   it("checks keep-updated skills and stamps only considered metadata", async () => {
     const libraryPath = await makeTempDir();
     const store = new MetadataStore(libraryPath);
-    await store.save(metadataFor(libraryPath, "manual", true));
+    await store.save(
+      metadataFor(libraryPath, "manual", true, {
+        type: "github",
+        githubUrl: "https://github.com/example/manual",
+        ref: "main",
+        commit: "abc123"
+      })
+    );
     await store.save(metadataFor(libraryPath, "ignored", false));
 
     const result = await checkForSkillUpdates({
       libraryPath,
       config: configFor(libraryPath),
+      remoteResolver: vi.fn(async () => "abc123"),
       now: () => checkedAt
     });
 
@@ -116,10 +124,103 @@ describe("checkForSkillUpdates", () => {
     expect(result.updated).toEqual([]);
   });
 
+  it("considers only sources with an upstream during broad update checks", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+    await store.save(metadataFor(libraryPath, "local-skill", false));
+    await store.save(
+      metadataFor(libraryPath, "unknown-skill", false, {
+        type: "unknown",
+        discoveredFrom: path.join(libraryPath, "unknown-skill")
+      })
+    );
+    await store.save(
+      metadataFor(libraryPath, "github-skill", false, {
+        type: "github",
+        githubUrl: "https://github.com/example/github-skill",
+        ref: "main",
+        commit: "abc123"
+      })
+    );
+    await store.save(
+      metadataFor(libraryPath, "registry-skill", false, {
+        type: "skills.sh",
+        skillsShId: "registry-skill",
+        githubUrl: "https://github.com/example/registry-skill",
+        ref: "main",
+        commit: "abc123"
+      })
+    );
+
+    const result = await checkForSkillUpdates({
+      libraryPath,
+      config: configFor(libraryPath, true),
+      metadataStore: store,
+      remoteResolver: vi.fn(async () => "abc123"),
+      now: () => checkedAt
+    });
+
+    expect(result.considered.map((skill) => skill.id).sort()).toEqual(["github-skill", "registry-skill"]);
+    const metadata = await store.list();
+    expect(metadata.find((skill) => skill.id === "local-skill")?.lastCheckedAt).toBeUndefined();
+    expect(metadata.find((skill) => skill.id === "unknown-skill")?.lastCheckedAt).toBeUndefined();
+  });
+
+  it("reports skills.sh updates through an injected resolver", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+    await store.save(
+      metadataFor(libraryPath, "registry-skill", false, {
+        type: "skills.sh",
+        skillsShId: "registry-skill",
+        githubUrl: "https://github.com/example/registry-skill",
+        ref: "main",
+        commit: "abc123"
+      })
+    );
+
+    const resolver = vi.fn(async () => "def456");
+    const result = await checkForSkillUpdates({
+      libraryPath,
+      config: configFor(libraryPath),
+      skillId: "registry-skill",
+      metadataStore: store,
+      remoteResolver: resolver,
+      now: () => checkedAt
+    });
+
+    expect(resolver).toHaveBeenCalledWith(
+      {
+        type: "skills.sh",
+        skillsShId: "registry-skill",
+        githubUrl: "https://github.com/example/registry-skill",
+        ref: "main",
+        commit: "abc123"
+      },
+      expect.objectContaining({ id: "registry-skill" })
+    );
+    expect(result.available).toEqual([
+      {
+        id: "registry-skill",
+        name: "registry-skill",
+        currentCommit: "abc123",
+        remoteCommit: "def456"
+      }
+    ]);
+  });
+
   it("selects a single skill by name and skips last-checked stamping when requested", async () => {
     const libraryPath = await makeTempDir();
     const store = new MetadataStore(libraryPath);
-    await store.save({ ...metadataFor(libraryPath, "id-one", false), name: "Display Name" });
+    await store.save({
+      ...metadataFor(libraryPath, "id-one", false, {
+        type: "github",
+        githubUrl: "https://github.com/example/id-one",
+        ref: "main",
+        commit: "abc123"
+      }),
+      name: "Display Name"
+    });
     await store.save(metadataFor(libraryPath, "id-two", true));
 
     const result = await checkForSkillUpdates({
@@ -236,12 +337,27 @@ describe("checkForSkillUpdates", () => {
   it("checks all skills when the config opts into keeping all skills updated", async () => {
     const libraryPath = await makeTempDir();
     const store = new MetadataStore(libraryPath);
-    await store.save(metadataFor(libraryPath, "first", false));
-    await store.save(metadataFor(libraryPath, "second", false));
+    await store.save(
+      metadataFor(libraryPath, "first", false, {
+        type: "github",
+        githubUrl: "https://github.com/example/first",
+        ref: "main",
+        commit: "abc123"
+      })
+    );
+    await store.save(
+      metadataFor(libraryPath, "second", false, {
+        type: "github",
+        githubUrl: "https://github.com/example/second",
+        ref: "main",
+        commit: "abc123"
+      })
+    );
 
     const result = await checkForSkillUpdates({
       libraryPath,
       config: configFor(libraryPath, true),
+      remoteResolver: vi.fn(async () => "abc123"),
       now: () => checkedAt
     });
 
@@ -270,7 +386,7 @@ describe("checkForSkillUpdates", () => {
   });
 
   it("returns null for unresolvable github sources", async () => {
-    await expect(resolveGithubRemoteCommit({ type: "local" })).resolves.toBeNull();
+    await expect(resolveGithubRemoteCommit({ type: "local", path: "/source/local" })).resolves.toBeNull();
     await expect(
       resolveGithubRemoteCommit({
         type: "github",
