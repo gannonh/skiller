@@ -108,12 +108,67 @@ describe("MetadataStore", () => {
     ]);
   });
 
+  it("drops non-string tag values from manifest records", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skills: [{ ...metadataFor(skillPath), tags: ["Browser", 123, null, "browser"] }]
+    });
+
+    await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([
+      { ...metadataFor(skillPath), tags: ["browser"] }
+    ]);
+  });
+
+  it("ignores invalid and duplicate skill set manifest entries", async () => {
+    const libraryPath = await makeTempDir();
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skillSets: [
+        null,
+        { id: "automation", name: "Automation", createdAt: "2026-05-12T00:00:00.000Z" },
+        {
+          id: "automation",
+          name: "Automation",
+          createdAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z"
+        },
+        {
+          id: "automation",
+          name: "Duplicate",
+          createdAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z"
+        }
+      ],
+      skills: []
+    });
+
+    await expect(new MetadataStore(libraryPath).libraryState()).resolves.toEqual({
+      skills: [],
+      skillSets: [
+        {
+          id: "automation",
+          name: "Automation",
+          createdAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z"
+        }
+      ],
+      tags: []
+    });
+  });
+
   it("creates renames and deletes skill sets", async () => {
     const libraryPath = await makeTempDir();
     const skillPath = path.join(libraryPath, "example-skill");
+    const otherSkillPath = path.join(libraryPath, "other-skill");
     const store = new MetadataStore(libraryPath);
+    const otherMetadata = { ...metadataFor(otherSkillPath), id: "other-skill", name: "Other Skill" };
 
     await store.save(metadataFor(skillPath));
+    await store.save(otherMetadata);
     const created = await store.createSkillSet("Automation");
     expect(created.name).toBe("Automation");
 
@@ -125,10 +180,24 @@ describe("MetadataStore", () => {
 
     await store.deleteSkillSet(created.id);
     expect(await store.libraryState()).toEqual({
-      skills: [{ ...metadataFor(skillPath), tags: [] }],
+      skills: [{ ...metadataFor(skillPath), tags: [] }, otherMetadata],
       skillSets: [],
       tags: []
     });
+  });
+
+  it("rejects renaming an unknown skill set", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.renameSkillSet("missing", "Automation")).rejects.toThrow("Skill set not found: missing");
+  });
+
+  it("rejects deleting an unknown skill set", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.deleteSkillSet("missing")).rejects.toThrow("Skill set not found: missing");
   });
 
   it("creates a skill set in a missing library directory", async () => {
@@ -143,6 +212,45 @@ describe("MetadataStore", () => {
       skillSets: [created],
       tags: []
     });
+  });
+
+  it("creates unique skill set ids for duplicate names", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    const first = await store.createSkillSet("Automation");
+    const second = await store.createSkillSet("Automation");
+
+    expect(first.id).toBe("automation");
+    expect(second.id).toBe("automation-2");
+  });
+
+  it("uses a generic skill set id when a name has no slug characters", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.createSkillSet("!!!")).resolves.toMatchObject({ id: "skill-set", name: "!!!" });
+  });
+
+  it("rejects blank skill set names", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.createSkillSet("   ")).rejects.toThrow("Skill set name cannot be blank");
+  });
+
+  it("renames one skill set while preserving other sets", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+    const first = await store.createSkillSet("Automation");
+    const second = await store.createSkillSet("Testing");
+
+    await store.renameSkillSet(first.id, "Browser Automation");
+
+    expect((await store.libraryState()).skillSets).toEqual([
+      { ...first, name: "Browser Automation", updatedAt: expect.any(String) },
+      second
+    ]);
   });
 
   it("normalizes skill tags and filters with all selected tags", async () => {
@@ -180,14 +288,53 @@ describe("MetadataStore", () => {
     expect((await store.filterSkills({ ungrouped: true })).map((skill) => skill.id)).toEqual(["other-skill"]);
   });
 
+  it("rejects assigning a skill to an unknown skill set", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(skillPath));
+
+    await expect(store.assignSkillSet("example-skill", "missing")).rejects.toThrow("Skill set not found: missing");
+  });
+
+  it("rejects assigning an unknown skill to a skill set", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+    const skillSet = await store.createSkillSet("Automation");
+
+    await expect(store.assignSkillSet("missing", skillSet.id)).rejects.toThrow("Skill not found: missing");
+  });
+
+  it("clears a skill set assignment", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(skillPath));
+    const skillSet = await store.createSkillSet("Automation");
+    await store.assignSkillSet("example-skill", skillSet.id);
+
+    await expect(store.assignSkillSet("example-skill")).resolves.toEqual(metadataFor(skillPath));
+  });
+
+  it("rejects replacing tags for an unknown skill", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.replaceSkillTags("missing", ["browser"])).rejects.toThrow("Skill not found: missing");
+  });
+
   it("derives mixed set state and toggles a whole set", async () => {
     const libraryPath = await makeTempDir();
     const firstPath = path.join(libraryPath, "example-skill");
     const secondPath = path.join(libraryPath, "other-skill");
+    const unrelatedPath = path.join(libraryPath, "unrelated-skill");
     const store = new MetadataStore(libraryPath);
 
     await store.save(metadataFor(firstPath));
     await store.save({ ...metadataFor(secondPath), id: "other-skill", name: "Other Skill", enabled: false });
+    await store.save({ ...metadataFor(unrelatedPath), id: "unrelated-skill", name: "Unrelated Skill" });
     const skillSet = await store.createSkillSet("Automation");
     await store.assignSkillSet("example-skill", skillSet.id);
     await store.assignSkillSet("other-skill", skillSet.id);
@@ -199,6 +346,20 @@ describe("MetadataStore", () => {
     await store.setSkillSetEnabled(skillSet.id, true);
     expect((await store.filterSkills({ skillSetId: skillSet.id })).map((skill) => skill.enabled)).toEqual([true, true]);
     expect(await store.skillSetEnablement(skillSet.id)).toBe("on");
+  });
+
+  it("rejects enablement reads for unknown skill sets", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.skillSetEnablement("missing")).rejects.toThrow("Skill set not found: missing");
+  });
+
+  it("rejects batch enablement for unknown skill sets", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.setSkillSetEnabled("missing", true)).rejects.toThrow("Skill set not found: missing");
   });
 
   it("normalizes source records from the root manifest", async () => {
