@@ -16,7 +16,8 @@ function metadataFor(libraryPath: string): SkillMetadata {
     installedAt: "2026-05-09T00:00:00.000Z",
     keepUpdated: false,
     validation: { valid: true, issues: [] },
-    enabled: true
+    enabled: true,
+    tags: []
   };
 }
 
@@ -43,7 +44,8 @@ describe("MetadataStore", () => {
     expect(await store.list()).toEqual([metadata]);
     await expect(fs.readJson(path.join(libraryPath, "skiller.manifest.json"))).resolves.toEqual({
       version: 1,
-      skills: [metadata]
+      skills: [metadata],
+      skillSets: []
     });
     await expect(fs.pathExists(path.join(skillPath, "skiller.metadata.json"))).resolves.toBe(false);
   });
@@ -72,6 +74,38 @@ describe("MetadataStore", () => {
     });
 
     expect(await store.list()).toEqual([metadataFor(skillPath)]);
+  });
+
+  it("defaults manifest organization fields", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const { enabled: _enabled, ...metadata } = metadataFor(skillPath);
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skills: [{ ...metadata, enabled: true }]
+    });
+
+    await expect(new MetadataStore(libraryPath).libraryState()).resolves.toEqual({
+      skills: [{ ...metadataFor(skillPath), tags: [] }],
+      skillSets: [],
+      tags: []
+    });
+  });
+
+  it("clears skill set ids that do not exist", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skillSets: [],
+      skills: [{ ...metadataFor(skillPath), skillSetId: "missing", tags: ["browser"] }]
+    });
+
+    await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([
+      { ...metadataFor(skillPath), tags: ["browser"] }
+    ]);
   });
 
   it("normalizes source records from the root manifest", async () => {
@@ -284,7 +318,8 @@ describe("MetadataStore", () => {
     await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([metadata]);
     await expect(fs.readJson(path.join(libraryPath, "skiller.manifest.json"))).resolves.toEqual({
       version: 1,
-      skills: [metadata]
+      skills: [metadata],
+      skillSets: []
     });
     await expect(fs.pathExists(path.join(skillPath, "skiller.metadata.json"))).resolves.toBe(false);
   });
@@ -301,7 +336,8 @@ describe("MetadataStore", () => {
     await expect(new MetadataStore(libraryPath).list()).resolves.toEqual([metadata]);
     await expect(fs.readJson(path.join(libraryPath, "skiller.manifest.json"))).resolves.toEqual({
       version: 1,
-      skills: [metadata]
+      skills: [metadata],
+      skillSets: []
     });
     await expect(fs.pathExists(path.join(skillPath, "skiller.metadata.json"))).resolves.toBe(false);
   });
@@ -356,7 +392,8 @@ describe("MetadataStore", () => {
     await expect(store.list()).resolves.toEqual([existingMetadata]);
     await expect(fs.readJson(path.join(libraryPath, "skiller.manifest.json"))).resolves.toEqual({
       version: 1,
-      skills: [existingMetadata]
+      skills: [existingMetadata],
+      skillSets: []
     });
   });
 

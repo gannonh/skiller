@@ -49,7 +49,22 @@ export interface SkillMetadata {
   contentHash?: string;
   keepUpdated: boolean;
   enabled: boolean;
+  skillSetId?: string;
+  tags: string[];
   validation: ValidationResult;
+}
+
+export interface SkillSetMetadata {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LibraryState {
+  skills: SkillMetadata[];
+  skillSets: SkillSetMetadata[];
+  tags: string[];
 }
 
 export interface TargetConfig {
