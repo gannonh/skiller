@@ -17,6 +17,17 @@ test("focuses the tag input when editing row tags", async ({ page }) => {
   await expect(page.getByRole("textbox", { name: "Tags for example-skill" })).toBeFocused();
 });
 
+test("uses a compact tag edit action", async ({ page }) => {
+  await page.goto("/");
+
+  const editButton = page.getByRole("row", { name: /example-skill/ }).getByRole("button", { name: "Edit tags for example-skill" });
+  const box = await editButton.boundingBox();
+
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeLessThanOrEqual(26);
+  expect(box!.height).toBeLessThanOrEqual(26);
+});
+
 test("deletes a library skill from the browser preview API", async ({ page }) => {
   await page.goto("/");
 

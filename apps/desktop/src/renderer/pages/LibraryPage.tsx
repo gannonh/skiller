@@ -728,8 +728,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                           ))}
                           <Button
                             type="button"
-                            variant="outline"
-                            size="icon"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="border border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                             disabled={isOrganizing}
                             aria-label={`Edit tags for ${skill.name || skill.id}`}
                             onClick={() => {
@@ -737,7 +738,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                               setTagInput(skill.tags.join(", "));
                             }}
                           >
-                            <HugeiconsIcon icon={Edit02Icon} strokeWidth={2} data-icon="inline-start" />
+                            <HugeiconsIcon icon={Edit02Icon} strokeWidth={1.8} data-icon="inline-start" />
                           </Button>
                         </div>
                       )}
