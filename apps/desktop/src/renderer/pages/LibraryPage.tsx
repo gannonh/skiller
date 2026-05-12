@@ -69,6 +69,10 @@ export function filterAfterDeletingSkillSet(currentFilter: SetFilter, skillSetId
   return currentFilter;
 }
 
+export function reconcileSelectedTags(selectedTags: string[], knownTags: string[]): string[] {
+  return selectedTags.filter((tag) => knownTags.includes(tag));
+}
+
 function statusLabel(skill: SkillMetadata): string {
   return skill.validation?.valid ? "valid" : "invalid";
 }
@@ -137,6 +141,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    setSelectedTags((current) => reconcileSelectedTags(current, libraryState.tags));
+  }, [libraryState.tags]);
 
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
   const filteredSkills = useMemo(
@@ -475,6 +483,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                   type="button"
                   variant={setFilter.type === "all" ? "default" : "outline"}
                   size="sm"
+                  aria-pressed={setFilter.type === "all"}
                   onClick={() => setSetFilter({ type: "all" })}
                 >
                   All
@@ -483,6 +492,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                   type="button"
                   variant={setFilter.type === "ungrouped" ? "default" : "outline"}
                   size="sm"
+                  aria-pressed={setFilter.type === "ungrouped"}
                   onClick={() => setSetFilter({ type: "ungrouped" })}
                 >
                   Ungrouped
@@ -493,6 +503,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                     type="button"
                     variant={isSetFilterActive(skillSet.id) ? "default" : "outline"}
                     size="sm"
+                    aria-pressed={isSetFilterActive(skillSet.id)}
                     onClick={() => setSetFilter({ type: "set", skillSetId: skillSet.id })}
                   >
                     {skillSet.name}
@@ -507,6 +518,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       type="button"
                       variant={selectedTags.includes(tag) ? "default" : "outline"}
                       size="sm"
+                      aria-pressed={selectedTags.includes(tag)}
                       onClick={() => toggleSelectedTag(tag)}
                     >
                       {tag}
@@ -581,6 +593,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                           variant="outline"
                           size="sm"
                           disabled={isOrganizing}
+                          aria-label={`Rename ${skillSet.name}`}
                           onClick={() => beginRenamingSkillSet(skillSet.id, skillSet.name)}
                         >
                           Rename
@@ -590,6 +603,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                           variant="outline"
                           size="sm"
                           disabled={isOrganizing}
+                          aria-label={`Delete ${skillSet.name}`}
                           onClick={() => void deleteSkillSet(skillSet.id)}
                         >
                           Delete
@@ -675,6 +689,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                           variant="outline"
                           size="sm"
                           disabled={isOrganizing}
+                          aria-label={`Edit tags for ${skill.name || skill.id}`}
                           onClick={() => {
                             setEditingTagSkillId(skill.id);
                             setTagInput(skill.tags.join(", "));
@@ -715,7 +730,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                 {filteredSkills.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-muted-foreground">
-                      No skills installed.
+                      {skills.length > 0 ? "No skills match the current filters." : "No skills installed."}
                     </TableCell>
                   </TableRow>
                 ) : null}

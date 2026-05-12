@@ -28,6 +28,13 @@ describe("LibraryPage helpers", () => {
     expect(helpers.parseTagInput(" Browser, testing, browser, UI   QA ")).toEqual(["browser", "testing", "ui qa"]);
   });
 
+  it("removes selected tags that no longer exist", () => {
+    expect(helpers.reconcileSelectedTags(["browser", "removed", "testing"], ["browser", "testing"])).toEqual([
+      "browser",
+      "testing"
+    ]);
+  });
+
   it("filters by set ungrouped and all selected tags", () => {
     const skills = [
       skill({ id: "one", skillSetId: "automation", tags: ["browser", "testing"] }),
