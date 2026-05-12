@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from "react";
 import {
   Cancel01Icon,
   CheckmarkCircle01Icon,
@@ -42,15 +42,40 @@ const emptyLibraryState: LibraryState = {
   tags: []
 };
 
+function normalizeTag(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 export function parseTagInput(value: string): string[] {
   return Array.from(
     new Set(
       value
         .split(",")
-        .map((tag) => tag.trim().replace(/\s+/g, " ").toLowerCase())
+        .map(normalizeTag)
         .filter(Boolean)
     )
   );
+}
+
+export function mergeTags(currentTags: string[], incomingTags: string[]): string[] {
+  const seen = new Set(currentTags);
+  const merged = [...currentTags];
+
+  for (const tag of incomingTags) {
+    const normalized = normalizeTag(tag);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    merged.push(normalized);
+  }
+
+  return merged;
+}
+
+export function tagAutocompleteOptions(knownTags: string[], selectedTags: string[], query: string): string[] {
+  const normalizedQuery = normalizeTag(query);
+  if (!normalizedQuery) return [];
+  const selected = new Set(selectedTags);
+  return knownTags.filter((tag) => !selected.has(tag) && tag.includes(normalizedQuery)).slice(0, 6);
 }
 
 export function skillSetState(skills: SkillMetadata[], skillSetId: string): "on" | "off" | "mixed" {
@@ -126,6 +151,144 @@ export function sortSkills(
   });
 }
 
+function TagTokenInput({
+  value,
+  query,
+  knownTags,
+  ariaLabel,
+  disabled,
+  inputRef,
+  onValueChange,
+  onQueryChange
+}: {
+  value: string[];
+  query: string;
+  knownTags: string[];
+  ariaLabel: string;
+  disabled: boolean;
+  inputRef: RefObject<HTMLInputElement | null>;
+  onValueChange: (tags: string[]) => void;
+  onQueryChange: (query: string) => void;
+}) {
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+  const suggestions = useMemo(() => tagAutocompleteOptions(knownTags, value, query), [knownTags, value, query]);
+
+  useEffect(() => {
+    setActiveSuggestionIndex(0);
+  }, [query]);
+
+  function commitTags(tags: string[]) {
+    onValueChange(mergeTags(value, tags));
+    onQueryChange("");
+  }
+
+  function commitQuery() {
+    const suggestion = suggestions[activeSuggestionIndex];
+    if (suggestion) {
+      commitTags([suggestion]);
+      return;
+    }
+    commitTags(parseTagInput(query));
+  }
+
+  function updateQuery(nextQuery: string) {
+    if (!nextQuery.includes(",")) {
+      onQueryChange(nextQuery);
+      return;
+    }
+
+    const parts = nextQuery.split(",");
+    commitTags(parseTagInput(parts.slice(0, -1).join(",")));
+    onQueryChange(parts.at(-1) ?? "");
+  }
+
+  function removeTag(tag: string) {
+    onValueChange(value.filter((candidate) => candidate !== tag));
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" && (query.trim() || suggestions.length > 0)) {
+      event.preventDefault();
+      commitQuery();
+      return;
+    }
+
+    if (event.key === ",") {
+      event.preventDefault();
+      commitQuery();
+      return;
+    }
+
+    if (event.key === "Backspace" && query === "" && value.length > 0) {
+      event.preventDefault();
+      onValueChange(value.slice(0, -1));
+      return;
+    }
+
+    if (event.key === "ArrowDown" && suggestions.length > 0) {
+      event.preventDefault();
+      setActiveSuggestionIndex((current) => (current + 1) % suggestions.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp" && suggestions.length > 0) {
+      event.preventDefault();
+      setActiveSuggestionIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
+    }
+  }
+
+  return (
+    <div className="relative min-w-72">
+      <div className="flex min-h-8 flex-wrap items-center gap-1 rounded-md border border-input bg-input/20 px-1 py-1 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
+        {value.map((tag) => (
+          <Badge key={tag} variant="outline" className="gap-1 pr-1">
+            {tag}
+            <button
+              type="button"
+              className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+              disabled={disabled}
+              aria-label={`Remove tag ${tag}`}
+              onClick={() => removeTag(tag)}
+            >
+              <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-3" />
+            </button>
+          </Badge>
+        ))}
+        <Input
+          ref={inputRef}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={suggestions.length > 0}
+          aria-label={ariaLabel}
+          value={query}
+          onChange={(event) => updateQuery(event.currentTarget.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={value.length === 0 ? "browser, testing" : ""}
+          disabled={disabled}
+          className="h-6 min-w-20 flex-1 border-0 bg-transparent px-1 py-0 shadow-none focus-visible:border-transparent focus-visible:ring-0"
+        />
+      </div>
+      {suggestions.length > 0 ? (
+        <div className="absolute z-20 mt-1 w-full rounded-md border bg-popover p-1 text-popover-foreground shadow-md" role="listbox">
+          {suggestions.map((suggestion, index) => (
+            <button
+              key={suggestion}
+              type="button"
+              role="option"
+              aria-selected={index === activeSuggestionIndex}
+              className="flex w-full items-center rounded-sm px-2 py-1 text-left text-xs hover:bg-muted aria-selected:bg-muted"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => commitTags([suggestion])}
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => void }) {
   const [libraryState, setLibraryState] = useState<LibraryState>(emptyLibraryState);
   const skills = libraryState.skills;
@@ -145,7 +308,8 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [renamingSkillSetId, setRenamingSkillSetId] = useState<string | null>(null);
   const [renamingSkillSetName, setRenamingSkillSetName] = useState("");
   const [editingTagSkillId, setEditingTagSkillId] = useState<string | null>(null);
-  const [tagInput, setTagInput] = useState("");
+  const [draftTags, setDraftTags] = useState<string[]>([]);
+  const [tagQuery, setTagQuery] = useState("");
   const [isOrganizing, setIsOrganizing] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const isOrganizingRef = useRef(false);
@@ -432,10 +596,11 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     if (!beginOrganizationMutation()) return;
     setError(null);
     try {
-      const updatedState = await skillerApi.replaceSkillTags(editingTagSkillId, parseTagInput(tagInput));
+      const updatedState = await skillerApi.replaceSkillTags(editingTagSkillId, mergeTags(draftTags, parseTagInput(tagQuery)));
       setLibraryState(updatedState);
       setEditingTagSkillId(null);
-      setTagInput("");
+      setDraftTags([]);
+      setTagQuery("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -687,14 +852,15 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                     <TableCell>
                       {editingTagSkillId === skill.id ? (
                         <form className="flex min-w-72 items-center gap-1" onSubmit={saveSkillTags}>
-                          <Input
-                            ref={tagInputRef}
-                            value={tagInput}
-                            onChange={(event) => setTagInput(event.target.value)}
-                            aria-label={`Tags for ${skill.name || skill.id}`}
-                            placeholder="browser, testing"
+                          <TagTokenInput
+                            value={draftTags}
+                            query={tagQuery}
+                            knownTags={libraryState.tags}
+                            ariaLabel={`Tags for ${skill.name || skill.id}`}
                             disabled={isOrganizing}
-                            className="h-8 min-w-48"
+                            inputRef={tagInputRef}
+                            onValueChange={setDraftTags}
+                            onQueryChange={setTagQuery}
                           />
                           <Button
                             type="submit"
@@ -713,7 +879,8 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                             aria-label={`Cancel editing tags for ${skill.name || skill.id}`}
                             onClick={() => {
                               setEditingTagSkillId(null);
-                              setTagInput("");
+                              setDraftTags([]);
+                              setTagQuery("");
                             }}
                           >
                             <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} data-icon="inline-start" />
@@ -735,7 +902,8 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                             aria-label={`Edit tags for ${skill.name || skill.id}`}
                             onClick={() => {
                               setEditingTagSkillId(skill.id);
-                              setTagInput(skill.tags.join(", "));
+                              setDraftTags(skill.tags);
+                              setTagQuery("");
                             }}
                           >
                             <HugeiconsIcon icon={Edit02Icon} strokeWidth={1.8} data-icon="inline-start" />

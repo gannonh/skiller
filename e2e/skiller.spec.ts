@@ -14,7 +14,7 @@ test("focuses the tag input when editing row tags", async ({ page }) => {
 
   await page.getByRole("row", { name: /example-skill/ }).getByRole("button", { name: "Edit tags for example-skill" }).click();
 
-  await expect(page.getByRole("textbox", { name: "Tags for example-skill" })).toBeFocused();
+  await expect(page.getByRole("combobox", { name: "Tags for example-skill" })).toBeFocused();
 });
 
 test("uses a compact tag edit action", async ({ page }) => {
@@ -26,6 +26,61 @@ test("uses a compact tag edit action", async ({ page }) => {
   expect(box).not.toBeNull();
   expect(box!.width).toBeLessThanOrEqual(26);
   expect(box!.height).toBeLessThanOrEqual(26);
+});
+
+test("tokenizes row tags with comma and enter", async ({ page }) => {
+  await page.goto("/");
+
+  const row = page.getByRole("row", { name: /example-skill/ });
+  await row.getByRole("button", { name: "Edit tags for example-skill" }).click();
+  const input = page.getByRole("combobox", { name: "Tags for example-skill" });
+
+  await input.fill("frameworks,");
+  await expect(row.getByText("frameworks")).toBeVisible();
+
+  await input.fill("tdd");
+  await input.press("Enter");
+  await expect(row.getByText("tdd")).toBeVisible();
+
+  await row.getByRole("button", { name: "Save tags for example-skill" }).click();
+  await expect(row.getByText("frameworks")).toBeVisible();
+  await expect(row.getByText("tdd")).toBeVisible();
+});
+
+test("autocompletes row tags from existing library tags", async ({ page }) => {
+  await page.addInitScript(() => {
+    const skill = (id, tags) => ({
+      id,
+      name: id,
+      libraryPath: `/tmp/${id}`,
+      source: { type: "local", path: `/tmp/${id}` },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      tags,
+      validation: { valid: true, issues: [] }
+    });
+    const libraryState = { skills: [skill("tag-source", ["frameworks"]), skill("target-skill", [])], skillSets: [], tags: ["frameworks"] };
+    window.skiller = {
+      listLibrary: async () => libraryState,
+      replaceSkillTags: async (skillId, tags) => {
+        const target = libraryState.skills.find((candidate) => candidate.id === skillId);
+        if (target) target.tags = tags;
+        libraryState.tags = Array.from(new Set(libraryState.skills.flatMap((candidate) => candidate.tags))).sort();
+        return libraryState;
+      }
+    };
+  });
+  await page.goto("/");
+
+  const row = page.getByRole("row", { name: /target-skill/ });
+  await row.getByRole("button", { name: "Edit tags for target-skill" }).click();
+  const input = page.getByRole("combobox", { name: "Tags for target-skill" });
+  await input.fill("fra");
+
+  await page.getByRole("option", { name: "frameworks" }).click();
+
+  await expect(row.getByText("frameworks")).toBeVisible();
 });
 
 test("deletes a library skill from the browser preview API", async ({ page }) => {
