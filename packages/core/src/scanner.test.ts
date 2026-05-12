@@ -57,6 +57,8 @@ describe("scanTargets", () => {
 
     expect(result.imported).toHaveLength(1);
     expect(result.imported[0]?.source).toEqual({ type: "unknown", discoveredFrom: skill });
+    expect(result.imported[0]).toMatchObject({ enabled: true, tags: [] });
+    expect(result.imported[0]).not.toHaveProperty("skillSetId");
     expect(await fs.pathExists(path.join(library, "example", "SKILL.md"))).toBe(true);
     expect((await fs.lstat(skill)).isSymbolicLink()).toBe(true);
   });
