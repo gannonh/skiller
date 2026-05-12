@@ -19,7 +19,7 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
-import { skillerApi, type SkillMetadata } from "../lib/api.js";
+import { skillerApi, type LibraryState, type SkillMetadata } from "../lib/api.js";
 import { sourceDetail, sourceLabel } from "../lib/skill-source.js";
 import type { DiscoveredGithubSkill } from "@skiller/core";
 
@@ -27,6 +27,12 @@ type SortColumn = "name" | "source" | "status" | "enabled" | "actions";
 type SortDirection = "asc" | "desc";
 
 export type SetFilter = { type: "all" } | { type: "ungrouped" } | { type: "set"; skillSetId: string };
+
+const emptyLibraryState: LibraryState = {
+  skills: [],
+  skillSets: [],
+  tags: []
+};
 
 export function parseTagInput(value: string): string[] {
   return Array.from(
@@ -86,7 +92,8 @@ function sortSkills(skills: SkillMetadata[], column: SortColumn, direction: Sort
 }
 
 export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => void }) {
-  const [skills, setSkills] = useState<SkillMetadata[]>([]);
+  const [libraryState, setLibraryState] = useState<LibraryState>(emptyLibraryState);
+  const skills = libraryState.skills;
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [pendingSkillIds, setPendingSkillIds] = useState<Set<string>>(() => new Set());
@@ -97,6 +104,13 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [isGithubSheetOpen, setIsGithubSheetOpen] = useState(false);
   const [sortColumn, setSortColumn] = useState<SortColumn>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [setFilter, setSetFilter] = useState<SetFilter>({ type: "all" });
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [newSkillSetName, setNewSkillSetName] = useState("");
+  const [renamingSkillSetId, setRenamingSkillSetId] = useState<string | null>(null);
+  const [renamingSkillSetName, setRenamingSkillSetName] = useState("");
+  const [editingTagSkillId, setEditingTagSkillId] = useState<string | null>(null);
+  const [tagInput, setTagInput] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -118,7 +132,14 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   }, []);
 
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
-  const sortedSkills = useMemo(() => sortSkills(skills, sortColumn, sortDirection), [skills, sortColumn, sortDirection]);
+  const filteredSkills = useMemo(
+    () => filterLibrarySkills(skills, setFilter, selectedTags),
+    [skills, setFilter, selectedTags]
+  );
+  const sortedSkills = useMemo(
+    () => sortSkills(filteredSkills, sortColumn, sortDirection),
+    [filteredSkills, sortColumn, sortDirection]
+  );
   const selectedGithubSkills = useMemo(
     () => githubChoices.filter((skill) => selectedGithubPaths.has(skill.path)),
     [githubChoices, selectedGithubPaths]
@@ -159,7 +180,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
 
   async function refreshLibrary() {
     const result = await skillerApi.listLibrary();
-    setSkills([...result]);
+    setLibraryState(result);
     setError(null);
     return result;
   }
@@ -244,8 +265,8 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setPendingSkillIds((current) => new Set(current).add(skillId));
     setError(null);
     try {
-      const updatedSkills = await skillerApi.setSkillEnabled(skillId, enabled);
-      setSkills([...updatedSkills]);
+      const updatedState = await skillerApi.setSkillEnabled(skillId, enabled);
+      setLibraryState(updatedState);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -261,14 +282,94 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setPendingSkillIds((current) => new Set(current).add(skillId));
     setError(null);
     try {
-      const updatedSkills = await skillerApi.deleteSkill(skillId);
-      setSkills([...updatedSkills]);
+      const updatedState = await skillerApi.deleteSkill(skillId);
+      setLibraryState(updatedState);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setPendingSkillIds((current) => {
         const next = new Set(current);
         next.delete(skillId);
+        return next;
+      });
+    }
+  }
+
+  async function createSkillSet(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newSkillSetName.trim() === "") return;
+    setError(null);
+    try {
+      const updatedState = await skillerApi.createSkillSet(newSkillSetName);
+      setLibraryState(updatedState);
+      setNewSkillSetName("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function renameSkillSet(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!renamingSkillSetId || renamingSkillSetName.trim() === "") return;
+    setError(null);
+    try {
+      const updatedState = await skillerApi.renameSkillSet(renamingSkillSetId, renamingSkillSetName);
+      setLibraryState(updatedState);
+      setRenamingSkillSetId(null);
+      setRenamingSkillSetName("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function deleteSkillSet(skillSetId: string) {
+    setError(null);
+    try {
+      const updatedState = await skillerApi.deleteSkillSet(skillSetId);
+      setLibraryState(updatedState);
+      if (setFilter.type === "set" && setFilter.skillSetId === skillSetId) setSetFilter({ type: "all" });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function assignSkillSet(skillId: string, skillSetId: string) {
+    setError(null);
+    try {
+      const updatedState = await skillerApi.assignSkillSet(skillId, skillSetId === "none" ? undefined : skillSetId);
+      setLibraryState(updatedState);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function saveSkillTags(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingTagSkillId) return;
+    setError(null);
+    try {
+      const updatedState = await skillerApi.replaceSkillTags(editingTagSkillId, parseTagInput(tagInput));
+      setLibraryState(updatedState);
+      setEditingTagSkillId(null);
+      setTagInput("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function setWholeSetEnabled(skillSetId: string, enabled: boolean) {
+    const memberIds = skills.filter((skill) => skill.skillSetId === skillSetId).map((skill) => skill.id);
+    setPendingSkillIds((current) => new Set([...current, ...memberIds]));
+    setError(null);
+    try {
+      const updatedState = await skillerApi.setSkillSetEnabled(skillSetId, enabled);
+      setLibraryState(updatedState);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPendingSkillIds((current) => {
+        const next = new Set(current);
+        memberIds.forEach((skillId) => next.delete(skillId));
         return next;
       });
     }
