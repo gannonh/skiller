@@ -69,21 +69,25 @@ app.whenReady().then(async () => {
   appUpdateService = createAppUpdateService({ isPackaged: app.isPackaged });
   registerIpcHandlers({ appUpdateService });
   const window = await createWindow();
-  appUpdateService.subscribe((state) => {
+  const unsubscribeAppUpdateState = appUpdateService.subscribe((state) => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      return;
+    }
+
     window.webContents.send("app-update:state", state);
   });
   void appUpdateService.startBackgroundChecks();
   tray = createTray(window);
-  cleanupItems = await startBackgroundJobs(window);
+  cleanupItems = [{ stop: unsubscribeAppUpdateState }, ...(await startBackgroundJobs(window))];
 });
 
 app.on("before-quit", () => {
-  appUpdateService?.stop();
-  appUpdateService = null;
   for (const item of cleanupItems) {
     item.stop();
   }
   cleanupItems = [];
+  appUpdateService?.stop();
+  appUpdateService = null;
   tray?.destroy();
   tray = null;
 });
