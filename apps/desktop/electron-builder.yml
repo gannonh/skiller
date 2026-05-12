@@ -5,6 +5,12 @@ copyright: Copyright © 2026 Gannon Hall
 directories:
   output: release
 
+publish:
+  provider: github
+  owner: gannonh
+  repo: skiller
+  releaseType: release
+
 files:
   - dist/**
   - assets/**

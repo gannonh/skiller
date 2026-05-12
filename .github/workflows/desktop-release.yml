@@ -210,6 +210,7 @@ jobs:
           set -euo pipefail
           test -f "apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.dmg"
           test -f "apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.zip"
+          test -f "apps/desktop/release/latest-mac.yml"
           ls -la apps/desktop/release
 
       - name: Upload artifacts
@@ -219,6 +220,7 @@ jobs:
           path: |
             apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.dmg
             apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.zip
+            apps/desktop/release/latest-mac.yml
           if-no-files-found: error
 
   build-linux:
@@ -268,6 +270,7 @@ jobs:
           echo "deb_arch=$DEB_ARCH" >> "$GITHUB_OUTPUT"
           test -f "apps/desktop/release/Skiller-Desktop-$APPIMAGE_ARCH.AppImage"
           test -f "apps/desktop/release/Skiller-Desktop-$DEB_ARCH.deb"
+          test -f "apps/desktop/release/latest-linux.yml"
           ls -la apps/desktop/release
 
       - name: Upload artifacts
@@ -277,6 +280,7 @@ jobs:
           path: |
             apps/desktop/release/Skiller-Desktop-${{ steps.linux-artifacts.outputs.appimage_arch }}.AppImage
             apps/desktop/release/Skiller-Desktop-${{ steps.linux-artifacts.outputs.deb_arch }}.deb
+            apps/desktop/release/latest-linux.yml
           if-no-files-found: error
 
   create-release:
