@@ -162,6 +162,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           cd apps/desktop/release
@@ -203,6 +204,32 @@ jobs:
             -fs HFS+
           rm -rf "$STAGING_DIR"
 
+          VERSION=$(node -p "require('../package.json').version")
+          export VERSION
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+
+          const arch = process.env.ARCH;
+          const version = process.env.VERSION;
+          const zipName = `Skiller-Desktop-${arch}.zip`;
+          const zipBuffer = fs.readFileSync(zipName);
+          const sha512 = crypto.createHash("sha512").update(zipBuffer).digest("base64");
+          const metadata = [
+            `version: ${version}`,
+            "files:",
+            `  - url: ${zipName}`,
+            `    sha512: ${sha512}`,
+            `    size: ${zipBuffer.length}`,
+            `path: ${zipName}`,
+            `sha512: ${sha512}`,
+            `releaseDate: ${new Date().toISOString()}`,
+            ""
+          ].join("\n");
+
+          fs.writeFileSync(`latest-mac-${arch}.yml`, metadata);
+          NODE
+
           spctl -a -v "$APP_PATH" 2>&1 || true
 
       - name: Verify artifacts
@@ -210,7 +237,7 @@ jobs:
           set -euo pipefail
           test -f "apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.dmg"
           test -f "apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.zip"
-          test -f "apps/desktop/release/latest-mac.yml"
+          test -f "apps/desktop/release/latest-mac-${{ matrix.arch }}.yml"
           ls -la apps/desktop/release
 
       - name: Upload artifacts
@@ -220,7 +247,7 @@ jobs:
           path: |
             apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.dmg
             apps/desktop/release/Skiller-Desktop-${{ matrix.arch }}.zip
-            apps/desktop/release/latest-mac.yml
+            apps/desktop/release/latest-mac-${{ matrix.arch }}.yml
           if-no-files-found: error
 
   build-linux:
@@ -262,15 +289,18 @@ jobs:
           if [ "${{ matrix.arch }}" = "x64" ]; then
             APPIMAGE_ARCH="x86_64"
             DEB_ARCH="amd64"
+            UPDATE_METADATA="latest-linux.yml"
           else
             APPIMAGE_ARCH="arm64"
             DEB_ARCH="arm64"
+            UPDATE_METADATA="latest-linux-arm64.yml"
           fi
           echo "appimage_arch=$APPIMAGE_ARCH" >> "$GITHUB_OUTPUT"
           echo "deb_arch=$DEB_ARCH" >> "$GITHUB_OUTPUT"
+          echo "update_metadata=$UPDATE_METADATA" >> "$GITHUB_OUTPUT"
           test -f "apps/desktop/release/Skiller-Desktop-$APPIMAGE_ARCH.AppImage"
           test -f "apps/desktop/release/Skiller-Desktop-$DEB_ARCH.deb"
-          test -f "apps/desktop/release/latest-linux.yml"
+          test -f "apps/desktop/release/$UPDATE_METADATA"
           ls -la apps/desktop/release
 
       - name: Upload artifacts
@@ -280,7 +310,7 @@ jobs:
           path: |
             apps/desktop/release/Skiller-Desktop-${{ steps.linux-artifacts.outputs.appimage_arch }}.AppImage
             apps/desktop/release/Skiller-Desktop-${{ steps.linux-artifacts.outputs.deb_arch }}.deb
-            apps/desktop/release/latest-linux.yml
+            apps/desktop/release/${{ steps.linux-artifacts.outputs.update_metadata }}
           if-no-files-found: error
 
   create-release:
@@ -334,6 +364,114 @@ jobs:
 
           fs.writeFileSync("release-notes.md", `${notes}\n`);
           NODE
+
+      - name: Validate app update metadata
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const releaseDir = "release-artifacts";
+          const version = require("./apps/desktop/package.json").version;
+
+          function sha512(file) {
+            return crypto.createHash("sha512").update(fs.readFileSync(file)).digest("base64");
+          }
+
+          function size(file) {
+            return fs.statSync(file).size;
+          }
+
+          function read(file) {
+            return fs.readFileSync(file, "utf8");
+          }
+
+          function assertFile(file) {
+            if (!fs.existsSync(file)) {
+              throw new Error(`Missing release artifact: ${file}`);
+            }
+          }
+
+          function assertIncludes(file, expected) {
+            const content = read(file);
+            for (const value of expected) {
+              if (!content.includes(value)) {
+                throw new Error(`${file} does not reference ${value}`);
+              }
+            }
+          }
+
+          function macEntry(arch) {
+            const zipName = `Skiller-Desktop-${arch}.zip`;
+            const zipPath = path.join(releaseDir, zipName);
+            assertFile(zipPath);
+            return {
+              url: zipName,
+              sha512: sha512(zipPath),
+              size: size(zipPath)
+            };
+          }
+
+          for (const file of [
+            "Skiller-Desktop-arm64.dmg",
+            "Skiller-Desktop-arm64.zip",
+            "Skiller-Desktop-x64.dmg",
+            "Skiller-Desktop-x64.zip",
+            "Skiller-Desktop-arm64.AppImage",
+            "Skiller-Desktop-arm64.deb",
+            "Skiller-Desktop-x86_64.AppImage",
+            "Skiller-Desktop-amd64.deb",
+            "latest-mac-arm64.yml",
+            "latest-mac-x64.yml",
+            "latest-linux.yml",
+            "latest-linux-arm64.yml"
+          ]) {
+            assertFile(path.join(releaseDir, file));
+          }
+
+          const macEntries = [macEntry("arm64"), macEntry("x64")];
+          const macMetadata = [
+            `version: ${version}`,
+            "files:",
+            ...macEntries.flatMap((entry) => [
+              `  - url: ${entry.url}`,
+              `    sha512: ${entry.sha512}`,
+              `    size: ${entry.size}`
+            ]),
+            `path: ${macEntries[0].url}`,
+            `sha512: ${macEntries[0].sha512}`,
+            `releaseDate: ${new Date().toISOString()}`,
+            ""
+          ].join("\n");
+
+          fs.writeFileSync(path.join(releaseDir, "latest-mac.yml"), macMetadata);
+          fs.unlinkSync(path.join(releaseDir, "latest-mac-arm64.yml"));
+          fs.unlinkSync(path.join(releaseDir, "latest-mac-x64.yml"));
+
+          assertIncludes(path.join(releaseDir, "latest-mac.yml"), [
+            "Skiller-Desktop-arm64.zip",
+            "Skiller-Desktop-x64.zip",
+            macEntries[0].sha512,
+            macEntries[1].sha512
+          ]);
+          assertIncludes(path.join(releaseDir, "latest-linux.yml"), [
+            "Skiller-Desktop-x86_64.AppImage",
+            sha512(path.join(releaseDir, "Skiller-Desktop-x86_64.AppImage"))
+          ]);
+          assertIncludes(path.join(releaseDir, "latest-linux-arm64.yml"), [
+            "Skiller-Desktop-arm64.AppImage",
+            sha512(path.join(releaseDir, "Skiller-Desktop-arm64.AppImage"))
+          ]);
+
+          const publishedMetadata = fs.readdirSync(releaseDir).filter((file) => file.startsWith("latest-") && file.endsWith(".yml")).sort();
+          const expectedMetadata = ["latest-linux-arm64.yml", "latest-linux.yml", "latest-mac.yml"];
+          if (JSON.stringify(publishedMetadata) !== JSON.stringify(expectedMetadata)) {
+            throw new Error(`Unexpected update metadata files: ${publishedMetadata.join(", ")}`);
+          }
+          NODE
+          ls -la release-artifacts
 
       - name: Create GitHub release
         env:
