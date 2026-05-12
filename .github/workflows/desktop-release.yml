@@ -375,6 +375,13 @@ jobs:
 
           const releaseDir = "release-artifacts";
           const version = require("./apps/desktop/package.json").version;
+          const yaml = (() => {
+            try {
+              return require("js-yaml");
+            } catch {
+              return null;
+            }
+          })();
 
           function sha512(file) {
             return crypto.createHash("sha512").update(fs.readFileSync(file)).digest("base64");
@@ -384,22 +391,137 @@ jobs:
             return fs.statSync(file).size;
           }
 
-          function read(file) {
-            return fs.readFileSync(file, "utf8");
-          }
-
           function assertFile(file) {
             if (!fs.existsSync(file)) {
               throw new Error(`Missing release artifact: ${file}`);
             }
           }
 
-          function assertIncludes(file, expected) {
-            const content = read(file);
-            for (const value of expected) {
-              if (!content.includes(value)) {
-                throw new Error(`${file} does not reference ${value}`);
+          function parseScalar(value) {
+            const trimmed = value.trim();
+            if (/^\d+$/.test(trimmed)) {
+              return Number(trimmed);
+            }
+            return trimmed.replace(/^['"]|['"]$/g, "");
+          }
+
+          function parseUpdaterMetadata(content) {
+            if (yaml) {
+              return yaml.load(content);
+            }
+
+            const result = {};
+            const lines = content.split(/\r?\n/);
+            for (let index = 0; index < lines.length; index += 1) {
+              const line = lines[index];
+              if (line.trim() === "") {
+                continue;
               }
+
+              const topLevel = line.match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/);
+              if (!topLevel) {
+                throw new Error(`Unsupported updater metadata line: ${line}`);
+              }
+
+              const [, key, rawValue = ""] = topLevel;
+              if (key !== "files") {
+                result[key] = parseScalar(rawValue);
+                continue;
+              }
+
+              const files = [];
+              index += 1;
+              while (index < lines.length) {
+                const itemLine = lines[index];
+                if (itemLine.trim() === "") {
+                  index += 1;
+                  continue;
+                }
+                if (!itemLine.startsWith("  - ")) {
+                  index -= 1;
+                  break;
+                }
+
+                const firstField = itemLine.match(/^  - ([A-Za-z0-9_-]+):\s*(.*)$/);
+                if (!firstField) {
+                  throw new Error(`Unsupported updater metadata file entry: ${itemLine}`);
+                }
+
+                const file = { [firstField[1]]: parseScalar(firstField[2]) };
+                index += 1;
+                while (index < lines.length) {
+                  const fieldLine = lines[index];
+                  if (fieldLine.trim() === "") {
+                    index += 1;
+                    continue;
+                  }
+                  if (!fieldLine.startsWith("    ")) {
+                    index -= 1;
+                    break;
+                  }
+
+                  const field = fieldLine.match(/^    ([A-Za-z0-9_-]+):\s*(.*)$/);
+                  if (!field) {
+                    throw new Error(`Unsupported updater metadata file field: ${fieldLine}`);
+                  }
+                  file[field[1]] = parseScalar(field[2]);
+                  index += 1;
+                }
+                files.push(file);
+                index += 1;
+              }
+              result.files = files;
+            }
+            return result;
+          }
+
+          function readMetadata(file) {
+            const content = fs.readFileSync(file, "utf8");
+            const metadata = parseUpdaterMetadata(content);
+            if (metadata == null || typeof metadata !== "object" || Array.isArray(metadata)) {
+              throw new Error(`${file} did not parse to an updater metadata object`);
+            }
+            return metadata;
+          }
+
+          function validateMetadata(metadataFile, expectedFiles, expectedPath) {
+            const metadata = readMetadata(metadataFile);
+            if (metadata.version !== version) {
+              throw new Error(`${metadataFile} version ${metadata.version} does not match ${version}`);
+            }
+            if (!Array.isArray(metadata.files)) {
+              throw new Error(`${metadataFile} files must be an array`);
+            }
+            if (metadata.files.length !== expectedFiles.length) {
+              throw new Error(`${metadataFile} has ${metadata.files.length} file entries, expected ${expectedFiles.length}`);
+            }
+            if (metadata.path !== expectedPath) {
+              throw new Error(`${metadataFile} path ${metadata.path} does not match ${expectedPath}`);
+            }
+
+            for (const expected of expectedFiles) {
+              const artifact = path.join(releaseDir, expected);
+              assertFile(artifact);
+              const entry = metadata.files.find((file) => file && file.url === expected);
+              if (!entry) {
+                throw new Error(`${metadataFile} does not contain files[].url ${expected}`);
+              }
+              const expectedSha512 = sha512(artifact);
+              const expectedSize = size(artifact);
+              if (entry.sha512 !== expectedSha512) {
+                throw new Error(`${metadataFile} files[].sha512 for ${expected} does not match the artifact`);
+              }
+              if (entry.size !== expectedSize) {
+                throw new Error(`${metadataFile} files[].size for ${expected} is ${entry.size}, expected ${expectedSize}`);
+              }
+            }
+
+            const pathEntry = metadata.files.find((file) => file && file.url === metadata.path);
+            if (!pathEntry) {
+              throw new Error(`${metadataFile} path ${metadata.path} is not present in files[]`);
+            }
+            if (metadata.sha512 !== pathEntry.sha512) {
+              throw new Error(`${metadataFile} top-level sha512 does not match the path entry`);
             }
           }
 
@@ -450,20 +572,16 @@ jobs:
           fs.unlinkSync(path.join(releaseDir, "latest-mac-arm64.yml"));
           fs.unlinkSync(path.join(releaseDir, "latest-mac-x64.yml"));
 
-          assertIncludes(path.join(releaseDir, "latest-mac.yml"), [
+          validateMetadata(path.join(releaseDir, "latest-mac.yml"), [
             "Skiller-Desktop-arm64.zip",
-            "Skiller-Desktop-x64.zip",
-            macEntries[0].sha512,
-            macEntries[1].sha512
-          ]);
-          assertIncludes(path.join(releaseDir, "latest-linux.yml"), [
-            "Skiller-Desktop-x86_64.AppImage",
-            sha512(path.join(releaseDir, "Skiller-Desktop-x86_64.AppImage"))
-          ]);
-          assertIncludes(path.join(releaseDir, "latest-linux-arm64.yml"), [
-            "Skiller-Desktop-arm64.AppImage",
-            sha512(path.join(releaseDir, "Skiller-Desktop-arm64.AppImage"))
-          ]);
+            "Skiller-Desktop-x64.zip"
+          ], "Skiller-Desktop-arm64.zip");
+          validateMetadata(path.join(releaseDir, "latest-linux.yml"), [
+            "Skiller-Desktop-x86_64.AppImage"
+          ], "Skiller-Desktop-x86_64.AppImage");
+          validateMetadata(path.join(releaseDir, "latest-linux-arm64.yml"), [
+            "Skiller-Desktop-arm64.AppImage"
+          ], "Skiller-Desktop-arm64.AppImage");
 
           const publishedMetadata = fs.readdirSync(releaseDir).filter((file) => file.startsWith("latest-") && file.endsWith(".yml")).sort();
           const expectedMetadata = ["latest-linux-arm64.yml", "latest-linux.yml", "latest-mac.yml"];
