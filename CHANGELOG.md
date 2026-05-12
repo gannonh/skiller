@@ -1,5 +1,25 @@
 # Changelog
 
+## Skiller Desktop v0.2.0 - 2026-05-12
+
+### Added
+
+- Library organization controls for assigning skills to sets and tags.
+- Library sorting and filtering for skill sets and tags.
+- Inline tag editing from the Library view.
+
+### Fixed
+
+- Clearer errors when library set toggles cannot scan the selected target.
+- More reliable focus behavior while editing tags inline.
+
+### Install Notes
+
+- macOS Apple silicon: download `Skiller-Desktop-arm64.dmg`.
+- macOS Intel: download `Skiller-Desktop-x64.dmg`.
+- Linux x64: download `Skiller-Desktop-x86_64.AppImage` or `Skiller-Desktop-amd64.deb`.
+- Linux arm64: download `Skiller-Desktop-arm64.AppImage` or `Skiller-Desktop-arm64.deb`.
+
 ## Skiller Desktop v0.1.0 - 2026-05-11
 
 ### Added
