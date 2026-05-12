@@ -16,7 +16,7 @@ export type AppUpdateStatus =
 export type AppUpdateState =
   | { status: "idle" }
   | { status: "checking" }
-  | { status: "downloading"; progress: number }
+  | { status: "downloading"; progress: number; version?: string; releaseName?: string; releaseDate?: string }
   | { status: "ready"; version: string; releaseName?: string; releaseDate?: string }
   | { status: "not-available" }
   | { status: "unsupported" }
@@ -40,6 +40,14 @@ interface AppUpdateServiceDependencies {
   clearInterval: typeof clearInterval;
 }
 
+type UpdaterEventName =
+  | "checking-for-update"
+  | "update-not-available"
+  | "update-available"
+  | "download-progress"
+  | "update-downloaded"
+  | "error";
+
 export function getAutoUpdater(): AppUpdater {
   return autoUpdater;
 }
@@ -59,6 +67,8 @@ export function createAppUpdateService(
   const isSupported = supportsAppUpdates(deps);
   let state: AppUpdateState = isSupported ? { status: "idle" } : { status: "unsupported" };
   let backgroundInterval: NodeJS.Timeout | undefined;
+  let lastOperationErrorKey: string | undefined;
+  const updaterListeners: Array<{ event: UpdaterEventName; listener: (...args: unknown[]) => void }> = [];
 
   const setState = (nextState: AppUpdateState) => {
     state = nextState;
@@ -67,25 +77,54 @@ export function createAppUpdateService(
     }
   };
 
+  const createErrorKey = (error: unknown) => {
+    return error instanceof Error ? `${error.name}:${error.message}` : String(error);
+  };
+
   const setErrorState = (error: unknown) => {
+    const errorKey = createErrorKey(error);
+    if (lastOperationErrorKey === errorKey) {
+      return;
+    }
+
+    lastOperationErrorKey = errorKey;
     console.error("App update failed", error);
     setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
   };
 
+  const onUpdater = <T extends unknown[]>(event: UpdaterEventName, listener: (...args: T) => void) => {
+    const updaterListener = listener as (...args: unknown[]) => void;
+    deps.updater.on(event, updaterListener);
+    updaterListeners.push({ event, listener: updaterListener });
+  };
+
   deps.updater.autoDownload = false;
-  deps.updater.on("checking-for-update", () => {
+  deps.updater.autoInstallOnAppQuit = false;
+  onUpdater("checking-for-update", () => {
+    lastOperationErrorKey = undefined;
     setState({ status: "checking" });
   });
-  deps.updater.on("update-not-available", () => {
+  onUpdater("update-not-available", () => {
+    lastOperationErrorKey = undefined;
     setState({ status: "not-available" });
   });
-  deps.updater.on("update-available", () => {
+  onUpdater("update-available", (info: UpdateInfo) => {
+    lastOperationErrorKey = undefined;
+    setState({
+      status: "downloading",
+      progress: 0,
+      version: info.version,
+      releaseName: info.releaseName ?? undefined,
+      releaseDate: info.releaseDate
+    });
     void deps.updater.downloadUpdate().catch(setErrorState);
   });
-  deps.updater.on("download-progress", (progress: ProgressInfo) => {
+  onUpdater("download-progress", (progress: ProgressInfo) => {
+    lastOperationErrorKey = undefined;
     setState({ status: "downloading", progress: progress.percent });
   });
-  deps.updater.on("update-downloaded", (info: UpdateInfo) => {
+  onUpdater("update-downloaded", (info: UpdateInfo) => {
+    lastOperationErrorKey = undefined;
     setState({
       status: "ready",
       version: info.version,
@@ -93,13 +132,14 @@ export function createAppUpdateService(
       releaseDate: info.releaseDate
     });
   });
-  deps.updater.on("error", setErrorState);
+  onUpdater("error", setErrorState);
 
   const checkNow = async () => {
     if (!isSupported) {
       return state;
     }
 
+    lastOperationErrorKey = undefined;
     try {
       await deps.updater.checkForUpdates();
     } catch (error) {
@@ -143,6 +183,10 @@ export function createAppUpdateService(
         deps.clearInterval(backgroundInterval);
         backgroundInterval = undefined;
       }
+      for (const { event, listener } of updaterListeners) {
+        deps.updater.off(event, listener);
+      }
+      updaterListeners.length = 0;
     }
   };
 }

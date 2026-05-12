@@ -4,7 +4,9 @@ import type { AppUpdater, ProgressInfo, UpdateInfo } from "electron-updater";
 
 const mockAutoUpdater = vi.hoisted(() => ({
   autoDownload: false,
+  autoInstallOnAppQuit: true,
   on: vi.fn(),
+  off: vi.fn(),
   checkForUpdates: vi.fn(async () => undefined),
   downloadUpdate: vi.fn(async () => []),
   quitAndInstall: vi.fn()
@@ -20,6 +22,7 @@ vi.mock("electron-updater", () => ({
 
 class FakeUpdater extends EventEmitter {
   autoDownload = false;
+  autoInstallOnAppQuit = true;
   checkForUpdates = vi.fn(async () => undefined);
   downloadUpdate = vi.fn(async () => []);
   quitAndInstall = vi.fn();
@@ -49,6 +52,7 @@ describe("app update service", () => {
     await createAppUpdateService().checkNow();
 
     expect(mockAutoUpdater.autoDownload).toBe(false);
+    expect(mockAutoUpdater.autoInstallOnAppQuit).toBe(false);
     expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
   });
 
@@ -154,8 +158,59 @@ describe("app update service", () => {
       releaseDate: "2026-05-12T22:00:00.000Z"
     });
     expect(states).toContainEqual(expect.objectContaining({ status: "checking" }));
+    expect(states).toContainEqual(expect.objectContaining({
+      status: "downloading",
+      progress: 0,
+      version: "0.2.2",
+      releaseName: "Skiller Desktop v0.2.2"
+    }));
     expect(states).toContainEqual(expect.objectContaining({ status: "downloading", progress: 64 }));
     expect(states).toContainEqual(expect.objectContaining({ status: "ready", version: "0.2.2" }));
+  });
+
+  it("reports downloading immediately when an update is available", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    const service = createAppUpdateService(createSupportedDeps(updater));
+    const states: unknown[] = [];
+    service.subscribe((state) => states.push(state));
+
+    updater.emit("update-available", {
+      version: "0.2.2",
+      releaseName: "Skiller Desktop v0.2.2",
+      releaseDate: "2026-05-12T22:00:00.000Z"
+    } satisfies Partial<UpdateInfo>);
+    updater.emit("update-downloaded", {
+      version: "0.2.2",
+      releaseName: "Skiller Desktop v0.2.2",
+      releaseDate: "2026-05-12T22:00:00.000Z"
+    } satisfies Partial<UpdateInfo>);
+
+    expect(states).toEqual([
+      {
+        status: "downloading",
+        progress: 0,
+        version: "0.2.2",
+        releaseName: "Skiller Desktop v0.2.2",
+        releaseDate: "2026-05-12T22:00:00.000Z"
+      },
+      {
+        status: "ready",
+        version: "0.2.2",
+        releaseName: "Skiller Desktop v0.2.2",
+        releaseDate: "2026-05-12T22:00:00.000Z"
+      }
+    ]);
+  });
+
+  it("does not auto-install downloaded updates on normal app quit", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+
+    createAppUpdateService(createSupportedDeps(updater));
+
+    expect(updater.autoDownload).toBe(false);
+    expect(updater.autoInstallOnAppQuit).toBe(false);
   });
 
   it("guards install until an update is ready", async () => {
@@ -197,5 +252,61 @@ describe("app update service", () => {
     await Promise.resolve();
 
     expect(service.getState()).toEqual({ status: "error", error: "asset missing" });
+  });
+
+  it("deduplicates updater error events and rejected checks for one failed operation", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    updater.checkForUpdates.mockImplementationOnce(async () => {
+      updater.emit("error", new Error("metadata missing"));
+      throw new Error("metadata missing");
+    });
+    const service = createAppUpdateService(createSupportedDeps(updater));
+    const states: unknown[] = [];
+    service.subscribe((state) => states.push(state));
+
+    await service.checkNow();
+
+    expect(service.getState()).toEqual({ status: "error", error: "metadata missing" });
+    expect(states).toEqual([{ status: "error", error: "metadata missing" }]);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("deduplicates updater error events and rejected downloads for one failed operation", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    updater.downloadUpdate.mockImplementationOnce(async () => {
+      updater.emit("error", new Error("asset missing"));
+      throw new Error("asset missing");
+    });
+    const service = createAppUpdateService(createSupportedDeps(updater));
+    const states: unknown[] = [];
+    service.subscribe((state) => states.push(state));
+
+    updater.emit("update-available", { version: "0.2.2" } satisfies Partial<UpdateInfo>);
+    await Promise.resolve();
+
+    expect(service.getState()).toEqual({ status: "error", error: "asset missing" });
+    expect(states).toEqual([
+      { status: "downloading", progress: 0, version: "0.2.2" },
+      { status: "error", error: "asset missing" }
+    ]);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("unregisters updater listeners on stop", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    const service = createAppUpdateService(createSupportedDeps(updater));
+    const states: unknown[] = [];
+    service.subscribe((state) => states.push(state));
+
+    service.stop();
+    updater.emit("checking-for-update");
+
+    expect(states).toEqual([]);
+    expect(service.getState()).toEqual({ status: "idle" });
   });
 });
