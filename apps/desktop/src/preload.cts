@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld("skiller", {
     ipcRenderer.invoke("config:save", config),
   checkUpdates: () => ipcRenderer.invoke("updates:check"),
   updateSkill: (skillId: string) => ipcRenderer.invoke("updates:apply", skillId),
+  getAppUpdateState: () => ipcRenderer.invoke("app-update:get-state"),
+  checkAppUpdate: () => ipcRenderer.invoke("app-update:check"),
+  installAppUpdate: () => ipcRenderer.invoke("app-update:install"),
   installLocal: () => ipcRenderer.invoke("library:install-local"),
   installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => ipcRenderer.invoke("library:install-github", input),
   discoverGithub: (githubUrl: string) => ipcRenderer.invoke("library:discover-github", githubUrl),
@@ -32,6 +35,11 @@ contextBridge.exposeInMainWorld("skiller", {
     const listener = () => callback();
     ipcRenderer.on("action:check-updates", listener);
     return () => ipcRenderer.removeListener("action:check-updates", listener);
+  },
+  onAppUpdateState: (callback: (state: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
+    ipcRenderer.on("app-update:state", listener);
+    return () => ipcRenderer.removeListener("app-update:state", listener);
   },
   onScanError: (callback: (error: ScanError) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, error: ScanError) => callback(error);

@@ -80,4 +80,19 @@ describe("ipc handlers", () => {
       scanErrors: [{ path: "/home/test/skills", message: "permission denied" }]
     });
   });
+
+  it("registers app update handlers", async () => {
+    const appUpdateService = {
+      getState: vi.fn(() => ({ status: "ready", version: "0.2.2" })),
+      checkNow: vi.fn(async () => ({ status: "checking" })),
+      installReadyUpdate: vi.fn(async () => undefined)
+    };
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    registerIpcHandlers({ appUpdateService });
+
+    await expect(mocks.handlers.get("app-update:get-state")?.({})).resolves.toEqual({ status: "ready", version: "0.2.2" });
+    await expect(mocks.handlers.get("app-update:check")?.({})).resolves.toEqual({ status: "checking" });
+    await expect(mocks.handlers.get("app-update:install")?.({})).resolves.toBeUndefined();
+    expect(appUpdateService.installReadyUpdate).toHaveBeenCalledTimes(1);
+  });
 });

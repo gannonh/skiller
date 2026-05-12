@@ -13,6 +13,7 @@ import {
   updateInstalledSkill
 } from "@skiller/core";
 import type { ScanTargetsResult, SkillerConfig, TargetConfig } from "@skiller/core";
+import type { AppUpdateService } from "./app-update.js";
 import { checkDesktopUpdates } from "./update-check.js";
 
 type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets">>;
@@ -22,6 +23,9 @@ export type SetSkillSetEnabledResult = {
   state: Awaited<ReturnType<MetadataStore["libraryState"]>>;
   scanErrors: ScanTargetsResult["errors"];
 };
+export interface IpcHandlerDependencies {
+  appUpdateService?: Pick<AppUpdateService, "getState" | "checkNow" | "installReadyUpdate">;
+}
 
 const skillsShClient = new SkillsShClient();
 
@@ -66,7 +70,7 @@ async function scanTargetsForConfig(config: SkillerConfig, targets: TargetConfig
   });
 }
 
-export function registerIpcHandlers(): void {
+export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): void {
   ipcMain.handle("library:list", async () => {
     const config = await loadConfig();
     const store = new MetadataStore(expandHome(config.libraryPath));
@@ -223,6 +227,21 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("updates:check", async () => {
     return checkDesktopUpdates();
+  });
+
+  ipcMain.handle("app-update:get-state", async () => {
+    return dependencies.appUpdateService?.getState() ?? { status: "unsupported" };
+  });
+
+  ipcMain.handle("app-update:check", async () => {
+    return dependencies.appUpdateService?.checkNow() ?? { status: "unsupported" };
+  });
+
+  ipcMain.handle("app-update:install", async () => {
+    if (!dependencies.appUpdateService) {
+      throw new Error("App updates are not available");
+    }
+    await dependencies.appUpdateService.installReadyUpdate();
   });
 
   ipcMain.handle("updates:apply", async (_event, skillId: string) => {
