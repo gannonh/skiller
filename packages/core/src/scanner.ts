@@ -283,8 +283,9 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
             installedAt: new Date().toISOString(),
             contentHash: await hashDirectory(librarySkillPath),
             keepUpdated: false,
-            validation,
-            enabled: true
+            enabled: true,
+            tags: [],
+            validation
           };
 
           await replaceWithSymlink(targetSkillPath, librarySkillPath);

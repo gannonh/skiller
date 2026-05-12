@@ -1,10 +1,14 @@
 import type {
   DiscoverGithubSkillsResult,
+  LibraryState as CoreLibraryState,
   ScanTargetsResult,
   SkillSource,
+  SkillSetMetadata,
   SkillerConfig,
   TargetConfig
 } from "@skiller/core";
+
+export type { SkillSetMetadata };
 
 export type LeaderboardType = "all-time" | "trending" | "hot";
 
@@ -32,10 +36,17 @@ export interface SkillMetadata {
   contentHash?: string;
   keepUpdated: boolean;
   enabled: boolean;
+  skillSetId?: string;
+  tags: string[];
   validation: ValidationResult;
 }
 
+export type LibraryState = CoreLibraryState;
 export type DiscoverSkill = Record<string, unknown>;
+export interface SetSkillSetEnabledResult {
+  state: LibraryState;
+  scanErrors: ScanTargetsResult["errors"];
+}
 
 export interface ScanError {
   message: string;
@@ -66,9 +77,15 @@ export interface UpdateCheckResult {
 export type RemoveListener = () => void;
 
 export interface SkillerApi {
-  listLibrary: () => Promise<SkillMetadata[]>;
-  setSkillEnabled: (skillId: string, enabled: boolean) => Promise<SkillMetadata[]>;
-  deleteSkill: (skillId: string) => Promise<SkillMetadata[]>;
+  listLibrary: () => Promise<LibraryState>;
+  setSkillEnabled: (skillId: string, enabled: boolean) => Promise<LibraryState>;
+  deleteSkill: (skillId: string) => Promise<LibraryState>;
+  createSkillSet: (name: string) => Promise<LibraryState>;
+  renameSkillSet: (skillSetId: string, name: string) => Promise<LibraryState>;
+  deleteSkillSet: (skillSetId: string) => Promise<LibraryState>;
+  assignSkillSet: (skillId: string, skillSetId?: string) => Promise<LibraryState>;
+  replaceSkillTags: (skillId: string, tags: string[]) => Promise<LibraryState>;
+  setSkillSetEnabled: (skillSetId: string, enabled: boolean) => Promise<SetSkillSetEnabledResult>;
   scanTargets: () => Promise<ScanTargetsResult>;
   saveTargets: (targets: TargetConfig[]) => Promise<SkillerConfig>;
   getConfig: () => Promise<SkillerConfig>;
@@ -87,6 +104,30 @@ export interface SkillerApi {
   onScanError: (callback: (error: ScanError) => void) => RemoveListener;
 }
 
+type LegacyLibraryState = LibraryState & SkillMetadata[];
+type RendererSkillerApi = Omit<
+  SkillerApi,
+  | "listLibrary"
+  | "setSkillEnabled"
+  | "deleteSkill"
+  | "createSkillSet"
+  | "renameSkillSet"
+  | "deleteSkillSet"
+  | "assignSkillSet"
+  | "replaceSkillTags"
+  | "setSkillSetEnabled"
+> & {
+  listLibrary: () => Promise<LegacyLibraryState>;
+  setSkillEnabled: (skillId: string, enabled: boolean) => Promise<LegacyLibraryState>;
+  deleteSkill: (skillId: string) => Promise<LegacyLibraryState>;
+  createSkillSet: (name: string) => Promise<LegacyLibraryState>;
+  renameSkillSet: (skillSetId: string, name: string) => Promise<LegacyLibraryState>;
+  deleteSkillSet: (skillSetId: string) => Promise<LegacyLibraryState>;
+  assignSkillSet: (skillId: string, skillSetId?: string) => Promise<LegacyLibraryState>;
+  replaceSkillTags: (skillId: string, tags: string[]) => Promise<LegacyLibraryState>;
+  setSkillSetEnabled: (skillSetId: string, enabled: boolean) => Promise<SetSkillSetEnabledResult & { state: LegacyLibraryState }>;
+};
+
 declare global {
   interface Window {
     skiller?: SkillerApi;
@@ -103,9 +144,12 @@ const fallbackSkills: SkillMetadata[] = [
     installedAt: new Date().toISOString(),
     keepUpdated: false,
     enabled: true,
+    tags: [],
     validation: { valid: true, issues: [] },
   }
 ];
+
+const fallbackSkillSets: SkillSetMetadata[] = [];
 
 const fallbackDiscoverSkills: DiscoverSkill[] = [
   {
@@ -224,8 +268,46 @@ function createBrowserPreviewApi(): SkillerApi {
       contentHash: "preview",
       keepUpdated: input.keepUpdated,
       enabled: true,
+      tags: [],
       validation: { valid: true, issues: [] }
     };
+  };
+
+  const fallbackLibraryState = (): LibraryState => ({
+    skills: fallbackSkills,
+    skillSets: fallbackSkillSets,
+    tags: Array.from(new Set(fallbackSkills.flatMap((skill) => skill.tags))).sort((left, right) =>
+      left.localeCompare(right)
+    )
+  });
+
+  const normalizeTag = (value: string): string => value.trim().replace(/\s+/g, " ").toLowerCase();
+
+  const normalizeTags = (tags: string[]): string[] => {
+    const seen = new Set<string>();
+    const normalizedTags: string[] = [];
+
+    for (const tag of tags) {
+      const normalized = normalizeTag(tag);
+      if (normalized === "" || seen.has(normalized)) continue;
+      seen.add(normalized);
+      normalizedTags.push(normalized);
+    }
+
+    return normalizedTags;
+  };
+
+  const createSkillSetId = (name: string): string => {
+    const base = name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "") || "skill-set";
+    let candidate = base;
+    let suffix = 2;
+
+    while (fallbackSkillSets.some((skillSet) => skillSet.id === candidate)) {
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+
+    return candidate;
   };
 
   const addPreviewSkill = (metadata: SkillMetadata): SkillMetadata => {
@@ -238,16 +320,61 @@ function createBrowserPreviewApi(): SkillerApi {
   } => skill.source.type === "github" || skill.source.type === "skills.sh";
 
   return {
-    listLibrary: async () => fallbackSkills,
+    listLibrary: async () => fallbackLibraryState(),
     setSkillEnabled: async (skillId, enabled) => {
       const skill = fallbackSkills.find((candidate) => candidate.id === skillId);
       if (skill) skill.enabled = enabled;
-      return fallbackSkills;
+      return fallbackLibraryState();
     },
     deleteSkill: async (skillId) => {
       const index = fallbackSkills.findIndex((candidate) => candidate.id === skillId);
       if (index !== -1) fallbackSkills.splice(index, 1);
-      return fallbackSkills;
+      return fallbackLibraryState();
+    },
+    createSkillSet: async (name) => {
+      const now = new Date().toISOString();
+      fallbackSkillSets.push({
+        id: createSkillSetId(name),
+        name: name.trim(),
+        createdAt: now,
+        updatedAt: now
+      });
+      return fallbackLibraryState();
+    },
+    renameSkillSet: async (skillSetId, name) => {
+      const skillSet = fallbackSkillSets.find((candidate) => candidate.id === skillSetId);
+      if (skillSet) {
+        skillSet.name = name.trim();
+        skillSet.updatedAt = new Date().toISOString();
+      }
+      return fallbackLibraryState();
+    },
+    deleteSkillSet: async (skillSetId) => {
+      const index = fallbackSkillSets.findIndex((candidate) => candidate.id === skillSetId);
+      if (index !== -1) fallbackSkillSets.splice(index, 1);
+      for (const skill of fallbackSkills) {
+        if (skill.skillSetId === skillSetId) delete skill.skillSetId;
+      }
+      return fallbackLibraryState();
+    },
+    assignSkillSet: async (skillId, skillSetId) => {
+      const skill = fallbackSkills.find((candidate) => candidate.id === skillId);
+      if (skill) {
+        if (skillSetId) skill.skillSetId = skillSetId;
+        else delete skill.skillSetId;
+      }
+      return fallbackLibraryState();
+    },
+    replaceSkillTags: async (skillId, tags) => {
+      const skill = fallbackSkills.find((candidate) => candidate.id === skillId);
+      if (skill) skill.tags = normalizeTags(tags);
+      return fallbackLibraryState();
+    },
+    setSkillSetEnabled: async (skillSetId, enabled) => {
+      for (const skill of fallbackSkills) {
+        if (skill.skillSetId === skillSetId) skill.enabled = enabled;
+      }
+      return { state: fallbackLibraryState(), scanErrors: [] };
     },
     scanTargets: async () => ({ imported: [], enabled: [], disabled: [], errors: [] }),
     saveTargets: async (targets) => {
@@ -417,4 +544,27 @@ function createBrowserPreviewApi(): SkillerApi {
   };
 }
 
-export const skillerApi = window.skiller ?? createBrowserPreviewApi();
+function legacyArrayLibraryState(state: LibraryState): LegacyLibraryState {
+  return Object.assign([...state.skills], state);
+}
+
+function createRendererApi(api: SkillerApi): RendererSkillerApi {
+  return {
+    ...api,
+    listLibrary: async () => legacyArrayLibraryState(await api.listLibrary()),
+    setSkillEnabled: async (skillId, enabled) =>
+      legacyArrayLibraryState(await api.setSkillEnabled(skillId, enabled)),
+    deleteSkill: async (skillId) => legacyArrayLibraryState(await api.deleteSkill(skillId)),
+    createSkillSet: async (name) => legacyArrayLibraryState(await api.createSkillSet(name)),
+    renameSkillSet: async (skillSetId, name) => legacyArrayLibraryState(await api.renameSkillSet(skillSetId, name)),
+    deleteSkillSet: async (skillSetId) => legacyArrayLibraryState(await api.deleteSkillSet(skillSetId)),
+    assignSkillSet: async (skillId, skillSetId) => legacyArrayLibraryState(await api.assignSkillSet(skillId, skillSetId)),
+    replaceSkillTags: async (skillId, tags) => legacyArrayLibraryState(await api.replaceSkillTags(skillId, tags)),
+    setSkillSetEnabled: async (skillSetId, enabled) => {
+      const result = await api.setSkillSetEnabled(skillSetId, enabled);
+      return { ...result, state: legacyArrayLibraryState(result.state) };
+    }
+  };
+}
+
+export const skillerApi = createRendererApi(window.skiller ?? createBrowserPreviewApi());

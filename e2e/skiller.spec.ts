@@ -9,6 +9,180 @@ test("renders the library from the browser preview API", async ({ page }) => {
   await expect(page.getByRole("columnheader", { name: "Enabled" })).toBeVisible();
 });
 
+test("focuses the tag input when editing row tags", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("row", { name: /example-skill/ }).getByRole("button", { name: "Edit tags for example-skill" }).click();
+
+  await expect(page.getByRole("combobox", { name: "Tags for example-skill" })).toBeFocused();
+});
+
+test("uses a compact tag edit action", async ({ page }) => {
+  await page.goto("/");
+
+  const editButton = page.getByRole("row", { name: /example-skill/ }).getByRole("button", { name: "Edit tags for example-skill" });
+  const box = await editButton.boundingBox();
+
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeLessThanOrEqual(26);
+  expect(box!.height).toBeLessThanOrEqual(26);
+});
+
+test("tokenizes row tags with comma and enter", async ({ page }) => {
+  await page.goto("/");
+
+  const row = page.getByRole("row", { name: /example-skill/ });
+  await row.getByRole("button", { name: "Edit tags for example-skill" }).click();
+  const input = page.getByRole("combobox", { name: "Tags for example-skill" });
+
+  await input.fill("frameworks,");
+  await expect(row.getByText("frameworks")).toBeVisible();
+
+  await input.fill("tdd");
+  await input.press("Enter");
+  await expect(row.getByText("tdd")).toBeVisible();
+
+  await row.getByRole("button", { name: "Save tags for example-skill" }).click();
+  await expect(row.getByText("frameworks")).toBeVisible();
+  await expect(row.getByText("tdd")).toBeVisible();
+});
+
+test("autocompletes row tags from existing library tags", async ({ page }) => {
+  await page.addInitScript(() => {
+    const skill = (id, tags) => ({
+      id,
+      name: id,
+      libraryPath: `/tmp/${id}`,
+      source: { type: "local", path: `/tmp/${id}` },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      tags,
+      validation: { valid: true, issues: [] }
+    });
+    const libraryState = { skills: [skill("tag-source", ["frameworks"]), skill("target-skill", [])], skillSets: [], tags: ["frameworks"] };
+    window.skiller = {
+      listLibrary: async () => libraryState,
+      replaceSkillTags: async (skillId, tags) => {
+        const target = libraryState.skills.find((candidate) => candidate.id === skillId);
+        if (target) target.tags = tags;
+        libraryState.tags = Array.from(new Set(libraryState.skills.flatMap((candidate) => candidate.tags))).sort();
+        return libraryState;
+      }
+    };
+  });
+  await page.goto("/");
+
+  const row = page.getByRole("row", { name: /target-skill/ });
+  await row.getByRole("button", { name: "Edit tags for target-skill" }).click();
+  const input = page.getByRole("combobox", { name: "Tags for target-skill" });
+  await input.fill("fra");
+
+  await page.getByRole("option", { name: "frameworks" }).click();
+
+  await expect(row.getByText("frameworks")).toBeVisible();
+});
+
+test("manages skill sets and tag filters from the library", async ({ page }) => {
+  await page.addInitScript(() => {
+    const skill = (id, tags, enabled = true) => ({
+      id,
+      name: id,
+      libraryPath: `/tmp/${id}`,
+      source: { type: "local", path: `/tmp/${id}` },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled,
+      tags,
+      validation: { valid: true, issues: [] }
+    });
+    const state = {
+      skills: [skill("alpha-skill", ["browser", "testing"]), skill("beta-skill", ["browser"], false)],
+      skillSets: [],
+      tags: ["browser", "testing"]
+    };
+    const refreshTags = () => {
+      state.tags = Array.from(new Set(state.skills.flatMap((candidate) => candidate.tags))).sort();
+    };
+    window.skiller = {
+      listLibrary: async () => state,
+      createSkillSet: async (name) => {
+        state.skillSets.push({
+          id: name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "") || "skill-set",
+          name: name.trim(),
+          createdAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z"
+        });
+        return state;
+      },
+      renameSkillSet: async (skillSetId, name) => {
+        const skillSet = state.skillSets.find((candidate) => candidate.id === skillSetId);
+        if (skillSet) skillSet.name = name.trim();
+        return state;
+      },
+      deleteSkillSet: async (skillSetId) => {
+        state.skillSets = state.skillSets.filter((candidate) => candidate.id !== skillSetId);
+        for (const candidate of state.skills) {
+          if (candidate.skillSetId === skillSetId) delete candidate.skillSetId;
+        }
+        return state;
+      },
+      assignSkillSet: async (skillId, skillSetId) => {
+        const target = state.skills.find((candidate) => candidate.id === skillId);
+        if (target) {
+          if (skillSetId) target.skillSetId = skillSetId;
+          else delete target.skillSetId;
+        }
+        return state;
+      },
+      replaceSkillTags: async (skillId, tags) => {
+        const target = state.skills.find((candidate) => candidate.id === skillId);
+        if (target) target.tags = tags;
+        refreshTags();
+        return state;
+      },
+      setSkillSetEnabled: async (skillSetId, enabled) => {
+        for (const candidate of state.skills) {
+          if (candidate.skillSetId === skillSetId) candidate.enabled = enabled;
+        }
+        return { state, scanErrors: [] };
+      }
+    };
+  });
+  await page.goto("/");
+
+  await page.getByLabel("New skill set name").fill("Agent v1.0");
+  await page.getByRole("button", { name: "Create set" }).click();
+  await expect(page.getByRole("button", { name: "Agent v1.0", exact: true })).toHaveAttribute("aria-pressed", "false");
+
+  await page.getByLabel("Set for alpha-skill").selectOption("agent-v1.0");
+  await page.getByLabel("Set for beta-skill").selectOption("agent-v1.0");
+  await expect(page.getByText("2 members")).toBeVisible();
+  await expect(page.getByText("mixed")).toBeVisible();
+
+  await page.getByRole("button", { name: "browser" }).click();
+  await page.getByRole("button", { name: "testing" }).click();
+  await expect(page.getByRole("cell", { name: "alpha-skill", exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "browser" }).press("Tab");
+  await expect(page.getByRole("button", { name: "testing" })).toBeFocused();
+  await page.getByRole("button", { name: "testing" }).click();
+  await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
+
+  await page.getByLabel("Enable Agent v1.0").click();
+  await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^on$/ })).toBeVisible();
+
+  await page.getByRole("button", { name: "Rename Agent v1.0" }).click();
+  await page.getByLabel("Rename skill set").fill("Runtime");
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Runtime", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete Runtime" }).click();
+  await expect(page.getByRole("button", { name: "Runtime", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Set for alpha-skill")).toHaveValue("none");
+});
+
 test("deletes a library skill from the browser preview API", async ({ page }) => {
   await page.goto("/");
 
@@ -30,7 +204,7 @@ test("sorts library columns with name as the default", async ({ page }) => {
   await page.getByRole("button", { name: "Install selected" }).click();
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
 
-  for (const column of ["Name", "Source", "Status", "Enabled", "Actions"]) {
+  for (const column of ["Name", "Source", "Skill Set", "Status", "Enabled", "Actions"]) {
     await expect(page.getByRole("button", { name: `Sort by ${column}` })).toBeVisible();
   }
 
@@ -226,12 +400,14 @@ test("shows update check errors without marking rows current", async ({ page }) 
       updatedAt: "2026-05-11T00:00:00.000Z",
       keepUpdated: true,
       enabled: true,
+      tags: [],
       validation: { valid: true, issues: [] }
     };
+    const libraryState = { skills: [skill], skillSets: [], tags: [] };
     window.skiller = {
-      listLibrary: async () => [skill],
-      setSkillEnabled: async () => [skill],
-      deleteSkill: async () => [skill],
+      listLibrary: async () => libraryState,
+      setSkillEnabled: async () => libraryState,
+      deleteSkill: async () => libraryState,
       scanTargets: async () => ({ imported: [], enabled: [], disabled: [], errors: [] }),
       saveTargets: async (targets) => ({
         libraryPath: "~/skiller",

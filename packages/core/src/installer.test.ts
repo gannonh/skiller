@@ -565,6 +565,71 @@ describe("updateInstalledSkill", () => {
     await expect(fs.readFile(path.join(library, "browser", "SKILL.md"), "utf8")).resolves.toContain("New.");
   });
 
+  it("preserves organization fields when updating an installed skill", async () => {
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(path.join(library, "browser"));
+    await fs.writeFile(path.join(library, "browser", "SKILL.md"), "---\nname: browser\ndescription: Old.\n---\n");
+    await fs.writeJson(path.join(library, "skiller.manifest.json"), {
+      version: 1,
+      skillSets: [
+        {
+          id: "automation",
+          name: "Automation",
+          createdAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z"
+        }
+      ],
+      skills: [
+        {
+          id: "browser",
+          name: "browser",
+          description: "Old.",
+          libraryPath: path.join(library, "browser"),
+          source: {
+            type: "github",
+            githubUrl: "https://github.com/example/skills",
+            githubPath: "skills/browser",
+            ref: "main",
+            commit: "abc123"
+          },
+          installedAt: "2026-05-09T00:00:00.000Z",
+          keepUpdated: true,
+          enabled: true,
+          skillSetId: "automation",
+          tags: ["browser", "testing"],
+          validation: { valid: true, issues: [] }
+        }
+      ]
+    });
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "def456" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/def456?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "skills/browser/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/def456/skills/browser/SKILL.md") {
+        return new Response("---\nname: browser\ndescription: New.\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const updated = await updateInstalledSkill({
+      skillId: "browser",
+      libraryPath: library,
+      fetchImpl
+    });
+
+    expect(updated).toMatchObject({
+      id: "browser",
+      skillSetId: "automation",
+      tags: ["browser", "testing"]
+    });
+  });
+
   it("rejects skills without an updateable source", async () => {
     const source = path.join(tmp, "source");
     const library = path.join(tmp, "library");

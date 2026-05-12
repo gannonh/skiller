@@ -1,20 +1,31 @@
 import fs from "fs-extra";
 import { open } from "node:fs/promises";
 import path from "node:path";
-import type { SkillMetadata, SkillSource } from "./types.js";
+import type { LibraryState, SkillMetadata, SkillSetMetadata, SkillSource } from "./types.js";
 
 const MANIFEST_FILE = "skiller.manifest.json";
 const LEGACY_METADATA_FILE = "skiller.metadata.json";
+const MAX_TAG_LENGTH = 64;
+const MAX_SKILL_SET_NAME_LENGTH = 128;
 const writeLocks = new Map<string, Promise<unknown>>();
 
 interface SkillManifest {
   version: 1;
   skills: SkillMetadata[];
+  skillSets?: SkillSetMetadata[];
 }
 
 interface LegacyRecords {
   records: SkillMetadata[];
   files: string[];
+}
+
+export type SkillSetEnablement = "on" | "off" | "mixed";
+
+export interface SkillFilter {
+  skillSetId?: string;
+  ungrouped?: boolean;
+  tags?: string[];
 }
 
 async function resolveEffectivePath(targetPath: string): Promise<string> {
@@ -96,11 +107,96 @@ function normalizeSource(metadata: SkillMetadata): SkillSource {
   return { type: "unknown" };
 }
 
-function normalizeMetadata(metadata: SkillMetadata): SkillMetadata {
+function normalizeTag(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().replace(/\s+/g, " ").toLowerCase();
+  if (normalized.length > MAX_TAG_LENGTH) throw new Error(`Tag cannot exceed ${MAX_TAG_LENGTH} characters`);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const tags: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of value) {
+    const tag = normalizeTag(item);
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    tags.push(tag);
+  }
+
+  return tags;
+}
+
+function normalizeSkillSets(value: unknown): SkillSetMetadata[] {
+  if (!Array.isArray(value)) return [];
+  const skillSets: SkillSetMetadata[] = [];
+  const seen = new Set<string>();
+
+  for (const item of value) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const id = stringField(record, "id");
+    const name = stringField(record, "name");
+    const createdAt = stringField(record, "createdAt");
+    const updatedAt = stringField(record, "updatedAt");
+    if (!id || !name || !createdAt || !updatedAt || seen.has(id)) continue;
+    seen.add(id);
+    skillSets.push({ id, name, createdAt, updatedAt });
+  }
+
+  return skillSets;
+}
+
+function knownTags(skills: SkillMetadata[]): string[] {
+  return Array.from(new Set(skills.flatMap((skill) => skill.tags))).sort((left, right) => left.localeCompare(right));
+}
+
+function normalizeSkillSetName(name: string): string {
+  const normalized = name.trim().replace(/\s+/g, " ");
+  if (normalized.length === 0) throw new Error("Skill set name cannot be blank");
+  if (normalized.length > MAX_SKILL_SET_NAME_LENGTH) {
+    throw new Error(`Skill set name cannot exceed ${MAX_SKILL_SET_NAME_LENGTH} characters`);
+  }
+  return normalized;
+}
+
+function slugifySkillSetId(name: string): string {
+  return (
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^[.-]+|[.-]+$/g, "") || "skill-set"
+  );
+}
+
+function uniqueSkillSetId(skillSets: SkillSetMetadata[], name: string): string {
+  const base = slugifySkillSetId(name);
+  const existingIds = new Set(skillSets.map((skillSet) => skillSet.id));
+  let id = base;
+  let suffix = 2;
+
+  while (existingIds.has(id)) {
+    id = `${base}-${suffix}`;
+    suffix += 1;
+  }
+
+  return id;
+}
+
+function normalizeMetadata(metadata: SkillMetadata, skillSetIds: Set<string> = new Set()): SkillMetadata {
+  const tags = normalizeTags((metadata as SkillMetadata & { tags?: unknown }).tags);
+  const skillSetId = stringField(metadata as unknown as Record<string, unknown>, "skillSetId");
+  const { skillSetId: _skillSetId, ...metadataWithoutSkillSetId } = metadata;
+
   return {
-    ...metadata,
+    ...metadataWithoutSkillSetId,
     source: normalizeSource(metadata),
-    enabled: typeof metadata.enabled === "boolean" ? metadata.enabled : true
+    enabled: typeof metadata.enabled === "boolean" ? metadata.enabled : true,
+    tags,
+    ...(skillSetId && skillSetIds.has(skillSetId) ? { skillSetId } : {})
   };
 }
 
@@ -145,10 +241,11 @@ export class MetadataStore {
     return { records, files };
   }
 
-  private async writeManifest(skills: SkillMetadata[]): Promise<void> {
+  private async writeManifest(skills: SkillMetadata[], skillSets: SkillSetMetadata[] = []): Promise<void> {
     const manifest: SkillManifest = {
       version: 1,
-      skills
+      skills,
+      skillSets
     };
     const finalPath = this.manifestPath();
     const tmpPath = `${finalPath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
@@ -172,15 +269,15 @@ export class MetadataStore {
     await Promise.all(files.map((file) => fs.remove(file)));
   }
 
-  async list(): Promise<SkillMetadata[]> {
+  private async readManifest(): Promise<{ skills: SkillMetadata[]; skillSets: SkillSetMetadata[] }> {
     if (!(await fs.pathExists(this.manifestPath()))) {
       const legacyRecords = await this.readLegacyRecords();
 
-      if (legacyRecords.records.length === 0) return [];
+      if (legacyRecords.records.length === 0) return { skills: [], skillSets: [] };
 
-      await this.writeManifest(legacyRecords.records);
+      await this.writeManifest(legacyRecords.records, []);
       await this.removeLegacyRecords(legacyRecords.files);
-      return legacyRecords.records;
+      return { skills: legacyRecords.records.map((record) => normalizeMetadata(record)), skillSets: [] };
     }
 
     let manifest: SkillManifest;
@@ -191,14 +288,29 @@ export class MetadataStore {
       if (!(error instanceof SyntaxError)) throw error;
 
       const legacyRecords = await this.readLegacyRecords();
-      if (legacyRecords.records.length === 0) return [];
+      if (legacyRecords.records.length === 0) return { skills: [], skillSets: [] };
 
-      await this.writeManifest(legacyRecords.records);
+      await this.writeManifest(legacyRecords.records, []);
       await this.removeLegacyRecords(legacyRecords.files);
-      return legacyRecords.records;
+      return { skills: legacyRecords.records.map((record) => normalizeMetadata(record)), skillSets: [] };
     }
 
-    return Array.isArray(manifest.skills) ? manifest.skills.map(normalizeMetadata) : [];
+    const skillSets = normalizeSkillSets(manifest.skillSets);
+    const skillSetIds = new Set(skillSets.map((skillSet) => skillSet.id));
+    const skills = Array.isArray(manifest.skills)
+      ? manifest.skills.map((metadata) => normalizeMetadata(metadata, skillSetIds))
+      : [];
+
+    return { skills, skillSets };
+  }
+
+  async list(): Promise<SkillMetadata[]> {
+    return (await this.readManifest()).skills;
+  }
+
+  async libraryState(): Promise<LibraryState> {
+    const { skills, skillSets } = await this.readManifest();
+    return { skills, skillSets, tags: knownTags(skills) };
   }
 
   private async withWriteLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -222,20 +334,22 @@ export class MetadataStore {
     await assertMetadataPathInsideLibrary(this.libraryPath, metadata.libraryPath);
 
     await this.withWriteLock(async () => {
-      const currentSkills = await this.list();
+      const currentState = await this.readManifest();
+      const currentSkills = currentState.skills;
       const existingIndex = currentSkills.findIndex((skill) => skill.id === metadata.id);
       const nextSkills =
         existingIndex === -1
           ? [...currentSkills, metadata]
           : currentSkills.map((skill, index) => (index === existingIndex ? metadata : skill));
 
-      await this.writeManifest(nextSkills);
+      await this.writeManifest(nextSkills, currentState.skillSets);
     });
   }
 
   async setEnabled(skillId: string, enabled: boolean): Promise<SkillMetadata> {
     return this.withWriteLock(async () => {
-      const currentSkills = await this.list();
+      const currentState = await this.readManifest();
+      const currentSkills = currentState.skills;
       const existingIndex = currentSkills.findIndex((skill) => skill.id === skillId);
 
       if (existingIndex === -1) {
@@ -243,14 +357,142 @@ export class MetadataStore {
       }
 
       const updated = { ...currentSkills[existingIndex], enabled };
-      await this.writeManifest(currentSkills.map((skill, index) => (index === existingIndex ? updated : skill)));
+      await this.writeManifest(
+        currentSkills.map((skill, index) => (index === existingIndex ? updated : skill)),
+        currentState.skillSets
+      );
       return updated;
+    });
+  }
+
+  async createSkillSet(name: string): Promise<SkillSetMetadata> {
+    const normalizedName = normalizeSkillSetName(name);
+    await fs.ensureDir(this.libraryPath);
+
+    return this.withWriteLock(async () => {
+      const currentState = await this.readManifest();
+      const now = new Date().toISOString();
+      const skillSet: SkillSetMetadata = {
+        id: uniqueSkillSetId(currentState.skillSets, normalizedName),
+        name: normalizedName,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      await this.writeManifest(currentState.skills, [...currentState.skillSets, skillSet]);
+      return skillSet;
+    });
+  }
+
+  async renameSkillSet(skillSetId: string, name: string): Promise<SkillSetMetadata> {
+    const normalizedName = normalizeSkillSetName(name);
+    return this.withWriteLock(async () => {
+      const currentState = await this.readManifest();
+      const existing = currentState.skillSets.find((skillSet) => skillSet.id === skillSetId);
+      if (!existing) throw new Error(`Skill set not found: ${skillSetId}`);
+
+      const updated = { ...existing, name: normalizedName, updatedAt: new Date().toISOString() };
+      await this.writeManifest(
+        currentState.skills,
+        currentState.skillSets.map((skillSet) => (skillSet.id === skillSetId ? updated : skillSet))
+      );
+      return updated;
+    });
+  }
+
+  async deleteSkillSet(skillSetId: string): Promise<SkillSetMetadata> {
+    return this.withWriteLock(async () => {
+      const currentState = await this.readManifest();
+      const existing = currentState.skillSets.find((skillSet) => skillSet.id === skillSetId);
+      if (!existing) throw new Error(`Skill set not found: ${skillSetId}`);
+
+      await this.writeManifest(
+        currentState.skills.map((skill) => {
+          const { skillSetId: currentSkillSetId, ...rest } = skill;
+          return currentSkillSetId === skillSetId ? rest : skill;
+        }),
+        currentState.skillSets.filter((skillSet) => skillSet.id !== skillSetId)
+      );
+      return existing;
+    });
+  }
+
+  async assignSkillSet(skillId: string, skillSetId?: string): Promise<SkillMetadata> {
+    return this.withWriteLock(async () => {
+      const currentState = await this.readManifest();
+      const existingSkill = currentState.skills.find((skill) => skill.id === skillId);
+      if (!existingSkill) throw new Error(`Skill not found: ${skillId}`);
+      if (skillSetId && !currentState.skillSets.some((skillSet) => skillSet.id === skillSetId)) {
+        throw new Error(`Skill set not found: ${skillSetId}`);
+      }
+
+      const { skillSetId: _currentSkillSetId, ...withoutSet } = existingSkill;
+      const updated = skillSetId ? { ...withoutSet, skillSetId } : withoutSet;
+      await this.writeManifest(
+        currentState.skills.map((skill) => (skill.id === skillId ? updated : skill)),
+        currentState.skillSets
+      );
+      return updated;
+    });
+  }
+
+  async replaceSkillTags(skillId: string, tags: string[]): Promise<SkillMetadata> {
+    return this.withWriteLock(async () => {
+      const currentState = await this.readManifest();
+      const existingSkill = currentState.skills.find((skill) => skill.id === skillId);
+      if (!existingSkill) throw new Error(`Skill not found: ${skillId}`);
+
+      const updated = { ...existingSkill, tags: normalizeTags(tags) };
+      await this.writeManifest(
+        currentState.skills.map((skill) => (skill.id === skillId ? updated : skill)),
+        currentState.skillSets
+      );
+      return updated;
+    });
+  }
+
+  async filterSkills(filter: SkillFilter): Promise<SkillMetadata[]> {
+    const state = await this.libraryState();
+    const filterTags = normalizeTags(filter.tags ?? []);
+
+    return state.skills.filter((skill) => {
+      if (filter.ungrouped && skill.skillSetId) return false;
+      if (filter.skillSetId && skill.skillSetId !== filter.skillSetId) return false;
+      return filterTags.every((tag) => skill.tags.includes(tag));
+    });
+  }
+
+  async skillSetEnablement(skillSetId: string): Promise<SkillSetEnablement> {
+    const state = await this.libraryState();
+    if (!state.skillSets.some((skillSet) => skillSet.id === skillSetId)) {
+      throw new Error(`Skill set not found: ${skillSetId}`);
+    }
+
+    const members = state.skills.filter((skill) => skill.skillSetId === skillSetId);
+    if (members.length === 0 || members.every((skill) => !skill.enabled)) return "off";
+    if (members.every((skill) => skill.enabled)) return "on";
+    return "mixed";
+  }
+
+  async setSkillSetEnabled(skillSetId: string, enabled: boolean): Promise<SkillMetadata[]> {
+    return this.withWriteLock(async () => {
+      const currentState = await this.readManifest();
+      if (!currentState.skillSets.some((skillSet) => skillSet.id === skillSetId)) {
+        throw new Error(`Skill set not found: ${skillSetId}`);
+      }
+
+      const updatedSkills = currentState.skills.map((skill) =>
+        skill.skillSetId === skillSetId ? { ...skill, enabled } : skill
+      );
+      await this.writeManifest(updatedSkills, currentState.skillSets);
+      return updatedSkills.filter((skill) => skill.skillSetId === skillSetId);
     });
   }
 
   async pruneMissing(): Promise<SkillMetadata[]> {
     return this.withWriteLock(async () => {
-      const currentSkills = await this.list();
+      const currentState = await this.readManifest();
+      const currentSkills = currentState.skills;
       const existingSkills: SkillMetadata[] = [];
       const missingSkills: SkillMetadata[] = [];
 
@@ -263,7 +505,7 @@ export class MetadataStore {
       }
 
       if (missingSkills.length > 0) {
-        await this.writeManifest(existingSkills);
+        await this.writeManifest(existingSkills, currentState.skillSets);
       }
 
       return missingSkills;
@@ -274,7 +516,8 @@ export class MetadataStore {
     await fs.ensureDir(this.libraryPath);
 
     return this.withWriteLock(async () => {
-      const currentSkills = await this.list();
+      const currentState = await this.readManifest();
+      const currentSkills = currentState.skills;
       const existing = currentSkills.find((skill) => skill.id === skillId);
 
       if (!existing) {
@@ -283,7 +526,10 @@ export class MetadataStore {
 
       await assertMetadataPathInsideLibrary(this.libraryPath, existing.libraryPath);
       await fs.remove(existing.libraryPath);
-      await this.writeManifest(currentSkills.filter((skill) => skill.id !== skillId));
+      await this.writeManifest(
+        currentSkills.filter((skill) => skill.id !== skillId),
+        currentState.skillSets
+      );
       return existing;
     });
   }
