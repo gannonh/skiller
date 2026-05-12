@@ -76,6 +76,28 @@ describe("app update service", () => {
     expect(deps.updater.checkForUpdates).not.toHaveBeenCalled();
   });
 
+  it("keeps unsupported services unchanged when updater events fire", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    updater.on("error", () => undefined);
+    const service = createAppUpdateService({ ...createSupportedDeps(updater), isPackaged: false });
+    const states: unknown[] = [];
+    service.subscribe((state) => states.push(state));
+
+    updater.emit("checking-for-update");
+    updater.emit("update-available", { version: "0.2.2" } satisfies Partial<UpdateInfo>);
+    updater.emit("download-progress", { percent: 64, transferred: 64, total: 100, bytesPerSecond: 10 } satisfies ProgressInfo);
+    updater.emit("update-downloaded", { version: "0.2.2" } satisfies Partial<UpdateInfo>);
+    updater.emit("update-not-available");
+    updater.emit("error", new Error("metadata missing"));
+    service.stop();
+
+    expect(service.getState()).toEqual({ status: "unsupported" });
+    expect(states).toEqual([]);
+    expect(updater.downloadUpdate).not.toHaveBeenCalled();
+  });
+
   it("supports Linux AppImage builds only", async () => {
     const { createAppUpdateService } = await import("../src/main/app-update.js");
     const linuxDeps = createSupportedDeps();

@@ -100,6 +100,18 @@ export function createAppUpdateService(
 
   deps.updater.autoDownload = false;
   deps.updater.autoInstallOnAppQuit = false;
+  if (!isSupported) {
+    return createService({
+      checkNow: async () => state,
+      clearInterval: deps.clearInterval,
+      getBackgroundInterval: () => backgroundInterval,
+      listeners,
+      state: () => state,
+      stopUpdaterListeners: () => undefined,
+      updater: deps.updater
+    });
+  }
+
   onUpdater("checking-for-update", () => {
     lastOperationErrorKey = undefined;
     setState({ status: "checking" });
@@ -135,10 +147,6 @@ export function createAppUpdateService(
   onUpdater("error", setErrorState);
 
   const checkNow = async () => {
-    if (!isSupported) {
-      return state;
-    }
-
     lastOperationErrorKey = undefined;
     try {
       await deps.updater.checkForUpdates();
@@ -149,19 +157,8 @@ export function createAppUpdateService(
     return state;
   };
 
-  return {
-    getState: () => state,
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+  return createService({
     startBackgroundChecks: async () => {
-      if (!isSupported) {
-        return state;
-      }
-
       const result = await checkNow();
       if (!backgroundInterval) {
         backgroundInterval = deps.setInterval(() => {
@@ -171,22 +168,58 @@ export function createAppUpdateService(
       return result;
     },
     checkNow,
-    installReadyUpdate: async () => {
-      if (state.status !== "ready") {
-        throw new Error("No downloaded app update is ready to install");
-      }
-
-      deps.updater.quitAndInstall(false, true);
+    clearInterval: deps.clearInterval,
+    getBackgroundInterval: () => backgroundInterval,
+    listeners,
+    setBackgroundInterval: (interval) => {
+      backgroundInterval = interval;
     },
-    stop: () => {
-      if (backgroundInterval) {
-        deps.clearInterval(backgroundInterval);
-        backgroundInterval = undefined;
-      }
+    state: () => state,
+    stopUpdaterListeners: () => {
       for (const { event, listener } of updaterListeners) {
         deps.updater.off(event, listener);
       }
       updaterListeners.length = 0;
+    },
+    updater: deps.updater
+  });
+}
+
+function createService(options: {
+  checkNow: () => Promise<AppUpdateState>;
+  clearInterval: typeof clearInterval;
+  getBackgroundInterval: () => NodeJS.Timeout | undefined;
+  listeners: Set<(state: AppUpdateState) => void>;
+  setBackgroundInterval?: (interval: NodeJS.Timeout | undefined) => void;
+  startBackgroundChecks?: () => Promise<AppUpdateState>;
+  state: () => AppUpdateState;
+  stopUpdaterListeners: () => void;
+  updater: AppUpdater;
+}): AppUpdateService {
+  return {
+    getState: options.state,
+    subscribe: (listener) => {
+      options.listeners.add(listener);
+      return () => {
+        options.listeners.delete(listener);
+      };
+    },
+    startBackgroundChecks: options.startBackgroundChecks ?? options.checkNow,
+    checkNow: options.checkNow,
+    installReadyUpdate: async () => {
+      if (options.state().status !== "ready") {
+        throw new Error("No downloaded app update is ready to install");
+      }
+
+      options.updater.quitAndInstall(false, true);
+    },
+    stop: () => {
+      const backgroundInterval = options.getBackgroundInterval();
+      if (backgroundInterval) {
+        options.clearInterval(backgroundInterval);
+        options.setBackgroundInterval?.(undefined);
+      }
+      options.stopUpdaterListeners();
     }
   };
 }
