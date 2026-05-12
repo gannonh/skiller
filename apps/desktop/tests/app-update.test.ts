@@ -160,6 +160,42 @@ describe("app update service", () => {
     expect(deps.clearInterval).not.toHaveBeenCalled();
   });
 
+  it("does not emit or log when a stopped initial check rejects", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    let rejectCheck!: (error: Error) => void;
+    updater.checkForUpdates.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectCheck = reject;
+    }));
+    const service = createAppUpdateService(createSupportedDeps(updater));
+    const states: unknown[] = [];
+    service.subscribe((state) => states.push(state));
+
+    const backgroundStart = service.startBackgroundChecks();
+    service.stop();
+    rejectCheck(new Error("metadata missing"));
+    await backgroundStart;
+
+    expect(service.getState()).toEqual({ status: "idle" });
+    expect(states).toEqual([]);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not restart after stop", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const deps = createSupportedDeps();
+    const service = createAppUpdateService(deps);
+
+    service.stop();
+    await service.checkNow();
+    await service.startBackgroundChecks();
+
+    expect(service.getState()).toEqual({ status: "idle" });
+    expect(deps.updater.checkForUpdates).not.toHaveBeenCalled();
+    expect(deps.setInterval).not.toHaveBeenCalled();
+  });
+
   it("reports when no update is available and allows unsubscribe", async () => {
     const { createAppUpdateService } = await import("../src/main/app-update.js");
     const updater = new FakeUpdater();
@@ -352,15 +388,39 @@ describe("app update service", () => {
     expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("does not emit or log when a stopped download rejects", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    let rejectDownload!: (error: Error) => void;
+    updater.downloadUpdate.mockImplementationOnce(() => new Promise<string[]>((_resolve, reject) => {
+      rejectDownload = reject;
+    }));
+    const service = createAppUpdateService(createSupportedDeps(updater));
+    const states: unknown[] = [];
+    service.subscribe((state) => states.push(state));
+
+    updater.emit("update-available", { version: "0.2.2" } satisfies Partial<UpdateInfo>);
+    service.stop();
+    rejectDownload(new Error("asset missing"));
+    await Promise.resolve();
+
+    expect(service.getState()).toEqual({ status: "downloading", progress: 0, version: "0.2.2" });
+    expect(states).toEqual([{ status: "downloading", progress: 0, version: "0.2.2" }]);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
   it("unregisters updater listeners on stop", async () => {
     const { createAppUpdateService } = await import("../src/main/app-update.js");
     const updater = new FakeUpdater();
     const service = createAppUpdateService(createSupportedDeps(updater));
     const states: unknown[] = [];
     service.subscribe((state) => states.push(state));
+    const checkingListener = updater.listeners("checking-for-update")[0] as () => void;
 
     service.stop();
     updater.emit("checking-for-update");
+    checkingListener();
 
     expect(states).toEqual([]);
     expect(service.getState()).toEqual({ status: "idle" });

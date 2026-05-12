@@ -72,6 +72,10 @@ export function createAppUpdateService(
   const updaterListeners: Array<{ event: UpdaterEventName; listener: (...args: unknown[]) => void }> = [];
 
   const setState = (nextState: AppUpdateState) => {
+    if (stopped) {
+      return;
+    }
+
     state = nextState;
     for (const listener of listeners) {
       listener(state);
@@ -83,6 +87,10 @@ export function createAppUpdateService(
   };
 
   const setErrorState = (error: unknown) => {
+    if (stopped) {
+      return;
+    }
+
     const errorKey = createErrorKey(error);
     if (lastOperationErrorKey === errorKey) {
       return;
@@ -152,6 +160,10 @@ export function createAppUpdateService(
   onUpdater("error", setErrorState);
 
   const checkNow = async () => {
+    if (stopped) {
+      return state;
+    }
+
     lastOperationErrorKey = undefined;
     try {
       await deps.updater.checkForUpdates();
@@ -164,7 +176,10 @@ export function createAppUpdateService(
 
   return createService({
     startBackgroundChecks: async () => {
-      stopped = false;
+      if (stopped) {
+        return state;
+      }
+
       const result = await checkNow();
       if (!stopped && !backgroundInterval) {
         backgroundInterval = deps.setInterval(() => {
