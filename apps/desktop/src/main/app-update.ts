@@ -114,9 +114,12 @@ export function createAppUpdateService(
       checkNow: async () => state,
       clearInterval: deps.clearInterval,
       getBackgroundInterval: () => backgroundInterval,
+      isStopped: () => stopped,
       listeners,
       state: () => state,
-      stopUpdaterListeners: () => undefined,
+      stopUpdaterListeners: () => {
+        stopped = true;
+      },
       updater: deps.updater
     });
   }
@@ -191,6 +194,7 @@ export function createAppUpdateService(
     checkNow,
     clearInterval: deps.clearInterval,
     getBackgroundInterval: () => backgroundInterval,
+    isStopped: () => stopped,
     listeners,
     setBackgroundInterval: (interval) => {
       backgroundInterval = interval;
@@ -211,6 +215,7 @@ function createService(options: {
   checkNow: () => Promise<AppUpdateState>;
   clearInterval: typeof clearInterval;
   getBackgroundInterval: () => NodeJS.Timeout | undefined;
+  isStopped: () => boolean;
   listeners: Set<(state: AppUpdateState) => void>;
   setBackgroundInterval?: (interval: NodeJS.Timeout | undefined) => void;
   startBackgroundChecks?: () => Promise<AppUpdateState>;
@@ -221,6 +226,10 @@ function createService(options: {
   return {
     getState: options.state,
     subscribe: (listener) => {
+      if (options.isStopped()) {
+        return () => undefined;
+      }
+
       options.listeners.add(listener);
       return () => {
         options.listeners.delete(listener);
@@ -229,6 +238,10 @@ function createService(options: {
     startBackgroundChecks: options.startBackgroundChecks ?? options.checkNow,
     checkNow: options.checkNow,
     installReadyUpdate: async () => {
+      if (options.isStopped()) {
+        throw new Error("App update service has been stopped");
+      }
+
       if (options.state().status !== "ready") {
         throw new Error("No downloaded app update is ready to install");
       }
@@ -241,6 +254,7 @@ function createService(options: {
         options.clearInterval(backgroundInterval);
         options.setBackgroundInterval?.(undefined);
       }
+      options.listeners.clear();
       options.stopUpdaterListeners();
     }
   };

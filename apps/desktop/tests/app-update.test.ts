@@ -318,6 +318,18 @@ describe("app update service", () => {
     expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true);
   });
 
+  it("does not install after stop", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    const service = createAppUpdateService(createSupportedDeps(updater));
+
+    updater.emit("update-downloaded", { version: "0.2.2" } satisfies Partial<UpdateInfo>);
+    service.stop();
+
+    await expect(service.installReadyUpdate()).rejects.toThrow("App update service has been stopped");
+    expect(updater.quitAndInstall).not.toHaveBeenCalled();
+  });
+
   it("reports updater errors without throwing from event listeners", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { createAppUpdateService } = await import("../src/main/app-update.js");
@@ -424,5 +436,19 @@ describe("app update service", () => {
 
     expect(states).toEqual([]);
     expect(service.getState()).toEqual({ status: "idle" });
+  });
+
+  it("clears subscriber listeners on stop", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    const service = createAppUpdateService(createSupportedDeps(updater));
+    const states: unknown[] = [];
+    service.subscribe((state) => states.push(state));
+
+    service.stop();
+    service.subscribe((state) => states.push(state));
+    updater.emit("checking-for-update");
+
+    expect(states).toEqual([]);
   });
 });
