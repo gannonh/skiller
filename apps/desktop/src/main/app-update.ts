@@ -68,6 +68,7 @@ export function createAppUpdateService(
   let state: AppUpdateState = isSupported ? { status: "idle" } : { status: "unsupported" };
   let backgroundInterval: NodeJS.Timeout | undefined;
   let lastOperationErrorKey: string | undefined;
+  let stopped = false;
   const updaterListeners: Array<{ event: UpdaterEventName; listener: (...args: unknown[]) => void }> = [];
 
   const setState = (nextState: AppUpdateState) => {
@@ -133,7 +134,11 @@ export function createAppUpdateService(
   });
   onUpdater("download-progress", (progress: ProgressInfo) => {
     lastOperationErrorKey = undefined;
-    setState({ status: "downloading", progress: progress.percent });
+    setState({
+      ...(state.status === "downloading" ? state : {}),
+      status: "downloading",
+      progress: progress.percent
+    });
   });
   onUpdater("update-downloaded", (info: UpdateInfo) => {
     lastOperationErrorKey = undefined;
@@ -159,8 +164,9 @@ export function createAppUpdateService(
 
   return createService({
     startBackgroundChecks: async () => {
+      stopped = false;
       const result = await checkNow();
-      if (!backgroundInterval) {
+      if (!stopped && !backgroundInterval) {
         backgroundInterval = deps.setInterval(() => {
           void checkNow();
         }, BACKGROUND_CHECK_INTERVAL_MS);
@@ -176,6 +182,7 @@ export function createAppUpdateService(
     },
     state: () => state,
     stopUpdaterListeners: () => {
+      stopped = true;
       for (const { event, listener } of updaterListeners) {
         deps.updater.off(event, listener);
       }

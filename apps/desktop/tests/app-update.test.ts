@@ -141,6 +141,25 @@ describe("app update service", () => {
     expect(deps.clearInterval).toHaveBeenCalledWith(12);
   });
 
+  it("does not keep an interval when stopped during the first background check", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    let finishCheck!: () => void;
+    updater.checkForUpdates.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      finishCheck = resolve;
+    }));
+    const deps = createSupportedDeps(updater);
+    const service = createAppUpdateService(deps);
+
+    const backgroundStart = service.startBackgroundChecks();
+    service.stop();
+    finishCheck();
+    await backgroundStart;
+
+    expect(deps.setInterval).not.toHaveBeenCalled();
+    expect(deps.clearInterval).not.toHaveBeenCalled();
+  });
+
   it("reports when no update is available and allows unsubscribe", async () => {
     const { createAppUpdateService } = await import("../src/main/app-update.js");
     const updater = new FakeUpdater();
@@ -154,6 +173,16 @@ describe("app update service", () => {
 
     expect(service.getState()).toEqual({ status: "checking" });
     expect(states).toEqual([{ status: "not-available" }]);
+  });
+
+  it("reports progress without metadata when no update metadata is available", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    const service = createAppUpdateService(createSupportedDeps(updater));
+
+    updater.emit("download-progress", { percent: 64, transferred: 64, total: 100, bytesPerSecond: 10 } satisfies ProgressInfo);
+
+    expect(service.getState()).toEqual({ status: "downloading", progress: 64 });
   });
 
   it("downloads available updates and reports readiness", async () => {
@@ -186,7 +215,12 @@ describe("app update service", () => {
       version: "0.2.2",
       releaseName: "Skiller Desktop v0.2.2"
     }));
-    expect(states).toContainEqual(expect.objectContaining({ status: "downloading", progress: 64 }));
+    expect(states).toContainEqual(expect.objectContaining({
+      status: "downloading",
+      progress: 64,
+      version: "0.2.2",
+      releaseName: "Skiller Desktop v0.2.2"
+    }));
     expect(states).toContainEqual(expect.objectContaining({ status: "ready", version: "0.2.2" }));
   });
 
