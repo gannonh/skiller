@@ -19,7 +19,7 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
-import { skillerApi, type LibraryState, type SkillMetadata } from "../lib/api.js";
+import { skillerApi, type LibraryState, type SetSkillSetEnabledResult, type SkillMetadata } from "../lib/api.js";
 import { sourceDetail, sourceLabel } from "../lib/skill-source.js";
 import type { DiscoveredGithubSkill } from "@skiller/core";
 
@@ -71,6 +71,13 @@ export function filterAfterDeletingSkillSet(currentFilter: SetFilter, skillSetId
 
 export function reconcileSelectedTags(selectedTags: string[], knownTags: string[]): string[] {
   return selectedTags.filter((tag) => knownTags.includes(tag));
+}
+
+export function setSkillSetEnabledScanErrorMessage(result: SetSkillSetEnabledResult): string | null {
+  if (result.scanErrors.length === 0) return null;
+  const firstError = result.scanErrors[0];
+  const suffix = result.scanErrors.length === 1 ? "" : ` and ${result.scanErrors.length - 1} more`;
+  return `Target sync failed for ${firstError.path}: ${firstError.message}${suffix}`;
 }
 
 function statusLabel(skill: SkillMetadata): string {
@@ -418,8 +425,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setPendingSkillIds((current) => new Set([...current, ...memberIds]));
     setError(null);
     try {
-      const updatedState = await skillerApi.setSkillSetEnabled(skillSetId, enabled);
-      setLibraryState(updatedState);
+      const result = await skillerApi.setSkillSetEnabled(skillSetId, enabled);
+      setLibraryState(result.state);
+      setError(setSkillSetEnabledScanErrorMessage(result));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {

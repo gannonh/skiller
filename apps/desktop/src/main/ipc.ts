@@ -12,12 +12,16 @@ import {
   scanTargets,
   updateInstalledSkill
 } from "@skiller/core";
-import type { SkillerConfig, TargetConfig } from "@skiller/core";
+import type { ScanTargetsResult, SkillerConfig, TargetConfig } from "@skiller/core";
 import { checkDesktopUpdates } from "./update-check.js";
 
 type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets">>;
 type InstallGithubInput = { githubUrl: string; githubPath?: string; ref?: string };
 type InstallRegistryInput = string | { skillsShId: string; registrySkill?: Record<string, unknown> };
+export type SetSkillSetEnabledResult = {
+  state: Awaited<ReturnType<MetadataStore["libraryState"]>>;
+  scanErrors: ScanTargetsResult["errors"];
+};
 
 const skillsShClient = new SkillsShClient();
 
@@ -127,8 +131,11 @@ export function registerIpcHandlers(): void {
     const store = new MetadataStore(libraryPath);
 
     await store.setSkillSetEnabled(skillSetId, enabled);
-    await scanConfig(config);
-    return store.libraryState();
+    const scanResult = await scanConfig(config);
+    return {
+      state: await store.libraryState(),
+      scanErrors: scanResult.errors
+    } satisfies SetSkillSetEnabledResult;
   });
 
   ipcMain.handle("library:delete", async (_event, skillId: string) => {

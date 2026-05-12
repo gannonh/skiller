@@ -87,4 +87,16 @@ describe("LibraryPage helpers", () => {
     });
     expect(helpers.filterAfterDeletingSkillSet({ type: "ungrouped" }, "automation")).toEqual({ type: "ungrouped" });
   });
+
+  it("summarizes skill set target sync errors", () => {
+    expect(
+      helpers.setSkillSetEnabledScanErrorMessage({
+        state: { skills: [], skillSets: [], tags: [] },
+        scanErrors: [
+          { path: "/tmp/skills", message: "permission denied" },
+          { path: "/tmp/other-skills", message: "missing" }
+        ]
+      })
+    ).toBe("Target sync failed for /tmp/skills: permission denied and 1 more");
+  });
 });
