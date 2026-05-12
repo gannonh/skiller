@@ -4,6 +4,8 @@ Skiller is a desktop app and CLI for managing local agent skills.
 
 It keeps a master skill library, syncs enabled skills into configured agent target directories, validates skill structure, and provides discovery through the skills.sh API.
 
+![Skiller Desktop Discover view](docs/assets/skiller-discover.png)
+
 ## Features
 
 - Install skills from local folders, GitHub, and skills.sh.
