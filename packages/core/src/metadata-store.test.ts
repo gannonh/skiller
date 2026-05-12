@@ -131,6 +131,20 @@ describe("MetadataStore", () => {
     });
   });
 
+  it("creates a skill set in a missing library directory", async () => {
+    const parentPath = await makeTempDir();
+    const libraryPath = path.join(parentPath, "missing-library");
+    const store = new MetadataStore(libraryPath);
+
+    const created = await store.createSkillSet("Automation");
+
+    expect(await store.libraryState()).toEqual({
+      skills: [],
+      skillSets: [created],
+      tags: []
+    });
+  });
+
   it("normalizes skill tags and filters with all selected tags", async () => {
     const libraryPath = await makeTempDir();
     const firstPath = path.join(libraryPath, "example-skill");

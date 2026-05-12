@@ -361,6 +361,8 @@ export class MetadataStore {
 
   async createSkillSet(name: string): Promise<SkillSetMetadata> {
     const normalizedName = normalizeSkillSetName(name);
+    await fs.ensureDir(this.libraryPath);
+
     return this.withWriteLock(async () => {
       const currentState = await this.readManifest();
       const now = new Date().toISOString();
