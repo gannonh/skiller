@@ -27,11 +27,11 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
-import { skillerApi, type LibraryState, type SetSkillSetEnabledResult, type SkillMetadata } from "../lib/api.js";
+import { skillerApi, type LibraryState, type SetSkillSetEnabledResult, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
 import { sourceDetail, sourceLabel } from "../lib/skill-source.js";
 import type { DiscoveredGithubSkill } from "@skiller/core";
 
-type SortColumn = "name" | "source" | "status" | "enabled" | "actions";
+type SortColumn = "name" | "source" | "skillSet" | "status" | "enabled" | "actions";
 type SortDirection = "asc" | "desc";
 
 export type SetFilter = { type: "all" } | { type: "ungrouped" } | { type: "set"; skillSetId: string };
@@ -92,17 +92,28 @@ function statusLabel(skill: SkillMetadata): string {
   return skill.validation?.valid ? "valid" : "invalid";
 }
 
-function sortValue(skill: SkillMetadata, column: SortColumn): string {
+function skillSetSortLabel(skill: SkillMetadata, skillSets: SkillSetMetadata[]): string {
+  if (!skill.skillSetId) return "none";
+  return skillSets.find((skillSet) => skillSet.id === skill.skillSetId)?.name ?? skill.skillSetId;
+}
+
+function sortValue(skill: SkillMetadata, column: SortColumn, skillSets: SkillSetMetadata[]): string {
   if (column === "name") return skill.name || skill.id;
   if (column === "source") return `${sourceLabel(skill)} ${sourceDetail(skill)}`;
+  if (column === "skillSet") return skillSetSortLabel(skill, skillSets);
   if (column === "status") return statusLabel(skill);
   if (column === "enabled") return skill.enabled ? "enabled" : "disabled";
   return `${skill.name || skill.id} ${skill.id}`;
 }
 
-function sortSkills(skills: SkillMetadata[], column: SortColumn, direction: SortDirection): SkillMetadata[] {
+export function sortSkills(
+  skills: SkillMetadata[],
+  column: SortColumn,
+  direction: SortDirection,
+  skillSets: SkillSetMetadata[] = []
+): SkillMetadata[] {
   return [...skills].sort((left, right) => {
-    const primary = sortValue(left, column).localeCompare(sortValue(right, column), undefined, {
+    const primary = sortValue(left, column, skillSets).localeCompare(sortValue(right, column, skillSets), undefined, {
       numeric: true,
       sensitivity: "base"
     });
@@ -172,8 +183,8 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     [skills, setFilter, selectedTags]
   );
   const sortedSkills = useMemo(
-    () => sortSkills(filteredSkills, sortColumn, sortDirection),
-    [filteredSkills, sortColumn, sortDirection]
+    () => sortSkills(filteredSkills, sortColumn, sortDirection, libraryState.skillSets),
+    [filteredSkills, sortColumn, sortDirection, libraryState.skillSets]
   );
   const selectedGithubSkills = useMemo(
     () => githubChoices.filter((skill) => selectedGithubPaths.has(skill.path)),
@@ -640,7 +651,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                 <TableRow>
                   <SortableTableHead column="name">Name</SortableTableHead>
                   <SortableTableHead column="source">Source</SortableTableHead>
-                  <TableHead>Set</TableHead>
+                  <SortableTableHead column="skillSet">Skill Set</SortableTableHead>
                   <TableHead>Tags</TableHead>
                   <SortableTableHead column="status">Status</SortableTableHead>
                   <SortableTableHead column="enabled">Enabled</SortableTableHead>

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { SkillMetadata } from "../lib/api.js";
+import type { SkillMetadata, SkillSetMetadata } from "../lib/api.js";
 
 let helpers: typeof import("./LibraryPage.js");
 
@@ -15,6 +15,15 @@ function skill(input: Partial<SkillMetadata> & { id: string }): SkillMetadata {
     tags: input.tags ?? [],
     ...(input.skillSetId ? { skillSetId: input.skillSetId } : {}),
     validation: { valid: true, issues: [] }
+  };
+}
+
+function skillSet(id: string, name: string): SkillSetMetadata {
+  return {
+    id,
+    name,
+    createdAt: "2026-05-12T00:00:00.000Z",
+    updatedAt: "2026-05-12T00:00:00.000Z"
   };
 }
 
@@ -75,6 +84,21 @@ describe("LibraryPage helpers", () => {
         "set"
       )
     ).toBe("mixed");
+  });
+
+  it("sorts by displayed skill set name with ungrouped skills as none", () => {
+    const skills = [
+      skill({ id: "one", skillSetId: "zeta" }),
+      skill({ id: "two" }),
+      skill({ id: "three", skillSetId: "alpha" })
+    ];
+    const skillSets = [skillSet("zeta", "Zeta"), skillSet("alpha", "Alpha")];
+
+    expect(helpers.sortSkills(skills, "skillSet", "asc", skillSets).map((item) => item.id)).toEqual([
+      "three",
+      "two",
+      "one"
+    ]);
   });
 
   it("resets only the current filter for the deleted skill set", () => {

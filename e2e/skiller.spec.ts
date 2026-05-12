@@ -38,7 +38,7 @@ test("sorts library columns with name as the default", async ({ page }) => {
   await page.getByRole("button", { name: "Install selected" }).click();
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
 
-  for (const column of ["Name", "Source", "Status", "Enabled", "Actions"]) {
+  for (const column of ["Name", "Source", "Skill Set", "Status", "Enabled", "Actions"]) {
     await expect(page.getByRole("button", { name: `Sort by ${column}` })).toBeVisible();
   }
 
