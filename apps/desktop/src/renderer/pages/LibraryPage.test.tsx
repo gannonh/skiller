@@ -35,8 +35,28 @@ describe("LibraryPage helpers", () => {
       skill({ id: "three", skillSetId: "automation", tags: ["browser"] })
     ];
 
-    expect(helpers.filterLibrarySkills(skills, "automation", ["browser", "testing"]).map((item) => item.id)).toEqual(["one"]);
-    expect(helpers.filterLibrarySkills(skills, "ungrouped", ["browser"]).map((item) => item.id)).toEqual(["two"]);
+    expect(
+      helpers.filterLibrarySkills(skills, { type: "set", skillSetId: "automation" }, ["browser", "testing"]).map((item) => item.id)
+    ).toEqual(["one"]);
+    expect(helpers.filterLibrarySkills(skills, { type: "ungrouped" }, ["browser"]).map((item) => item.id)).toEqual([
+      "two"
+    ]);
+  });
+
+  it("distinguishes set ids from reserved filter names", () => {
+    const skills = [
+      skill({ id: "one", skillSetId: "ungrouped", tags: ["browser"] }),
+      skill({ id: "two", tags: ["browser"] }),
+      skill({ id: "three", skillSetId: "all", tags: ["browser"] })
+    ];
+
+    expect(helpers.filterLibrarySkills(skills, { type: "set", skillSetId: "ungrouped" }, []).map((item) => item.id)).toEqual([
+      "one"
+    ]);
+    expect(helpers.filterLibrarySkills(skills, { type: "set", skillSetId: "all" }, []).map((item) => item.id)).toEqual([
+      "three"
+    ]);
+    expect(helpers.filterLibrarySkills(skills, { type: "ungrouped" }, []).map((item) => item.id)).toEqual(["two"]);
   });
 
   it("derives skill set state", () => {

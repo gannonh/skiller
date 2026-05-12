@@ -26,7 +26,7 @@ import type { DiscoveredGithubSkill } from "@skiller/core";
 type SortColumn = "name" | "source" | "status" | "enabled" | "actions";
 type SortDirection = "asc" | "desc";
 
-export type SetFilter = "all" | "ungrouped" | string;
+export type SetFilter = { type: "all" } | { type: "ungrouped" } | { type: "set"; skillSetId: string };
 
 export function parseTagInput(value: string): string[] {
   return Array.from(
@@ -52,8 +52,8 @@ export function filterLibrarySkills(
   selectedTags: string[]
 ): SkillMetadata[] {
   return skills.filter((skill) => {
-    if (setFilter === "ungrouped" && skill.skillSetId) return false;
-    if (setFilter !== "all" && setFilter !== "ungrouped" && skill.skillSetId !== setFilter) return false;
+    if (setFilter.type === "ungrouped" && skill.skillSetId) return false;
+    if (setFilter.type === "set" && skill.skillSetId !== setFilter.skillSetId) return false;
     return selectedTags.every((tag) => skill.tags.includes(tag));
   });
 }
