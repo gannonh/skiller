@@ -588,6 +588,4 @@ function createRendererApi(api: SkillerApi): RendererSkillerApi {
   };
 }
 
-const browserPreviewApi = createBrowserPreviewApi();
-
-export const skillerApi = createRendererApi(window.skiller ? { ...browserPreviewApi, ...window.skiller } : browserPreviewApi);
+export const skillerApi = createRendererApi(window.skiller ?? createBrowserPreviewApi());

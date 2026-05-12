@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 declare global {
   interface Window {
+    __emitAppUpdateState?: (state: { status: string; version?: string }) => void;
     __installAppUpdateCalls?: number;
   }
 }
@@ -397,7 +398,8 @@ test("keeps app update UI separate from skill updates", async ({ page }) => {
       getAppUpdateState: async () => ({ status: "ready", version: "0.2.2" }),
       onAppUpdateState: () => () => undefined,
       listLibrary: async () => ({ skills: [], skillSets: [], tags: [] }),
-      checkUpdates: async () => ({ checkedAt: new Date().toISOString(), considered: [], available: [], updated: [], errors: [] })
+      checkUpdates: async () => ({ checkedAt: new Date().toISOString(), considered: [], available: [], updated: [], errors: [] }),
+      onCheckUpdates: () => () => undefined
     };
   });
 
@@ -407,6 +409,66 @@ test("keeps app update UI separate from skill updates", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Updates" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Install app update 0.2.2" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Check for Updates" })).toBeVisible();
+});
+
+test("shows a ready app update from the app update state listener", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "idle" }),
+      onAppUpdateState: (callback) => {
+        window.__emitAppUpdateState = callback;
+        return () => undefined;
+      },
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: /Install app update/ })).toHaveCount(0);
+  await page.evaluate(() => window.__emitAppUpdateState?.({ status: "ready", version: "0.2.3" }));
+
+  await expect(page.getByRole("button", { name: "Install app update 0.2.3" })).toBeVisible();
+});
+
+test("reports app update state load failures without unhandled rejections", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => {
+        throw new Error("state unavailable");
+      },
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByText("App update check failed")).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("reports app update install failures without unhandled rejections", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "ready", version: "0.2.2" }),
+      installAppUpdate: async () => {
+        throw new Error("install unavailable");
+      },
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Install app update 0.2.2" }).click();
+
+  await expect(page.getByText("App update install failed")).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });
 
 test("lists updateable skills on the Updates page", async ({ page }) => {
