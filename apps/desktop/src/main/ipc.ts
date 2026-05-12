@@ -140,7 +140,7 @@ export function registerIpcHandlers(): void {
     await scanConfig(config);
     await store.delete(skillId);
     await scanConfig(config);
-    return store.list();
+    return store.libraryState();
   });
 
   ipcMain.handle("library:install-local", async () => {
