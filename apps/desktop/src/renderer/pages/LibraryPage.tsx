@@ -136,6 +136,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [editingTagSkillId, setEditingTagSkillId] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
   const [isOrganizing, setIsOrganizing] = useState(false);
+  const tagInputRef = useRef<HTMLInputElement>(null);
   const isOrganizingRef = useRef(false);
 
   useEffect(() => {
@@ -160,6 +161,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   useEffect(() => {
     setSelectedTags((current) => reconcileSelectedTags(current, libraryState.tags));
   }, [libraryState.tags]);
+
+  useEffect(() => {
+    if (editingTagSkillId) tagInputRef.current?.focus();
+  }, [editingTagSkillId]);
 
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
   const filteredSkills = useMemo(
@@ -672,6 +677,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       {editingTagSkillId === skill.id ? (
                         <form className="flex min-w-72 items-center gap-1" onSubmit={saveSkillTags}>
                           <Input
+                            ref={tagInputRef}
                             value={tagInput}
                             onChange={(event) => setTagInput(event.target.value)}
                             aria-label={`Tags for ${skill.name || skill.id}`}

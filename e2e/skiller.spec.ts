@@ -9,6 +9,14 @@ test("renders the library from the browser preview API", async ({ page }) => {
   await expect(page.getByRole("columnheader", { name: "Enabled" })).toBeVisible();
 });
 
+test("focuses the tag input when editing row tags", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("row", { name: /example-skill/ }).getByRole("button", { name: "Edit tags for example-skill" }).click();
+
+  await expect(page.getByRole("textbox", { name: "Tags for example-skill" })).toBeFocused();
+});
+
 test("deletes a library skill from the browser preview API", async ({ page }) => {
   await page.goto("/");
 
