@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Delete02Icon, Sorting01Icon, SortingDownIcon, SortingUpIcon } from "@hugeicons/core-free-icons";
+import {
+  Cancel01Icon,
+  CheckmarkCircle01Icon,
+  Delete02Icon,
+  Edit02Icon,
+  Sorting01Icon,
+  SortingDownIcon,
+  SortingUpIcon
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert";
 import { Badge } from "@workspace/ui/components/badge";
@@ -622,31 +630,6 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                 </div>
               ) : null}
             </div>
-            {editingTagSkillId ? (
-              <form className="grid gap-2 rounded-md border p-3 md:grid-cols-[minmax(12rem,1fr)_auto_auto]" onSubmit={saveSkillTags}>
-                <Input
-                  value={tagInput}
-                  onChange={(event) => setTagInput(event.target.value)}
-                  aria-label="Skill tags"
-                  placeholder="Tags separated by commas"
-                  disabled={isOrganizing}
-                />
-                <Button type="submit" disabled={isOrganizing}>
-                  Save tags
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isOrganizing}
-                  onClick={() => {
-                    setEditingTagSkillId(null);
-                    setTagInput("");
-                  }}
-                >
-                  Cancel
-                </Button>
-              </form>
-            ) : null}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -686,26 +669,61 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       </select>
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {skill.tags.map((tag) => (
-                          <Badge key={tag} variant="outline">
-                            {tag}
-                          </Badge>
-                        ))}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={isOrganizing}
-                          aria-label={`Edit tags for ${skill.name || skill.id}`}
-                          onClick={() => {
-                            setEditingTagSkillId(skill.id);
-                            setTagInput(skill.tags.join(", "));
-                          }}
-                        >
-                          Edit
-                        </Button>
-                      </div>
+                      {editingTagSkillId === skill.id ? (
+                        <form className="flex min-w-72 items-center gap-1" onSubmit={saveSkillTags}>
+                          <Input
+                            value={tagInput}
+                            onChange={(event) => setTagInput(event.target.value)}
+                            aria-label={`Tags for ${skill.name || skill.id}`}
+                            placeholder="browser, testing"
+                            disabled={isOrganizing}
+                            className="h-8 min-w-48"
+                          />
+                          <Button
+                            type="submit"
+                            variant="outline"
+                            size="icon"
+                            disabled={isOrganizing}
+                            aria-label={`Save tags for ${skill.name || skill.id}`}
+                          >
+                            <HugeiconsIcon icon={CheckmarkCircle01Icon} strokeWidth={2} data-icon="inline-start" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={isOrganizing}
+                            aria-label={`Cancel editing tags for ${skill.name || skill.id}`}
+                            onClick={() => {
+                              setEditingTagSkillId(null);
+                              setTagInput("");
+                            }}
+                          >
+                            <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} data-icon="inline-start" />
+                          </Button>
+                        </form>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {skill.tags.map((tag) => (
+                            <Badge key={tag} variant="outline">
+                              {tag}
+                            </Badge>
+                          ))}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={isOrganizing}
+                            aria-label={`Edit tags for ${skill.name || skill.id}`}
+                            onClick={() => {
+                              setEditingTagSkillId(skill.id);
+                              setTagInput(skill.tags.join(", "));
+                            }}
+                          >
+                            <HugeiconsIcon icon={Edit02Icon} strokeWidth={2} data-icon="inline-start" />
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       {skill.validation?.valid ? (
