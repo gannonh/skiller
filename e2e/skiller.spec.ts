@@ -461,4 +461,6 @@ test("shows update check errors without marking rows current", async ({ page }) 
   await expect(row.getByText("error")).toBeVisible();
   await expect(row.getByText("current")).toHaveCount(0);
   await expect(page.getByText(/1 errors/)).toBeVisible();
+  await expect(page.getByText("Update check errors")).toBeVisible();
+  await expect(page.getByText("rate-limited: GitHub update check failed: 403 rate limit exceeded")).toBeVisible();
 });

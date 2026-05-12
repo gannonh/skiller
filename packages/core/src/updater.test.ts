@@ -407,20 +407,26 @@ describe("checkForSkillUpdates", () => {
   });
 
   it("explains rate limited github commit checks with authentication guidance", async () => {
+    const emptyPath = await makeTempDir();
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GH_TOKEN", "");
+    vi.stubEnv("SKILLER_GH_PATH", path.join(emptyPath, "gh"));
+    vi.resetModules();
+    const { resolveGithubRemoteCommit: freshResolveGithubRemoteCommit } = await import("./updater.js");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("rate limited", { status: 403, statusText: "rate limit exceeded" }))
     );
 
     await expect(
-      resolveGithubRemoteCommit({
+      freshResolveGithubRemoteCommit({
         type: "github",
         githubUrl: "https://github.com/example/skill",
         ref: "main",
         commit: "abc123"
       })
     ).rejects.toThrow(
-      'GitHub update check failed: 403 rate limit exceeded. GitHub API rate limit exceeded. Make sure you are authenticated with GitHub by running "gh auth status" or set GITHUB_TOKEN, then try again.'
+      "GitHub update check failed: 403 rate limit exceeded. GitHub API rate limit exceeded. GitHub CLI was not found"
     );
   });
 
