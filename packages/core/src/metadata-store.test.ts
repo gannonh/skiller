@@ -108,6 +108,85 @@ describe("MetadataStore", () => {
     ]);
   });
 
+  it("creates renames and deletes skill sets", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(skillPath));
+    const created = await store.createSkillSet("Automation");
+    expect(created.name).toBe("Automation");
+
+    const renamed = await store.renameSkillSet(created.id, "Browser Automation");
+    expect(renamed).toEqual({ ...created, name: "Browser Automation", updatedAt: renamed.updatedAt });
+
+    await store.assignSkillSet("example-skill", created.id);
+    expect((await store.list())[0]).toMatchObject({ skillSetId: created.id });
+
+    await store.deleteSkillSet(created.id);
+    expect(await store.libraryState()).toEqual({
+      skills: [{ ...metadataFor(skillPath), tags: [] }],
+      skillSets: [],
+      tags: []
+    });
+  });
+
+  it("normalizes skill tags and filters with all selected tags", async () => {
+    const libraryPath = await makeTempDir();
+    const firstPath = path.join(libraryPath, "example-skill");
+    const secondPath = path.join(libraryPath, "other-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(firstPath));
+    await store.save({ ...metadataFor(secondPath), id: "other-skill", name: "Other Skill" });
+
+    await store.replaceSkillTags("example-skill", [" Browser ", "Testing", "browser", "", "UI   QA"]);
+    await store.replaceSkillTags("other-skill", ["browser"]);
+
+    expect(await store.libraryState()).toMatchObject({
+      tags: ["browser", "testing", "ui qa"]
+    });
+    expect((await store.filterSkills({ tags: ["browser", "testing"] })).map((skill) => skill.id)).toEqual([
+      "example-skill"
+    ]);
+  });
+
+  it("filters by set and ungrouped skills", async () => {
+    const libraryPath = await makeTempDir();
+    const firstPath = path.join(libraryPath, "example-skill");
+    const secondPath = path.join(libraryPath, "other-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(firstPath));
+    await store.save({ ...metadataFor(secondPath), id: "other-skill", name: "Other Skill" });
+    const skillSet = await store.createSkillSet("Automation");
+    await store.assignSkillSet("example-skill", skillSet.id);
+
+    expect((await store.filterSkills({ skillSetId: skillSet.id })).map((skill) => skill.id)).toEqual(["example-skill"]);
+    expect((await store.filterSkills({ ungrouped: true })).map((skill) => skill.id)).toEqual(["other-skill"]);
+  });
+
+  it("derives mixed set state and toggles a whole set", async () => {
+    const libraryPath = await makeTempDir();
+    const firstPath = path.join(libraryPath, "example-skill");
+    const secondPath = path.join(libraryPath, "other-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(firstPath));
+    await store.save({ ...metadataFor(secondPath), id: "other-skill", name: "Other Skill", enabled: false });
+    const skillSet = await store.createSkillSet("Automation");
+    await store.assignSkillSet("example-skill", skillSet.id);
+    await store.assignSkillSet("other-skill", skillSet.id);
+
+    expect(await store.skillSetEnablement(skillSet.id)).toBe("mixed");
+    await store.setSkillSetEnabled(skillSet.id, false);
+    expect((await store.filterSkills({ skillSetId: skillSet.id })).map((skill) => skill.enabled)).toEqual([false, false]);
+    expect(await store.skillSetEnablement(skillSet.id)).toBe("off");
+    await store.setSkillSetEnabled(skillSet.id, true);
+    expect((await store.filterSkills({ skillSetId: skillSet.id })).map((skill) => skill.enabled)).toEqual([true, true]);
+    expect(await store.skillSetEnablement(skillSet.id)).toBe("on");
+  });
+
   it("normalizes source records from the root manifest", async () => {
     const libraryPath = await makeTempDir();
     const localPath = path.join(libraryPath, "local-skill");
