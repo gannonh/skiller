@@ -155,7 +155,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          pnpm --dir apps/desktop exec electron-builder --config electron-builder.yml --mac dmg zip --${{ matrix.arch }}
+          pnpm --dir apps/desktop exec electron-builder --config electron-builder.yml --publish never --mac dmg zip --${{ matrix.arch }}
 
       - name: Notarize and rebuild artifacts
         env:
@@ -280,7 +280,7 @@ jobs:
         run: pnpm --dir apps/desktop run build
 
       - name: Package Linux app
-        run: pnpm --dir apps/desktop exec electron-builder --config electron-builder.yml --linux AppImage deb --${{ matrix.arch }}
+        run: pnpm --dir apps/desktop exec electron-builder --config electron-builder.yml --publish never --linux AppImage deb --${{ matrix.arch }}
 
       - name: Verify artifacts
         id: linux-artifacts
@@ -577,10 +577,12 @@ jobs:
             "Skiller-Desktop-x64.zip"
           ], "Skiller-Desktop-arm64.zip");
           validateMetadata(path.join(releaseDir, "latest-linux.yml"), [
-            "Skiller-Desktop-x86_64.AppImage"
+            "Skiller-Desktop-x86_64.AppImage",
+            "Skiller-Desktop-amd64.deb"
           ], "Skiller-Desktop-x86_64.AppImage");
           validateMetadata(path.join(releaseDir, "latest-linux-arm64.yml"), [
-            "Skiller-Desktop-arm64.AppImage"
+            "Skiller-Desktop-arm64.AppImage",
+            "Skiller-Desktop-arm64.deb"
           ], "Skiller-Desktop-arm64.AppImage");
 
           const publishedMetadata = fs.readdirSync(releaseDir).filter((file) => file.startsWith("latest-") && file.endsWith(".yml")).sort();
