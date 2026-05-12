@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+declare global {
+  interface Window {
+    __installAppUpdateCalls?: number;
+  }
+}
+
 test("renders the library from the browser preview API", async ({ page }) => {
   await page.goto("/");
 
@@ -349,6 +355,58 @@ test("marks existing registry skills as installed by source alias", async ({ pag
   await page.getByRole("row", { name: /frontend-design/ }).getByRole("button", { name: "Install" }).click();
 
   await expect(page.getByRole("row", { name: /frontend-design/ }).getByRole("button", { name: "Installed" })).toBeVisible();
+});
+
+test("hides the app update button until a downloaded app update is ready", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "checking" }),
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: /Install app update/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Updates" })).toBeVisible();
+});
+
+test("installs a ready app update from the left panel heading", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__installAppUpdateCalls = 0;
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "ready", version: "0.2.2" }),
+      installAppUpdate: async () => {
+        window.__installAppUpdateCalls += 1;
+      },
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Install app update 0.2.2" }).click();
+  await expect.poll(() => page.evaluate(() => window.__installAppUpdateCalls)).toBe(1);
+});
+
+test("keeps app update UI separate from skill updates", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "ready", version: "0.2.2" }),
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] }),
+      checkUpdates: async () => ({ checkedAt: new Date().toISOString(), considered: [], available: [], updated: [], errors: [] })
+    };
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Updates" }).click();
+
+  await expect(page.getByRole("heading", { name: "Updates" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Install app update 0.2.2" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check for Updates" })).toBeVisible();
 });
 
 test("lists updateable skills on the Updates page", async ({ page }) => {
