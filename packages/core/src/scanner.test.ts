@@ -83,7 +83,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(skill, path.join(disabled, "example"));
 
@@ -112,7 +113,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
 
     const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
@@ -139,7 +141,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
 
     const result = await scanTargets({ libraryPath: library, targets: [disabledTarget(target), enabledTarget(target)] });
@@ -166,7 +169,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: false
+      enabled: false,
+      tags: []
     });
     await fs.symlink(skill, path.join(target, "example"));
 
@@ -299,7 +303,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
 
     const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
@@ -331,7 +336,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: false
+      enabled: false,
+      tags: []
     });
 
     const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
@@ -361,7 +367,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
 
     const lstat = vi.spyOn(fs, "lstat").mockImplementation(async (candidate, options) => {
@@ -565,7 +572,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, targetSkill);
 
@@ -598,7 +606,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await store.save({
       id: "zz-example",
@@ -609,7 +618,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, targetSkill);
 
@@ -662,7 +672,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
 
     const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
@@ -691,7 +702,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
 
     const readdir = vi.spyOn(fs, "readdir").mockImplementation(async (candidate, options) => {
@@ -784,7 +796,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
 
     const symlink = vi.spyOn(fs, "symlink").mockRejectedValueOnce(new Error("symlink create failed"));
@@ -816,7 +829,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
 
     const symlink = vi.spyOn(fs, "symlink").mockRejectedValueOnce("symlink create failed");
@@ -848,7 +862,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
 
     const symlink = vi.spyOn(fs, "symlink").mockRejectedValueOnce(Object.assign(new Error("missing"), { code: "ENOENT" }));
@@ -883,7 +898,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, targetSkill);
 
@@ -923,7 +939,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, path.join(target, "example"));
     await fs.symlink(librarySkill, path.join(target, "example-copy"));
@@ -955,7 +972,8 @@ describe("scanTargets", () => {
         contentHash: "hash",
         keepUpdated: false,
         validation: { valid: true, issues: [] },
-        enabled: true
+        enabled: true,
+        tags: []
       });
       await fs.symlink(librarySkill, path.join(target, id));
     }
@@ -993,7 +1011,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, targetSkill);
 
@@ -1039,7 +1058,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await store.save({
       id: "other",
@@ -1050,7 +1070,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, targetSkill);
 
@@ -1099,7 +1120,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, targetSkill);
 
@@ -1145,7 +1167,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, targetSkill);
 
@@ -1188,7 +1211,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, targetSkill);
 
@@ -1233,7 +1257,8 @@ describe("scanTargets", () => {
       contentHash: "hash",
       keepUpdated: false,
       validation: { valid: true, issues: [] },
-      enabled: true
+      enabled: true,
+      tags: []
     });
     await fs.symlink(librarySkill, agentsSkill);
 

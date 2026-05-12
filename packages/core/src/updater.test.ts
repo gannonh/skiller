@@ -40,7 +40,8 @@ function metadataFor(
     installedAt: "2026-05-09T00:00:00.000Z",
     keepUpdated,
     validation: { valid: true, issues: [] },
-    enabled: true
+    enabled: true,
+    tags: []
   };
 }
 
