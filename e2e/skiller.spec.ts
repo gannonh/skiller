@@ -226,12 +226,14 @@ test("shows update check errors without marking rows current", async ({ page }) 
       updatedAt: "2026-05-11T00:00:00.000Z",
       keepUpdated: true,
       enabled: true,
+      tags: [],
       validation: { valid: true, issues: [] }
     };
+    const libraryState = { skills: [skill], skillSets: [], tags: [] };
     window.skiller = {
-      listLibrary: async () => [skill],
-      setSkillEnabled: async () => [skill],
-      deleteSkill: async () => [skill],
+      listLibrary: async () => libraryState,
+      setSkillEnabled: async () => libraryState,
+      deleteSkill: async () => libraryState,
       scanTargets: async () => ({ imported: [], enabled: [], disabled: [], errors: [] }),
       saveTargets: async (targets) => ({
         libraryPath: "~/skiller",
