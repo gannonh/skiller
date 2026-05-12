@@ -185,6 +185,19 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     );
   }
 
+  function isSetFilterActive(skillSetId: string): boolean {
+    return setFilter.type === "set" && setFilter.skillSetId === skillSetId;
+  }
+
+  function toggleSelectedTag(tag: string) {
+    setSelectedTags((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]));
+  }
+
+  function beginRenamingSkillSet(skillSetId: string, name: string) {
+    setRenamingSkillSetId(skillSetId);
+    setRenamingSkillSetName(name);
+  }
+
   async function refreshLibrary() {
     const result = await skillerApi.listLibrary();
     setLibraryState(result);
@@ -455,63 +468,260 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
             <Skeleton className="h-8 w-full" />
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <SortableTableHead column="name">Name</SortableTableHead>
-                <SortableTableHead column="source">Source</SortableTableHead>
-                <SortableTableHead column="status">Status</SortableTableHead>
-                <SortableTableHead column="enabled">Enabled</SortableTableHead>
-                <SortableTableHead column="actions">Actions</SortableTableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sortedSkills.map((skill) => (
-                <TableRow key={skill.id}>
-                  <TableCell>{skill.name || skill.id}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
-                      <Badge variant="secondary">{sourceLabel(skill)}</Badge>
-                      <span className="max-w-80 truncate text-xs text-muted-foreground">{sourceDetail(skill)}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {skill.validation?.valid ? (
-                      <Badge variant="outline">{statusLabel(skill)}</Badge>
-                    ) : (
-                      <Badge variant="destructive">{statusLabel(skill)}</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={skill.enabled}
-                      onCheckedChange={(checked) => void setSkillEnabled(skill.id, checked)}
-                      disabled={pendingSkillIds.has(skill.id)}
-                      aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name || skill.id}`}
-                    />
-                  </TableCell>
-                  <TableCell>
+          <>
+            <div className="flex flex-col gap-3 rounded-md border p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant={setFilter.type === "all" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSetFilter({ type: "all" })}
+                >
+                  All
+                </Button>
+                <Button
+                  type="button"
+                  variant={setFilter.type === "ungrouped" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSetFilter({ type: "ungrouped" })}
+                >
+                  Ungrouped
+                </Button>
+                {libraryState.skillSets.map((skillSet) => (
+                  <Button
+                    key={skillSet.id}
+                    type="button"
+                    variant={isSetFilterActive(skillSet.id) ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSetFilter({ type: "set", skillSetId: skillSet.id })}
+                  >
+                    {skillSet.name}
+                  </Button>
+                ))}
+              </div>
+              {libraryState.tags.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {libraryState.tags.map((tag) => (
                     <Button
-                      variant="outline"
-                      size="icon"
-                      disabled={pendingSkillIds.has(skill.id)}
-                      aria-label={`Delete ${skill.name || skill.id}`}
-                      onClick={() => void deleteSkill(skill.id)}
+                      key={tag}
+                      type="button"
+                      variant={selectedTags.includes(tag) ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => toggleSelectedTag(tag)}
                     >
-                      <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} data-icon="inline-start" />
+                      {tag}
                     </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {sortedSkills.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">
-                    No skills installed.
-                  </TableCell>
-                </TableRow>
+                  ))}
+                </div>
               ) : null}
-            </TableBody>
-          </Table>
+            </div>
+            <div className="flex flex-col gap-3 rounded-md border p-3">
+              <form className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_auto]" onSubmit={createSkillSet}>
+                <Input
+                  value={newSkillSetName}
+                  onChange={(event) => setNewSkillSetName(event.target.value)}
+                  aria-label="New skill set name"
+                  placeholder="New skill set"
+                  disabled={isOrganizing}
+                />
+                <Button type="submit" disabled={isOrganizing || newSkillSetName.trim() === ""}>
+                  Create set
+                </Button>
+              </form>
+              {renamingSkillSetId ? (
+                <form className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_auto_auto]" onSubmit={renameSkillSet}>
+                  <Input
+                    value={renamingSkillSetName}
+                    onChange={(event) => setRenamingSkillSetName(event.target.value)}
+                    aria-label="Rename skill set"
+                    disabled={isOrganizing}
+                  />
+                  <Button type="submit" disabled={isOrganizing || renamingSkillSetName.trim() === ""}>
+                    Rename
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isOrganizing}
+                    onClick={() => {
+                      setRenamingSkillSetId(null);
+                      setRenamingSkillSetName("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </form>
+              ) : null}
+              {libraryState.skillSets.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {libraryState.skillSets.map((skillSet) => {
+                    const members = skills.filter((skill) => skill.skillSetId === skillSet.id);
+                    const state = skillSetState(skills, skillSet.id);
+                    const hasPendingMember = members.some((skill) => pendingSkillIds.has(skill.id));
+                    const disabled = members.length === 0 || hasPendingMember || isOrganizing;
+
+                    return (
+                      <div
+                        key={skillSet.id}
+                        className="grid gap-2 rounded-md border p-2 md:grid-cols-[minmax(10rem,1fr)_auto_auto_auto_auto]"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{skillSet.name}</span>
+                          <Badge variant="secondary">{members.length === 0 ? "empty" : `${members.length} members`}</Badge>
+                          <Badge variant="outline">{state}</Badge>
+                        </div>
+                        <Switch
+                          checked={state === "on"}
+                          disabled={disabled}
+                          onCheckedChange={(checked) => void setWholeSetEnabled(skillSet.id, checked)}
+                          aria-label={`${state === "on" ? "Disable" : "Enable"} ${skillSet.name}`}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={isOrganizing}
+                          onClick={() => beginRenamingSkillSet(skillSet.id, skillSet.name)}
+                        >
+                          Rename
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={isOrganizing}
+                          onClick={() => void deleteSkillSet(skillSet.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+            {editingTagSkillId ? (
+              <form className="grid gap-2 rounded-md border p-3 md:grid-cols-[minmax(12rem,1fr)_auto_auto]" onSubmit={saveSkillTags}>
+                <Input
+                  value={tagInput}
+                  onChange={(event) => setTagInput(event.target.value)}
+                  aria-label="Skill tags"
+                  placeholder="Tags separated by commas"
+                  disabled={isOrganizing}
+                />
+                <Button type="submit" disabled={isOrganizing}>
+                  Save tags
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isOrganizing}
+                  onClick={() => {
+                    setEditingTagSkillId(null);
+                    setTagInput("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </form>
+            ) : null}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortableTableHead column="name">Name</SortableTableHead>
+                  <SortableTableHead column="source">Source</SortableTableHead>
+                  <TableHead>Set</TableHead>
+                  <TableHead>Tags</TableHead>
+                  <SortableTableHead column="status">Status</SortableTableHead>
+                  <SortableTableHead column="enabled">Enabled</SortableTableHead>
+                  <SortableTableHead column="actions">Actions</SortableTableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedSkills.map((skill) => (
+                  <TableRow key={skill.id}>
+                    <TableCell>{skill.name || skill.id}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant="secondary">{sourceLabel(skill)}</Badge>
+                        <span className="max-w-80 truncate text-xs text-muted-foreground">{sourceDetail(skill)}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                        value={skill.skillSetId ?? "none"}
+                        disabled={isOrganizing || pendingSkillIds.has(skill.id)}
+                        aria-label={`Set for ${skill.name || skill.id}`}
+                        onChange={(event) => void assignSkillSet(skill.id, event.target.value)}
+                      >
+                        <option value="none">none</option>
+                        {libraryState.skillSets.map((skillSet) => (
+                          <option key={skillSet.id} value={skillSet.id}>
+                            {skillSet.name}
+                          </option>
+                        ))}
+                      </select>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {skill.tags.map((tag) => (
+                          <Badge key={tag} variant="outline">
+                            {tag}
+                          </Badge>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={isOrganizing}
+                          onClick={() => {
+                            setEditingTagSkillId(skill.id);
+                            setTagInput(skill.tags.join(", "));
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {skill.validation?.valid ? (
+                        <Badge variant="outline">{statusLabel(skill)}</Badge>
+                      ) : (
+                        <Badge variant="destructive">{statusLabel(skill)}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={skill.enabled}
+                        onCheckedChange={(checked) => void setSkillEnabled(skill.id, checked)}
+                        disabled={pendingSkillIds.has(skill.id)}
+                        aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name || skill.id}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        disabled={pendingSkillIds.has(skill.id)}
+                        aria-label={`Delete ${skill.name || skill.id}`}
+                        onClick={() => void deleteSkill(skill.id)}
+                      >
+                        <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} data-icon="inline-start" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {filteredSkills.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-muted-foreground">
+                      No skills installed.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+          </>
         )}
       </CardContent>
       <Sheet open={isGithubSheetOpen} onOpenChange={setIsGithubSheetOpen}>
