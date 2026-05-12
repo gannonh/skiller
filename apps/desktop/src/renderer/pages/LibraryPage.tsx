@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Delete02Icon, Sorting01Icon, SortingDownIcon, SortingUpIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert";
@@ -64,6 +64,11 @@ export function filterLibrarySkills(
   });
 }
 
+export function filterAfterDeletingSkillSet(currentFilter: SetFilter, skillSetId: string): SetFilter {
+  if (currentFilter.type === "set" && currentFilter.skillSetId === skillSetId) return { type: "all" };
+  return currentFilter;
+}
+
 function statusLabel(skill: SkillMetadata): string {
   return skill.validation?.valid ? "valid" : "invalid";
 }
@@ -111,6 +116,8 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [renamingSkillSetName, setRenamingSkillSetName] = useState("");
   const [editingTagSkillId, setEditingTagSkillId] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
+  const [isOrganizing, setIsOrganizing] = useState(false);
+  const isOrganizingRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -295,9 +302,22 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     }
   }
 
+  function beginOrganizationMutation(): boolean {
+    if (isOrganizing || isOrganizingRef.current) return false;
+    isOrganizingRef.current = true;
+    setIsOrganizing(true);
+    return true;
+  }
+
+  function finishOrganizationMutation() {
+    isOrganizingRef.current = false;
+    setIsOrganizing(false);
+  }
+
   async function createSkillSet(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (newSkillSetName.trim() === "") return;
+    if (!beginOrganizationMutation()) return;
     setError(null);
     try {
       const updatedState = await skillerApi.createSkillSet(newSkillSetName);
@@ -305,12 +325,15 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
       setNewSkillSetName("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      finishOrganizationMutation();
     }
   }
 
   async function renameSkillSet(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!renamingSkillSetId || renamingSkillSetName.trim() === "") return;
+    if (!beginOrganizationMutation()) return;
     setError(null);
     try {
       const updatedState = await skillerApi.renameSkillSet(renamingSkillSetId, renamingSkillSetName);
@@ -319,33 +342,42 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
       setRenamingSkillSetName("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      finishOrganizationMutation();
     }
   }
 
   async function deleteSkillSet(skillSetId: string) {
+    if (!beginOrganizationMutation()) return;
     setError(null);
     try {
       const updatedState = await skillerApi.deleteSkillSet(skillSetId);
       setLibraryState(updatedState);
-      if (setFilter.type === "set" && setFilter.skillSetId === skillSetId) setSetFilter({ type: "all" });
+      setSetFilter((current) => filterAfterDeletingSkillSet(current, skillSetId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      finishOrganizationMutation();
     }
   }
 
   async function assignSkillSet(skillId: string, skillSetId: string) {
+    if (!beginOrganizationMutation()) return;
     setError(null);
     try {
       const updatedState = await skillerApi.assignSkillSet(skillId, skillSetId === "none" ? undefined : skillSetId);
       setLibraryState(updatedState);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      finishOrganizationMutation();
     }
   }
 
   async function saveSkillTags(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingTagSkillId) return;
+    if (!beginOrganizationMutation()) return;
     setError(null);
     try {
       const updatedState = await skillerApi.replaceSkillTags(editingTagSkillId, parseTagInput(tagInput));
@@ -354,10 +386,13 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
       setTagInput("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      finishOrganizationMutation();
     }
   }
 
   async function setWholeSetEnabled(skillSetId: string, enabled: boolean) {
+    if (!beginOrganizationMutation()) return;
     const memberIds = skills.filter((skill) => skill.skillSetId === skillSetId).map((skill) => skill.id);
     setPendingSkillIds((current) => new Set([...current, ...memberIds]));
     setError(null);
@@ -372,6 +407,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
         memberIds.forEach((skillId) => next.delete(skillId));
         return next;
       });
+      finishOrganizationMutation();
     }
   }
 

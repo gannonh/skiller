@@ -69,4 +69,15 @@ describe("LibraryPage helpers", () => {
       )
     ).toBe("mixed");
   });
+
+  it("resets only the current filter for the deleted skill set", () => {
+    expect(helpers.filterAfterDeletingSkillSet({ type: "set", skillSetId: "automation" }, "automation")).toEqual({
+      type: "all"
+    });
+    expect(helpers.filterAfterDeletingSkillSet({ type: "set", skillSetId: "browser" }, "automation")).toEqual({
+      type: "set",
+      skillSetId: "browser"
+    });
+    expect(helpers.filterAfterDeletingSkillSet({ type: "ungrouped" }, "automation")).toEqual({ type: "ungrouped" });
+  });
 });
