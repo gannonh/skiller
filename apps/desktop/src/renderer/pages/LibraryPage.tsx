@@ -26,6 +26,38 @@ import type { DiscoveredGithubSkill } from "@skiller/core";
 type SortColumn = "name" | "source" | "status" | "enabled" | "actions";
 type SortDirection = "asc" | "desc";
 
+export type SetFilter = "all" | "ungrouped" | string;
+
+export function parseTagInput(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((tag) => tag.trim().replace(/\s+/g, " ").toLowerCase())
+        .filter(Boolean)
+    )
+  );
+}
+
+export function skillSetState(skills: SkillMetadata[], skillSetId: string): "on" | "off" | "mixed" {
+  const members = skills.filter((skill) => skill.skillSetId === skillSetId);
+  if (members.length === 0 || members.every((skill) => !skill.enabled)) return "off";
+  if (members.every((skill) => skill.enabled)) return "on";
+  return "mixed";
+}
+
+export function filterLibrarySkills(
+  skills: SkillMetadata[],
+  setFilter: SetFilter,
+  selectedTags: string[]
+): SkillMetadata[] {
+  return skills.filter((skill) => {
+    if (setFilter === "ungrouped" && skill.skillSetId) return false;
+    if (setFilter !== "all" && setFilter !== "ungrouped" && skill.skillSetId !== setFilter) return false;
+    return selectedTags.every((tag) => skill.tags.includes(tag));
+  });
+}
+
 function statusLabel(skill: SkillMetadata): string {
   return skill.validation?.valid ? "valid" : "invalid";
 }
