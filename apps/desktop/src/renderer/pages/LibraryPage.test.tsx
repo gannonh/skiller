@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SkillMetadata, SkillSetMetadata } from "../lib/api.js";
 
 let helpers: typeof import("./LibraryPage.js");
@@ -31,6 +31,10 @@ describe("LibraryPage helpers", () => {
   beforeAll(async () => {
     vi.stubGlobal("window", {});
     helpers = await import("./LibraryPage.js");
+  });
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
   });
 
   it("parses tag input", () => {
@@ -86,7 +90,7 @@ describe("LibraryPage helpers", () => {
     ).toBe("mixed");
   });
 
-  it("sorts by displayed skill set name with ungrouped skills as none", () => {
+  it("sorts by displayed skill set name with ungrouped skills last", () => {
     const skills = [
       skill({ id: "one", skillSetId: "zeta" }),
       skill({ id: "two" }),
@@ -96,8 +100,8 @@ describe("LibraryPage helpers", () => {
 
     expect(helpers.sortSkills(skills, "skillSet", "asc", skillSets).map((item) => item.id)).toEqual([
       "three",
-      "two",
-      "one"
+      "one",
+      "two"
     ]);
   });
 

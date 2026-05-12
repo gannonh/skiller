@@ -5,6 +5,8 @@ import type { LibraryState, SkillMetadata, SkillSetMetadata, SkillSource } from 
 
 const MANIFEST_FILE = "skiller.manifest.json";
 const LEGACY_METADATA_FILE = "skiller.metadata.json";
+const MAX_TAG_LENGTH = 64;
+const MAX_SKILL_SET_NAME_LENGTH = 128;
 const writeLocks = new Map<string, Promise<unknown>>();
 
 interface SkillManifest {
@@ -108,6 +110,7 @@ function normalizeSource(metadata: SkillMetadata): SkillSource {
 function normalizeTag(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim().replace(/\s+/g, " ").toLowerCase();
+  if (normalized.length > MAX_TAG_LENGTH) throw new Error(`Tag cannot exceed ${MAX_TAG_LENGTH} characters`);
   return normalized.length > 0 ? normalized : undefined;
 }
 
@@ -153,6 +156,9 @@ function knownTags(skills: SkillMetadata[]): string[] {
 function normalizeSkillSetName(name: string): string {
   const normalized = name.trim().replace(/\s+/g, " ");
   if (normalized.length === 0) throw new Error("Skill set name cannot be blank");
+  if (normalized.length > MAX_SKILL_SET_NAME_LENGTH) {
+    throw new Error(`Skill set name cannot exceed ${MAX_SKILL_SET_NAME_LENGTH} characters`);
+  }
   return normalized;
 }
 

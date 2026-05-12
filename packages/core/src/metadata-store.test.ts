@@ -239,6 +239,13 @@ describe("MetadataStore", () => {
     await expect(store.createSkillSet("   ")).rejects.toThrow("Skill set name cannot be blank");
   });
 
+  it("rejects skill set names that exceed the storage limit", async () => {
+    const libraryPath = await makeTempDir();
+    const store = new MetadataStore(libraryPath);
+
+    await expect(store.createSkillSet("a".repeat(129))).rejects.toThrow("Skill set name cannot exceed 128 characters");
+  });
+
   it("renames one skill set while preserving other sets", async () => {
     const libraryPath = await makeTempDir();
     const store = new MetadataStore(libraryPath);
@@ -271,6 +278,18 @@ describe("MetadataStore", () => {
     expect((await store.filterSkills({ tags: ["browser", "testing"] })).map((skill) => skill.id)).toEqual([
       "example-skill"
     ]);
+  });
+
+  it("rejects tags that exceed the storage limit", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(skillPath));
+
+    await expect(store.replaceSkillTags("example-skill", ["a".repeat(65)])).rejects.toThrow(
+      "Tag cannot exceed 64 characters"
+    );
   });
 
   it("filters by set and ungrouped skills", async () => {

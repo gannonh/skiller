@@ -298,7 +298,7 @@ function createBrowserPreviewApi(): SkillerApi {
   };
 
   const createSkillSetId = (name: string): string => {
-    const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "skill-set";
+    const base = name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "") || "skill-set";
     let candidate = base;
     let suffix = 2;
 

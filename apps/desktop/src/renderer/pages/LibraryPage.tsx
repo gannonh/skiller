@@ -118,7 +118,7 @@ function statusLabel(skill: SkillMetadata): string {
 }
 
 function skillSetSortLabel(skill: SkillMetadata, skillSets: SkillSetMetadata[]): string {
-  if (!skill.skillSetId) return "none";
+  if (!skill.skillSetId) return "\uffff";
   return skillSets.find((skillSet) => skillSet.id === skill.skillSetId)?.name ?? skill.skillSetId;
 }
 
@@ -313,23 +313,21 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [isOrganizing, setIsOrganizing] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const isOrganizingRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    let mounted = true;
+    isMountedRef.current = true;
 
     void refreshLibrary()
-      .then((result) => {
-        if (!mounted) return;
-      })
       .catch((caught: unknown) => {
-        if (mounted) setError(caught instanceof Error ? caught.message : String(caught));
+        if (isMountedRef.current) setError(caught instanceof Error ? caught.message : String(caught));
       })
       .finally(() => {
-        if (mounted) setIsLoading(false);
+        if (isMountedRef.current) setIsLoading(false);
       });
 
     return () => {
-      mounted = false;
+      isMountedRef.current = false;
     };
   }, []);
 
@@ -403,8 +401,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
 
   async function refreshLibrary() {
     const result = await skillerApi.listLibrary();
-    setLibraryState(result);
-    setError(null);
+    if (isMountedRef.current) {
+      setLibraryState(result);
+      setError(null);
+    }
     return result;
   }
 
@@ -485,6 +485,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   }
 
   async function setSkillEnabled(skillId: string, enabled: boolean) {
+    if (!beginOrganizationMutation()) return;
     setPendingSkillIds((current) => new Set(current).add(skillId));
     setError(null);
     try {
@@ -498,10 +499,12 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
         next.delete(skillId);
         return next;
       });
+      finishOrganizationMutation();
     }
   }
 
   async function deleteSkill(skillId: string) {
+    if (!beginOrganizationMutation()) return;
     setPendingSkillIds((current) => new Set(current).add(skillId));
     setError(null);
     try {
@@ -515,6 +518,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
         next.delete(skillId);
         return next;
       });
+      finishOrganizationMutation();
     }
   }
 
@@ -922,7 +926,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       <Switch
                         checked={skill.enabled}
                         onCheckedChange={(checked) => void setSkillEnabled(skill.id, checked)}
-                        disabled={pendingSkillIds.has(skill.id)}
+                        disabled={isOrganizing || pendingSkillIds.has(skill.id)}
                         aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name || skill.id}`}
                       />
                     </TableCell>
@@ -930,7 +934,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       <Button
                         variant="outline"
                         size="icon"
-                        disabled={pendingSkillIds.has(skill.id)}
+                        disabled={isOrganizing || pendingSkillIds.has(skill.id)}
                         aria-label={`Delete ${skill.name || skill.id}`}
                         onClick={() => void deleteSkill(skill.id)}
                       >
