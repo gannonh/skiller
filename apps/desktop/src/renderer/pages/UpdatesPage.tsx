@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Sorting01Icon, SortingDownIcon, SortingUpIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@workspace/ui/components/card";
@@ -46,6 +47,12 @@ function sortValue(input: {
   if (input.column === "source") return `${sourceLabel(input.skill)} ${sourceDetail(input.skill)}`;
   if (input.column === "status") return rowStatus(input);
   return lastUpdatedDate(input.skill)?.getTime() ?? 0;
+}
+
+function errorLabel(error: UpdateCheckError, skillsById: Map<string, SkillMetadata>): string {
+  if (!error.id) return error.message;
+  const skill = skillsById.get(error.id);
+  return `${skill?.name || error.id}: ${error.message}`;
 }
 
 export function UpdatesPage() {
@@ -122,6 +129,7 @@ export function UpdatesPage() {
 
   const availableById = new Map(available.map((skill) => [skill.id, skill]));
   const errorsById = new Map(updateErrors.flatMap((error) => (error.id ? [[error.id, error]] : [])));
+  const skillsById = new Map(skills.map((skill) => [skill.id, skill]));
   const updateableSkills = useMemo(() => skills.filter(isUpdateable), [skills]);
   const sortedSkills = useMemo(() => {
     return [...updateableSkills].sort((left, right) => {
@@ -202,6 +210,18 @@ export function UpdatesPage() {
           </Button>
           <span className="text-sm text-muted-foreground">{status}</span>
         </div>
+        {updateErrors.length > 0 ? (
+          <Alert variant="destructive">
+            <AlertTitle>Update check errors</AlertTitle>
+            <AlertDescription>
+              <ul className="list-disc space-y-1 pl-4">
+                {updateErrors.map((error, index) => (
+                  <li key={`${error.id ?? "error"}-${index}`}>{errorLabel(error, skillsById)}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         <Table>
           <TableHeader>
             <TableRow>

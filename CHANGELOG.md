@@ -1,5 +1,20 @@
 # Changelog
 
+## Skiller Desktop v0.2.1 - 2026-05-12
+
+### Fixed
+
+- Packaged macOS app update checks can find GitHub CLI tokens from common Homebrew `gh` paths.
+- Update check failures now show the returned error messages in the Updates view.
+- GitHub rate-limit messages now include guidance for `gh`, `GITHUB_TOKEN`, and `SKILLER_GH_PATH`.
+
+### Install Notes
+
+- macOS Apple silicon: download `Skiller-Desktop-arm64.dmg`.
+- macOS Intel: download `Skiller-Desktop-x64.dmg`.
+- Linux x64: download `Skiller-Desktop-x86_64.AppImage` or `Skiller-Desktop-amd64.deb`.
+- Linux arm64: download `Skiller-Desktop-arm64.AppImage` or `Skiller-Desktop-arm64.deb`.
+
 ## Skiller Desktop v0.2.0 - 2026-05-12
 
 ### Added

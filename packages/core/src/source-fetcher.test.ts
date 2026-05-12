@@ -250,7 +250,7 @@ describe("discoverGithubSkills", () => {
     const fetchImpl = mockFetch(() => new Response("rate limited", { status: 403, statusText: "rate limit exceeded" }));
 
     await expect(discoverGithubSkills({ githubUrl: "https://github.com/example/skills", fetchImpl })).rejects.toThrow(
-      'GitHub commit lookup failed: 403 rate limit exceeded. GitHub API rate limit exceeded. Make sure you are authenticated with GitHub by running "gh auth status" or set GITHUB_TOKEN, then try again.'
+      'GitHub commit lookup failed: 403 rate limit exceeded. GitHub API rate limit exceeded. Authenticate with GitHub by running "gh auth status", set GITHUB_TOKEN, or set SKILLER_GH_PATH to the gh executable, then try again.'
     );
   });
 
@@ -258,6 +258,7 @@ describe("discoverGithubSkills", () => {
     const emptyPath = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-empty-path-"));
     tempRoots.push(emptyPath);
     vi.stubEnv("PATH", emptyPath);
+    vi.stubEnv("SKILLER_GH_PATH", path.join(emptyPath, "gh"));
     const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
         return new Response(JSON.stringify({ sha: "commit123" }));
