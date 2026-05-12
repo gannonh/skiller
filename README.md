@@ -9,8 +9,9 @@ It keeps a master skill library, syncs enabled skills into configured agent targ
 ## Features
 
 - Install skills from local folders, GitHub, and skills.sh.
-- Scan a GitHub repository for valid skilldirectories, select and install skills you want.
+- Scan a GitHub repository for valid skill directories, select and install skills you want.
 - GitHub and skills.sh installs can be checked for newer upstream versions and updated.
+- Organize library skills with sets, tags, sorting, and filtering.
 - Sync enabled skills from one master library into various agent skill directories you configure.
 - Validate installed skill structure and surface invalid skills in the library.
 
@@ -18,16 +19,16 @@ It keeps a master skill library, syncs enabled skills into configured agent targ
 
 Download Skiller Desktop from the latest GitHub Release:
 
-- macOS Apple silicon: [`Skiller-Desktop-arm64.dmg`](https://github.com/gannonh/skiller/releases/download/desktop-v0.1.0/Skiller-Desktop-arm64.dmg)
-- macOS Intel: [`Skiller-Desktop-x64.dmg`](https://github.com/gannonh/skiller/releases/download/desktop-v0.1.0/Skiller-Desktop-x64.dmg)
-- Linux x64: [`Skiller-Desktop-x86_64.AppImage`](https://github.com/gannonh/skiller/releases/download/desktop-v0.1.0/Skiller-Desktop-x86_64.AppImage) or [`Skiller-Desktop-amd64.deb`](https://github.com/gannonh/skiller/releases/download/desktop-v0.1.0/Skiller-Desktop-amd64.deb)
-- Linux arm64: [`Skiller-Desktop-arm64.AppImage`](https://github.com/gannonh/skiller/releases/download/desktop-v0.1.0/Skiller-Desktop-arm64.AppImage) or [`Skiller-Desktop-arm64.deb`](https://github.com/gannonh/skiller/releases/download/desktop-v0.1.0/Skiller-Desktop-arm64.deb)
+- macOS Apple silicon: [`Skiller-Desktop-arm64.dmg`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.0/Skiller-Desktop-arm64.dmg)
+- macOS Intel: [`Skiller-Desktop-x64.dmg`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.0/Skiller-Desktop-x64.dmg)
+- Linux x64: [`Skiller-Desktop-x86_64.AppImage`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.0/Skiller-Desktop-x86_64.AppImage) or [`Skiller-Desktop-amd64.deb`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.0/Skiller-Desktop-amd64.deb)
+- Linux arm64: [`Skiller-Desktop-arm64.AppImage`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.0/Skiller-Desktop-arm64.AppImage) or [`Skiller-Desktop-arm64.deb`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.0/Skiller-Desktop-arm64.deb)
 
-The first desktop release is `desktop-v0.1.0`.
+The latest desktop release is `desktop-v0.2.0`.
 
 ## Usage
 
-Use the Library view to install skills from a local folder, GitHub URL, repository URL, or the skills.sh registry. When you enter a repository URL, Skiller scans it for installable skills and lets you select the ones you want. Use Targets to choose agent skill directories, then sync enabled skills into those targets. Use Updates to check GitHub and skills.sh installs for newer upstream commits and apply updates.
+Use the Library view to install skills from a local folder, GitHub URL, repository URL, or the skills.sh registry. When you enter a repository URL, Skiller scans it for installable skills and lets you select the ones you want. Organize skills with sets and tags, then sort or filter the library around those labels. Use Targets to choose agent skill directories, then sync enabled skills into those targets. Use Updates to check GitHub and skills.sh installs for newer upstream commits and apply updates.
 
 ## Workspace
 
