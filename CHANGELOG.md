@@ -17,7 +17,7 @@
 ### Install Notes
 
 - Install this release manually. Future packaged app releases can appear through the in-app Update button after they download.
-- macOS Apple silicon: download `Skiller-Desktop-arm64.dmg`.
+- macOS Apple Silicon: download `Skiller-Desktop-arm64.dmg`.
 - macOS Intel: download `Skiller-Desktop-x64.dmg`.
 - Linux x64: download `Skiller-Desktop-x86_64.AppImage` or `Skiller-Desktop-amd64.deb`.
 - Linux arm64: download `Skiller-Desktop-arm64.AppImage` or `Skiller-Desktop-arm64.deb`.

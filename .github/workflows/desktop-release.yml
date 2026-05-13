@@ -375,14 +375,6 @@ jobs:
 
           const releaseDir = "release-artifacts";
           const version = require("./apps/desktop/package.json").version;
-          const yaml = (() => {
-            try {
-              return require("js-yaml");
-            } catch {
-              return null;
-            }
-          })();
-
           function sha512(file) {
             return crypto.createHash("sha512").update(fs.readFileSync(file)).digest("base64");
           }
@@ -406,10 +398,6 @@ jobs:
           }
 
           function parseUpdaterMetadata(content) {
-            if (yaml) {
-              return yaml.load(content);
-            }
-
             const result = {};
             const lines = content.split(/\r?\n/);
             for (let index = 0; index < lines.length; index += 1) {

@@ -79,7 +79,7 @@ export type AppUpdateStatus = "idle" | "checking" | "downloading" | "ready" | "n
 export interface AppUpdateState {
   status: AppUpdateStatus;
   version?: string;
-  releaseName?: string | null;
+  releaseName?: string;
   releaseDate?: string;
   progress?: number;
   error?: string;

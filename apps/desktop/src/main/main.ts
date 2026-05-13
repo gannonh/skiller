@@ -74,7 +74,11 @@ app.whenReady().then(async () => {
       return;
     }
 
-    window.webContents.send("app-update:state", state);
+    try {
+      window.webContents.send("app-update:state", state);
+    } catch (error) {
+      console.error("app-update:state send failed", error);
+    }
   });
   void appUpdateService.startBackgroundChecks();
   tray = createTray(window);

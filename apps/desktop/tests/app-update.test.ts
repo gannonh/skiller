@@ -74,14 +74,14 @@ describe("app update service", () => {
     expect(deps.updater.checkForUpdates).not.toHaveBeenCalled();
   });
 
-  it("reports unsupported for Linux runs outside AppImage", async () => {
+  it("supports Linux package builds outside AppImage", async () => {
     const { createAppUpdateService } = await import("../src/main/app-update.js");
     const deps = createSupportedDeps();
     const service = createAppUpdateService({ ...deps, platform: "linux", env: {} });
 
-    expect(service.getState()).toEqual({ status: "unsupported" });
+    expect(service.getState()).toEqual({ status: "idle" });
     await service.startBackgroundChecks();
-    expect(deps.updater.checkForUpdates).not.toHaveBeenCalled();
+    expect(deps.updater.checkForUpdates).toHaveBeenCalledTimes(1);
   });
 
   it("keeps unsupported services unchanged when updater events fire", async () => {
@@ -106,7 +106,7 @@ describe("app update service", () => {
     expect(updater.downloadUpdate).not.toHaveBeenCalled();
   });
 
-  it("supports Linux AppImage builds only", async () => {
+  it("supports Linux and keeps Windows unsupported", async () => {
     const { createAppUpdateService } = await import("../src/main/app-update.js");
     const linuxDeps = createSupportedDeps();
     const linuxService = createAppUpdateService({ ...linuxDeps, platform: "linux", env: { APPIMAGE: "/tmp/Skiller.AppImage" } });

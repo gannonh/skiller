@@ -284,5 +284,5 @@ function supportsAppUpdates(deps: Pick<AppUpdateServiceDependencies, "env" | "is
     return true;
   }
 
-  return deps.platform === "linux" && Boolean(deps.env.APPIMAGE);
+  return deps.platform === "linux";
 }

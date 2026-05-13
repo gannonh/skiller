@@ -20,7 +20,7 @@ It keeps a master skill library, syncs enabled skills into configured agent targ
 
 Download Skiller Desktop from the latest GitHub Release:
 
-- macOS Apple silicon: [`Skiller-Desktop-arm64.dmg`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.2/Skiller-Desktop-arm64.dmg)
+- macOS Apple Silicon: [`Skiller-Desktop-arm64.dmg`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.2/Skiller-Desktop-arm64.dmg)
 - macOS Intel: [`Skiller-Desktop-x64.dmg`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.2/Skiller-Desktop-x64.dmg)
 - Linux x64: [`Skiller-Desktop-x86_64.AppImage`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.2/Skiller-Desktop-x86_64.AppImage) or [`Skiller-Desktop-amd64.deb`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.2/Skiller-Desktop-amd64.deb)
 - Linux arm64: [`Skiller-Desktop-arm64.AppImage`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.2/Skiller-Desktop-arm64.AppImage) or [`Skiller-Desktop-arm64.deb`](https://github.com/gannonh/skiller/releases/download/desktop-v0.2.2/Skiller-Desktop-arm64.deb)

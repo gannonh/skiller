@@ -105,14 +105,22 @@ describe("desktop main lifecycle", () => {
     stateListener?.({ status: "ready", version: "0.2.2" });
     expect(mocks.window.webContents.send).toHaveBeenCalledWith("app-update:state", { status: "ready", version: "0.2.2" });
 
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const sendError = new Error("channel closed");
+    mocks.window.webContents.send.mockImplementationOnce(() => {
+      throw sendError;
+    });
+    expect(() => stateListener?.({ status: "ready", version: "0.2.3" })).not.toThrow();
+    expect(errorSpy).toHaveBeenCalledWith("app-update:state send failed", sendError);
+
     mocks.window.isDestroyed.mockReturnValue(true);
-    stateListener?.({ status: "ready", version: "0.2.3" });
-    expect(mocks.window.webContents.send).toHaveBeenCalledTimes(1);
+    stateListener?.({ status: "ready", version: "0.2.4" });
+    expect(mocks.window.webContents.send).toHaveBeenCalledTimes(2);
 
     mocks.window.isDestroyed.mockReturnValue(false);
     mocks.window.webContents.isDestroyed.mockReturnValue(true);
-    stateListener?.({ status: "ready", version: "0.2.4" });
-    expect(mocks.window.webContents.send).toHaveBeenCalledTimes(1);
+    stateListener?.({ status: "ready", version: "0.2.5" });
+    expect(mocks.window.webContents.send).toHaveBeenCalledTimes(2);
 
     mocks.beforeQuit?.();
 
