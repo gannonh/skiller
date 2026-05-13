@@ -51,11 +51,17 @@ describe("app update service", () => {
     const { createAppUpdateService, getAutoUpdater } = await import("../src/main/app-update.js");
 
     expect(getAutoUpdater()).toBe(mockAutoUpdater);
-    await createAppUpdateService().checkNow();
+    await createAppUpdateService({ platform: "darwin" }).checkNow();
 
     expect(mockAutoUpdater.autoDownload).toBe(false);
     expect(mockAutoUpdater.autoInstallOnAppQuit).toBe(false);
     expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses runtime defaults when dependencies are omitted", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+
+    expect(createAppUpdateService({ updater: new FakeUpdater(), isPackaged: false }).getState()).toEqual({ status: "unsupported" });
   });
 
   it("reports unsupported for development builds", async () => {
