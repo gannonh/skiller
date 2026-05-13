@@ -74,6 +74,17 @@ export interface UpdateCheckResult {
   errors: UpdateCheckError[];
 }
 
+export type AppUpdateStatus = "idle" | "checking" | "downloading" | "ready" | "not-available" | "unsupported" | "error";
+
+export interface AppUpdateState {
+  status: AppUpdateStatus;
+  version?: string;
+  releaseName?: string;
+  releaseDate?: string;
+  progress?: number;
+  error?: string;
+}
+
 export type RemoveListener = () => void;
 
 export interface SkillerApi {
@@ -100,6 +111,10 @@ export interface SkillerApi {
   search: (query: string) => Promise<{ skills: DiscoverSkill[] }>;
   registrySkill: (id: string) => Promise<DiscoverSkill>;
   registryAudit: (id: string) => Promise<DiscoverSkill>;
+  getAppUpdateState: () => Promise<AppUpdateState>;
+  checkAppUpdate: () => Promise<AppUpdateState>;
+  installAppUpdate: () => Promise<void>;
+  onAppUpdateState: (callback: (state: AppUpdateState) => void) => RemoveListener;
   onCheckUpdates: (callback: () => void) => RemoveListener;
   onScanError: (callback: (error: ScanError) => void) => RemoveListener;
 }
@@ -539,6 +554,12 @@ function createBrowserPreviewApi(): SkillerApi {
       issues: [],
       checkedAt: new Date().toISOString()
     }),
+    getAppUpdateState: async () => ({ status: "unsupported" }),
+    checkAppUpdate: async () => ({ status: "unsupported" }),
+    installAppUpdate: async () => {
+      throw new Error("App updates are not available in browser preview");
+    },
+    onAppUpdateState: () => () => undefined,
     onCheckUpdates: () => () => undefined,
     onScanError: () => () => undefined
   };

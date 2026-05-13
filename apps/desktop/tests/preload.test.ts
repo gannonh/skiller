@@ -23,5 +23,9 @@ describe("desktop preload", () => {
     expect(preloadSource).toContain("setSkillSetEnabled");
     expect(preloadSource).toContain("registrySkill");
     expect(preloadSource).toContain("registryAudit");
+    expect(preloadSource).toContain("getAppUpdateState");
+    expect(preloadSource).toContain("checkAppUpdate");
+    expect(preloadSource).toContain("installAppUpdate");
+    expect(preloadSource).toContain("onAppUpdateState");
   });
 });

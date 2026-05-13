@@ -1,5 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+declare global {
+  interface Window {
+    __emitAppUpdateState?: (state: { status: string; version?: string }) => void;
+    __installAppUpdateCalls?: number;
+    __resolveAppUpdateState?: () => void;
+  }
+}
+
 test("renders the library from the browser preview API", async ({ page }) => {
   await page.goto("/");
 
@@ -192,6 +200,50 @@ test("deletes a library skill from the browser preview API", async ({ page }) =>
   await expect(page.getByRole("cell", { name: "example-skill", exact: true })).toHaveCount(0);
 });
 
+test("keeps the sidebar width on the Library first paint with wide content", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.addInitScript(() => {
+    const skillSets = ["Anthropic", "Kata", "gannonh/skills", "Matt Pocock", "Superpowers", "Printing Press"].map(
+      (name, index) => ({
+        id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        name,
+        createdAt: "2026-05-13T00:00:00.000Z",
+        updatedAt: "2026-05-13T00:00:00.000Z",
+        enabled: index % 2 === 0
+      })
+    );
+    window.skiller = {
+      listLibrary: async () => ({
+        skillSets,
+        tags: ["frameworks", "pull requests", "tdd", "ux"],
+        skills: Array.from({ length: 56 }, (_, index) => {
+          const set = skillSets[index % skillSets.length];
+          return {
+            id: `skill-${index + 1}`,
+            name: `skill-${index + 1}`,
+            libraryPath: `/tmp/skill-${index + 1}`,
+            source: { type: "github", githubUrl: "https://github.com/example/skills", githubPath: `skills/skill-${index + 1}` },
+            installedAt: "2026-05-13T00:00:00.000Z",
+            keepUpdated: true,
+            enabled: true,
+            skillSetId: set.id,
+            tags: ["frameworks", "pull requests"],
+            validation: { valid: true, issues: [] }
+          };
+        })
+      })
+    };
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("56 master skills")).toBeVisible();
+
+  const sidebar = page.locator('[data-slot="sidebar"]');
+  const sidebarWidth = await sidebar.boundingBox().then((box) => box?.width ?? 0);
+  await expect(sidebar).toHaveCSS("flex-shrink", "0");
+  expect(sidebarWidth).toBeGreaterThanOrEqual(250);
+});
+
 test("sorts library columns with name as the default", async ({ page }) => {
   await page.goto("/");
 
@@ -311,6 +363,16 @@ test("selects skills from a GitHub repository preview", async ({ page }) => {
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toHaveCount(0);
 });
 
+test("normalizes GitHub shorthand when adding from a repository preview", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByLabel("GitHub URL").fill("@gannonh/skiller");
+  await page.getByRole("button", { name: "Add from GitHub" }).click();
+  await page.getByRole("button", { name: "Install selected" }).click();
+
+  await expect(page.getByText("https://github.com/gannonh/skiller/skills/alpha-skill")).toBeVisible();
+});
+
 test("keeps GitHub repository install actions visible for long skill lists", async ({ page }) => {
   await page.goto("/");
 
@@ -349,6 +411,172 @@ test("marks existing registry skills as installed by source alias", async ({ pag
   await page.getByRole("row", { name: /frontend-design/ }).getByRole("button", { name: "Install" }).click();
 
   await expect(page.getByRole("row", { name: /frontend-design/ }).getByRole("button", { name: "Installed" })).toBeVisible();
+});
+
+test("hides the app update button until a downloaded app update is ready", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "checking" }),
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: /Install app update/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Updates" })).toBeVisible();
+});
+
+test("installs a ready app update from the left panel heading", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__installAppUpdateCalls = 0;
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "ready", version: "0.2.2" }),
+      installAppUpdate: async () => {
+        window.__installAppUpdateCalls += 1;
+      },
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Install app update 0.2.2" }).click();
+  await expect.poll(() => page.evaluate(() => window.__installAppUpdateCalls)).toBe(1);
+});
+
+test("keeps app update UI separate from skill updates", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "ready", version: "0.2.2" }),
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] }),
+      checkUpdates: async () => ({ checkedAt: new Date().toISOString(), considered: [], available: [], updated: [], errors: [] }),
+      onCheckUpdates: () => () => undefined
+    };
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Updates" }).click();
+
+  await expect(page.getByRole("heading", { name: "Updates" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Install app update 0.2.2" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check for Updates" })).toBeVisible();
+});
+
+test("shows a ready app update from the app update state listener", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "idle" }),
+      onAppUpdateState: (callback) => {
+        window.__emitAppUpdateState = callback;
+        return () => undefined;
+      },
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: /Install app update/ })).toHaveCount(0);
+  await page.evaluate(() => window.__emitAppUpdateState?.({ status: "ready", version: "0.2.3" }));
+
+  await expect(page.getByRole("button", { name: "Install app update 0.2.3" })).toBeVisible();
+});
+
+test("keeps listener app update state when initial load resolves later", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => {
+        await new Promise<void>((resolve) => {
+          window.__resolveAppUpdateState = resolve;
+        });
+        return { status: "idle" };
+      },
+      onAppUpdateState: (callback) => {
+        window.__emitAppUpdateState = callback;
+        return () => undefined;
+      },
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+  await page.evaluate(() => window.__emitAppUpdateState?.({ status: "ready", version: "0.2.4" }));
+  await expect(page.getByRole("button", { name: "Install app update 0.2.4" })).toBeVisible();
+
+  await page.evaluate(() => window.__resolveAppUpdateState?.());
+
+  await expect(page.getByRole("button", { name: "Install app update 0.2.4" })).toBeVisible();
+});
+
+test("ignores stale initial load failures after listener app update state", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => {
+        await new Promise<void>((resolve) => {
+          window.__resolveAppUpdateState = resolve;
+        });
+        throw new Error("state unavailable");
+      },
+      onAppUpdateState: (callback) => {
+        window.__emitAppUpdateState = callback;
+        return () => undefined;
+      },
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+  await page.evaluate(() => window.__emitAppUpdateState?.({ status: "ready", version: "0.2.5" }));
+  await expect(page.getByRole("button", { name: "Install app update 0.2.5" })).toBeVisible();
+
+  await page.evaluate(() => window.__resolveAppUpdateState?.());
+
+  await expect(page.getByRole("button", { name: "Install app update 0.2.5" })).toBeVisible();
+  await expect(page.getByText("App update check failed")).toHaveCount(0);
+});
+
+test("reports app update state load failures without unhandled rejections", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => {
+        throw new Error("state unavailable");
+      },
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByText("App update check failed")).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("reports app update install failures without unhandled rejections", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => ({ status: "ready", version: "0.2.2" }),
+      installAppUpdate: async () => {
+        throw new Error("install unavailable");
+      },
+      onAppUpdateState: () => () => undefined,
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Install app update 0.2.2" }).click();
+
+  await expect(page.getByText("App update install failed")).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });
 
 test("lists updateable skills on the Updates page", async ({ page }) => {

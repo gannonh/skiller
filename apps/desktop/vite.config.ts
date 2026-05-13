@@ -21,7 +21,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       all: true,
-      include: ["src/main/background.ts", "src/main/update-check.ts"],
+      include: ["src/main/app-update.ts", "src/main/background.ts", "src/main/update-check.ts"],
       exclude: ["tests/**"],
       thresholds: {
         branches: 100,

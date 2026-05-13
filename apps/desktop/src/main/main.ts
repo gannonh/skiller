@@ -2,6 +2,7 @@ import { BrowserWindow, Tray, app, nativeImage } from "electron";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createAppUpdateService } from "./app-update.js";
 import { startBackgroundJobs } from "./background.js";
 import { registerIpcHandlers } from "./ipc.js";
 import { createTray } from "./tray.js";
@@ -10,6 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let tray: Tray | null = null;
 let cleanupItems: Array<{ stop: () => void }> = [];
+let appUpdateService: ReturnType<typeof createAppUpdateService> | null = null;
 
 function appIconPath(): string | undefined {
   const candidates = [
@@ -64,10 +66,23 @@ app.whenReady().then(async () => {
     }
   }
 
-  registerIpcHandlers();
+  appUpdateService = createAppUpdateService({ isPackaged: app.isPackaged });
+  registerIpcHandlers({ appUpdateService });
   const window = await createWindow();
+  const unsubscribeAppUpdateState = appUpdateService.subscribe((state) => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      return;
+    }
+
+    try {
+      window.webContents.send("app-update:state", state);
+    } catch (error) {
+      console.error("app-update:state send failed", error);
+    }
+  });
+  void appUpdateService.startBackgroundChecks();
   tray = createTray(window);
-  cleanupItems = await startBackgroundJobs(window);
+  cleanupItems = [{ stop: unsubscribeAppUpdateState }, ...(await startBackgroundJobs(window))];
 });
 
 app.on("before-quit", () => {
@@ -75,6 +90,8 @@ app.on("before-quit", () => {
     item.stop();
   }
   cleanupItems = [];
+  appUpdateService?.stop();
+  appUpdateService = null;
   tray?.destroy();
   tray = null;
 });
