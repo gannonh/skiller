@@ -458,6 +458,33 @@ test("keeps listener app update state when initial load resolves later", async (
   await expect(page.getByRole("button", { name: "Install app update 0.2.4" })).toBeVisible();
 });
 
+test("ignores stale initial load failures after listener app update state", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => {
+        await new Promise<void>((resolve) => {
+          window.__resolveAppUpdateState = resolve;
+        });
+        throw new Error("state unavailable");
+      },
+      onAppUpdateState: (callback) => {
+        window.__emitAppUpdateState = callback;
+        return () => undefined;
+      },
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+  await page.evaluate(() => window.__emitAppUpdateState?.({ status: "ready", version: "0.2.5" }));
+  await expect(page.getByRole("button", { name: "Install app update 0.2.5" })).toBeVisible();
+
+  await page.evaluate(() => window.__resolveAppUpdateState?.());
+
+  await expect(page.getByRole("button", { name: "Install app update 0.2.5" })).toBeVisible();
+  await expect(page.getByText("App update check failed")).toHaveCount(0);
+});
+
 test("reports app update state load failures without unhandled rejections", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));

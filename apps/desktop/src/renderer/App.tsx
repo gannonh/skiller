@@ -93,7 +93,7 @@ export function App() {
           setAppUpdateMessage(null);
         }
       } catch {
-        if (mounted) setAppUpdateMessage("App update check failed");
+        if (mounted && !hasAppUpdateEvent.current) setAppUpdateMessage("App update check failed");
       }
     })();
     const removeListener =
