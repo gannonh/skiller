@@ -200,6 +200,50 @@ test("deletes a library skill from the browser preview API", async ({ page }) =>
   await expect(page.getByRole("cell", { name: "example-skill", exact: true })).toHaveCount(0);
 });
 
+test("keeps the sidebar width on the Library first paint with wide content", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.addInitScript(() => {
+    const skillSets = ["Anthropic", "Kata", "gannonh/skills", "Matt Pocock", "Superpowers", "Printing Press"].map(
+      (name, index) => ({
+        id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        name,
+        createdAt: "2026-05-13T00:00:00.000Z",
+        updatedAt: "2026-05-13T00:00:00.000Z",
+        enabled: index % 2 === 0
+      })
+    );
+    window.skiller = {
+      listLibrary: async () => ({
+        skillSets,
+        tags: ["frameworks", "pull requests", "tdd", "ux"],
+        skills: Array.from({ length: 56 }, (_, index) => {
+          const set = skillSets[index % skillSets.length];
+          return {
+            id: `skill-${index + 1}`,
+            name: `skill-${index + 1}`,
+            libraryPath: `/tmp/skill-${index + 1}`,
+            source: { type: "github", githubUrl: "https://github.com/example/skills", githubPath: `skills/skill-${index + 1}` },
+            installedAt: "2026-05-13T00:00:00.000Z",
+            keepUpdated: true,
+            enabled: true,
+            skillSetId: set.id,
+            tags: ["frameworks", "pull requests"],
+            validation: { valid: true, issues: [] }
+          };
+        })
+      })
+    };
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("56 master skills")).toBeVisible();
+
+  const sidebar = page.locator('[data-slot="sidebar"]');
+  const sidebarWidth = await sidebar.boundingBox().then((box) => box?.width ?? 0);
+  await expect(sidebar).toHaveCSS("flex-shrink", "0");
+  expect(sidebarWidth).toBeGreaterThanOrEqual(250);
+});
+
 test("sorts library columns with name as the default", async ({ page }) => {
   await page.goto("/");
 

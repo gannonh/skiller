@@ -11,6 +11,7 @@
 ### Fixed
 
 - Desktop startup now loads the app updater module correctly.
+- The left sidebar now keeps its full width on Library first paint.
 - Desktop releases now publish update metadata for macOS and Linux AppImage builds.
 
 ### Install Notes
