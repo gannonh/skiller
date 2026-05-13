@@ -1,5 +1,24 @@
 # Changelog
 
+## Skiller Desktop v0.2.2 - 2026-05-13
+
+### Added
+
+- Packaged desktop app updates now download in the background.
+- An Update button appears beside the Skiller heading when a downloaded app update is ready, then restarts into the new version when clicked.
+
+### Fixed
+
+- Desktop releases now publish update metadata for macOS and Linux AppImage builds.
+
+### Install Notes
+
+- Install this release manually. Future packaged app releases can appear through the in-app Update button after they download.
+- macOS Apple silicon: download `Skiller-Desktop-arm64.dmg`.
+- macOS Intel: download `Skiller-Desktop-x64.dmg`.
+- Linux x64: download `Skiller-Desktop-x86_64.AppImage` or `Skiller-Desktop-amd64.deb`.
+- Linux arm64: download `Skiller-Desktop-arm64.AppImage` or `Skiller-Desktop-arm64.deb`.
+
 ## Skiller Desktop v0.2.1 - 2026-05-12
 
 ### Fixed
