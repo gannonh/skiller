@@ -230,7 +230,7 @@ jobs:
           fs.writeFileSync(`latest-mac-${arch}.yml`, metadata);
           NODE
 
-          spctl -a -v "$APP_PATH" 2>&1 || true
+          spctl -a -v "$APP_PATH" 2>&1
 
       - name: Verify artifacts
         run: |

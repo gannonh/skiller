@@ -211,6 +211,25 @@ describe("app update service", () => {
     expect(states).toEqual([{ status: "not-available" }]);
   });
 
+  it("preserves downloaded readiness during later update checks", async () => {
+    const { createAppUpdateService } = await import("../src/main/app-update.js");
+    const updater = new FakeUpdater();
+    const service = createAppUpdateService(createSupportedDeps(updater));
+    const states: unknown[] = [];
+    service.subscribe((state) => states.push(state));
+
+    updater.emit("update-downloaded", { version: "0.2.2" } satisfies Partial<UpdateInfo>);
+    updater.emit("checking-for-update");
+    updater.emit("update-not-available");
+    updater.emit("download-progress", { percent: 32, transferred: 32, total: 100, bytesPerSecond: 10 } satisfies ProgressInfo);
+    updater.emit("update-available", { version: "0.2.3" } satisfies Partial<UpdateInfo>);
+    updater.emit("error", new Error("network down"));
+
+    expect(service.getState()).toEqual({ status: "ready", version: "0.2.2" });
+    expect(updater.downloadUpdate).not.toHaveBeenCalled();
+    expect(states).toEqual([{ status: "ready", version: "0.2.2" }]);
+  });
+
   it("reports progress without metadata when no update metadata is available", async () => {
     const { createAppUpdateService } = await import("../src/main/app-update.js");
     const updater = new FakeUpdater();

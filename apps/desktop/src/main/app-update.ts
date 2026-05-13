@@ -76,6 +76,13 @@ export function createAppUpdateService(
       return;
     }
 
+    if (
+      state.status === "ready" &&
+      (nextState.status === "checking" || nextState.status === "not-available" || nextState.status === "downloading")
+    ) {
+      return;
+    }
+
     state = nextState;
     for (const listener of listeners) {
       listener(state);
@@ -88,6 +95,10 @@ export function createAppUpdateService(
 
   const setErrorState = (error: unknown) => {
     if (stopped) {
+      return;
+    }
+
+    if (state.status === "ready") {
       return;
     }
 
@@ -133,6 +144,10 @@ export function createAppUpdateService(
     setState({ status: "not-available" });
   });
   onUpdater("update-available", (info: UpdateInfo) => {
+    if (state.status === "ready") {
+      return;
+    }
+
     lastOperationErrorKey = undefined;
     setState({
       status: "downloading",
