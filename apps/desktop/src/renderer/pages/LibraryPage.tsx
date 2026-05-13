@@ -57,6 +57,17 @@ export function parseTagInput(value: string): string[] {
   );
 }
 
+export function normalizeGithubInput(value: string): string {
+  const trimmed = value.trim();
+  const shorthand = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+
+  if (!/^https?:\/\//i.test(trimmed) && /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(shorthand)) {
+    return `https://github.com/${shorthand}`;
+  }
+
+  return trimmed;
+}
+
 export function mergeTags(currentTags: string[], incomingTags: string[]): string[] {
   const seen = new Set(currentTags);
   const merged = [...currentTags];
@@ -425,10 +436,11 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   async function installGithub(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isInstalling || githubUrl.trim() === "") return;
+    const normalizedGithubUrl = normalizeGithubInput(githubUrl);
     setIsInstalling(true);
     setError(null);
     try {
-      const discovery = await skillerApi.discoverGithub(githubUrl.trim());
+      const discovery = await skillerApi.discoverGithub(normalizedGithubUrl);
       if (discovery.repositoryOnly) {
         setGithubChoices(discovery.skills);
         setSelectedGithubPaths(new Set(discovery.skills.map((skill) => skill.path)));
@@ -437,7 +449,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
       }
 
       await skillerApi.installGithub({
-        githubUrl: githubUrl.trim()
+        githubUrl: normalizedGithubUrl
       });
       setGithubUrl("");
       await refreshLibrary();

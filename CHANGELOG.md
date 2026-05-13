@@ -6,6 +6,7 @@
 
 - Packaged desktop app updates now download in the background.
 - An Update button appears beside the Skiller heading when a downloaded app update is ready, then restarts into the new version when clicked.
+- Add from GitHub now accepts `owner/repo` and `@owner/repo` shorthand.
 
 ### Fixed
 

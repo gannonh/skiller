@@ -41,6 +41,12 @@ describe("LibraryPage helpers", () => {
     expect(helpers.parseTagInput(" Browser, testing, browser, UI   QA ")).toEqual(["browser", "testing", "ui qa"]);
   });
 
+  it("normalizes GitHub owner/repository shorthand for Add from GitHub", () => {
+    expect(helpers.normalizeGithubInput("gannonh/skiller")).toBe("https://github.com/gannonh/skiller");
+    expect(helpers.normalizeGithubInput("@gannonh/skiller")).toBe("https://github.com/gannonh/skiller");
+    expect(helpers.normalizeGithubInput("https://github.com/gannonh/skiller")).toBe("https://github.com/gannonh/skiller");
+  });
+
   it("removes selected tags that no longer exist", () => {
     expect(helpers.reconcileSelectedTags(["browser", "removed", "testing"], ["browser", "testing"])).toEqual([
       "browser",

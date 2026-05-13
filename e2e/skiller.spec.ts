@@ -319,6 +319,16 @@ test("selects skills from a GitHub repository preview", async ({ page }) => {
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toHaveCount(0);
 });
 
+test("normalizes GitHub shorthand when adding from a repository preview", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByLabel("GitHub URL").fill("@gannonh/skiller");
+  await page.getByRole("button", { name: "Add from GitHub" }).click();
+  await page.getByRole("button", { name: "Install selected" }).click();
+
+  await expect(page.getByText("https://github.com/gannonh/skiller/skills/alpha-skill")).toBeVisible();
+});
+
 test("keeps GitHub repository install actions visible for long skill lists", async ({ page }) => {
   await page.goto("/");
 

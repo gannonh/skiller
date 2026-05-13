@@ -29,7 +29,7 @@ The latest desktop release is `desktop-v0.2.2`.
 
 ## Usage
 
-Use the Library view to install skills from a local folder, GitHub URL, repository URL, or the skills.sh registry. When you enter a repository URL, Skiller scans it for installable skills and lets you select the ones you want. Organize skills with sets and tags, then sort or filter the library around those labels. Use Targets to choose agent skill directories, then sync enabled skills into those targets. Use Updates to check GitHub and skills.sh installs for newer upstream commits and apply updates. When a packaged app update finishes downloading, use the Update button beside the Skiller heading to restart into the new version.
+Use the Library view to install skills from a local folder, GitHub URL or shorthand such as `gannonh/skiller`, or the skills.sh registry. When you enter a repository URL or shorthand, Skiller scans it for installable skills and lets you select the ones you want. Organize skills with sets and tags, then sort or filter the library around those labels. Use Targets to choose agent skill directories, then sync enabled skills into those targets. Use Updates to check GitHub and skills.sh installs for newer upstream commits and apply updates. When a packaged app update finishes downloading, use the Update button beside the Skiller heading to restart into the new version.
 
 ## Workspace
 
