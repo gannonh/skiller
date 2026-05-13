@@ -1,5 +1,19 @@
 # Changelog
 
+## Skiller Desktop v0.2.4 - 2026-05-13
+
+### Changed
+
+- Packaged desktop app update checks now run every hour while Skiller stays open.
+
+### Install Notes
+
+- Users on v0.2.3 can install this release from the in-app Update button after the update downloads.
+- macOS Apple Silicon: download `Skiller-Desktop-arm64.dmg`.
+- macOS Intel: download `Skiller-Desktop-x64.dmg`.
+- Linux x64: download `Skiller-Desktop-x86_64.AppImage` or `Skiller-Desktop-amd64.deb`.
+- Linux arm64: download `Skiller-Desktop-arm64.AppImage` or `Skiller-Desktop-arm64.deb`.
+
 ## Skiller Desktop v0.2.3 - 2026-05-13
 
 ### Changed

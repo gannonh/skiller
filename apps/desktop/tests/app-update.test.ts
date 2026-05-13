@@ -129,7 +129,7 @@ describe("app update service", () => {
     await service.startBackgroundChecks();
 
     expect(deps.updater.checkForUpdates).toHaveBeenCalledTimes(1);
-    expect(deps.setInterval).toHaveBeenCalledWith(expect.any(Function), 4 * 60 * 60 * 1000);
+    expect(deps.setInterval).toHaveBeenCalledWith(expect.any(Function), 60 * 60 * 1000);
   });
 
   it("runs scheduled checks and clears the background interval", async () => {

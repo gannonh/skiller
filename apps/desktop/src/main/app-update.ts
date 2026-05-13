@@ -2,7 +2,7 @@ import { app } from "electron";
 import electronUpdater from "electron-updater";
 import type { AppUpdater, ProgressInfo, UpdateInfo } from "electron-updater";
 
-const BACKGROUND_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const BACKGROUND_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 export type AppUpdateStatus =
   | "idle"
