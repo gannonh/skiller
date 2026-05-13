@@ -4,6 +4,7 @@ declare global {
   interface Window {
     __emitAppUpdateState?: (state: { status: string; version?: string }) => void;
     __installAppUpdateCalls?: number;
+    __resolveAppUpdateState?: () => void;
   }
 }
 
@@ -429,6 +430,32 @@ test("shows a ready app update from the app update state listener", async ({ pag
   await page.evaluate(() => window.__emitAppUpdateState?.({ status: "ready", version: "0.2.3" }));
 
   await expect(page.getByRole("button", { name: "Install app update 0.2.3" })).toBeVisible();
+});
+
+test("keeps listener app update state when initial load resolves later", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      getAppUpdateState: async () => {
+        await new Promise<void>((resolve) => {
+          window.__resolveAppUpdateState = resolve;
+        });
+        return { status: "idle" };
+      },
+      onAppUpdateState: (callback) => {
+        window.__emitAppUpdateState = callback;
+        return () => undefined;
+      },
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] })
+    };
+  });
+
+  await page.goto("/");
+  await page.evaluate(() => window.__emitAppUpdateState?.({ status: "ready", version: "0.2.4" }));
+  await expect(page.getByRole("button", { name: "Install app update 0.2.4" })).toBeVisible();
+
+  await page.evaluate(() => window.__resolveAppUpdateState?.());
+
+  await expect(page.getByRole("button", { name: "Install app update 0.2.4" })).toBeVisible();
 });
 
 test("reports app update state load failures without unhandled rejections", async ({ page }) => {

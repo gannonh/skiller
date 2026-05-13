@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowReloadHorizontalIcon,
@@ -78,6 +78,7 @@ export function App() {
   const [page, setPage] = useState<Page>("library");
   const [appUpdateState, setAppUpdateState] = useState<AppUpdateState>({ status: "idle" });
   const [appUpdateMessage, setAppUpdateMessage] = useState<string | null>(null);
+  const hasAppUpdateEvent = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -87,7 +88,7 @@ export function App() {
           throw new Error("App update state is unavailable");
         }
         const state = await skillerApi.getAppUpdateState();
-        if (mounted) {
+        if (mounted && !hasAppUpdateEvent.current) {
           setAppUpdateState(state);
           setAppUpdateMessage(null);
         }
@@ -98,6 +99,7 @@ export function App() {
     const removeListener =
       typeof skillerApi.onAppUpdateState === "function"
         ? skillerApi.onAppUpdateState((state) => {
+            hasAppUpdateEvent.current = true;
             setAppUpdateState(state);
             setAppUpdateMessage(null);
           })
