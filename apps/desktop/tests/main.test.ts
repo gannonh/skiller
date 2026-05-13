@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => {
       dock: undefined,
       isPackaged: true,
       on: vi.fn(),
+      setName: vi.fn(),
       whenReady: vi.fn()
     },
     appUpdateService,
@@ -93,6 +94,8 @@ describe("desktop main lifecycle", () => {
 
   it("wires app updates through main lifecycle and cleans up before quit", async () => {
     await import("../src/main/main.js");
+
+    expect(mocks.app.setName).toHaveBeenCalledWith("Skiller");
 
     await mocks.ready?.();
 

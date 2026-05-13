@@ -9,6 +9,8 @@ import { createTray } from "./tray.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+app.setName("Skiller");
+
 let tray: Tray | null = null;
 let cleanupItems: Array<{ stop: () => void }> = [];
 let appUpdateService: ReturnType<typeof createAppUpdateService> | null = null;
