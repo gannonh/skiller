@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { autoUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
 import type { AppUpdater, ProgressInfo, UpdateInfo } from "electron-updater";
 
 const BACKGROUND_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -49,7 +49,7 @@ type UpdaterEventName =
   | "error";
 
 export function getAutoUpdater(): AppUpdater {
-  return autoUpdater;
+  return electronUpdater.autoUpdater;
 }
 
 export function createAppUpdateService(

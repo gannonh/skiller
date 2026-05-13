@@ -11,7 +11,7 @@
   "type": "module",
   "main": "dist/main/main.js",
   "scripts": {
-    "dev": "pnpm run build && sh -c 'pnpm run dev:renderer & VITE_PID=$!; trap \"kill -TERM -$VITE_PID 2>/dev/null || true\" EXIT INT TERM; until curl -fsS http://127.0.0.1:5173 >/dev/null 2>&1; do sleep 0.2; done; VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .'",
+    "dev": "pnpm run build && node dist/main/dev-server.js",
     "dev:renderer": "vite --host 127.0.0.1",
     "build": "tsc -b ../../packages/core tsconfig.json --force && vite build",
     "desktop:pack": "pnpm run build && electron-builder --config electron-builder.yml --dir",

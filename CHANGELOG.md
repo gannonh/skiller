@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Desktop startup now loads the app updater module correctly.
 - Desktop releases now publish update metadata for macOS and Linux AppImage builds.
 
 ### Install Notes

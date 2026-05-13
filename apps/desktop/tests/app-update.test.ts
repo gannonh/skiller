@@ -17,7 +17,9 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("electron-updater", () => ({
-  autoUpdater: mockAutoUpdater
+  default: {
+    autoUpdater: mockAutoUpdater
+  }
 }));
 
 class FakeUpdater extends EventEmitter {
