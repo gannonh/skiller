@@ -1,6 +1,6 @@
 import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { findAvailablePort, rendererDevServerArgs, rendererDevServerUrl } from "../src/main/dev-server.js";
+import { findAvailablePort, parseDevServerPort, rendererDevServerArgs, rendererDevServerUrl } from "../src/main/dev-server.js";
 
 const servers: net.Server[] = [];
 
@@ -36,6 +36,11 @@ describe("desktop dev server helpers", () => {
 
     expect(availablePort).toBeGreaterThan(port);
     await listen(availablePort);
+  });
+
+  it("rejects invalid renderer dev server ports before probing", () => {
+    expect(parseDevServerPort("abc")).toEqual({ ok: false, error: "Invalid SKILLER_DEV_PORT: abc" });
+    expect(parseDevServerPort("70000")).toEqual({ ok: false, error: "Invalid SKILLER_DEV_PORT: 70000" });
   });
 
   it("formats the renderer dev server URL for Electron", () => {

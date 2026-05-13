@@ -14,6 +14,17 @@ export interface FindAvailablePortOptions {
   maxAttempts?: number;
 }
 
+type ParsedPort = { ok: true; port: number } | { ok: false; error: string };
+
+export function parseDevServerPort(rawPort: string | undefined): ParsedPort {
+  const port = rawPort === undefined ? DEFAULT_PORT : Number(rawPort);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return { ok: false, error: `Invalid SKILLER_DEV_PORT: ${rawPort}` };
+  }
+
+  return { ok: true, port };
+}
+
 export async function isPortAvailable(host: string, port: number): Promise<boolean> {
   const server = net.createServer();
 
@@ -93,7 +104,9 @@ function stop(child: ChildProcess | undefined) {
 
 export async function runDesktopDev(): Promise<void> {
   const host = process.env.SKILLER_DEV_HOST ?? DEFAULT_HOST;
-  const startPort = Number(process.env.SKILLER_DEV_PORT ?? DEFAULT_PORT);
+  const parsedPort = parseDevServerPort(process.env.SKILLER_DEV_PORT);
+  if (!parsedPort.ok) throw new Error(parsedPort.error);
+  const startPort = parsedPort.port;
   const port = await findAvailablePort({ host, startPort });
   const url = rendererDevServerUrl(host, port);
   const renderer = spawn(packageBin("pnpm"), rendererDevServerArgs(host, port), {
@@ -111,6 +124,8 @@ export async function runDesktopDev(): Promise<void> {
     process.exit(exitCode);
   };
 
+  renderer.once("error", () => shutdown(1));
+
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => shutdown(0));
   }
@@ -119,15 +134,22 @@ export async function runDesktopDev(): Promise<void> {
     if (!shuttingDown && !electron) shutdown(code ?? 1);
   });
 
-  await waitForServer(url);
-  electron = spawn(packageBin("electron"), ["."], {
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      VITE_DEV_SERVER_URL: url
-    }
-  });
-  electron.once("exit", (code) => shutdown(code ?? 0));
+  try {
+    await waitForServer(url);
+    electron = spawn(packageBin("electron"), ["."], {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        VITE_DEV_SERVER_URL: url
+      }
+    });
+    electron.once("error", () => shutdown(1));
+    electron.once("exit", (code) => shutdown(code ?? 0));
+  } catch (error) {
+    stop(electron);
+    stop(renderer);
+    throw error;
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

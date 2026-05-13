@@ -1,6 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const e2ePort = Number(process.env.SKILLER_E2E_PORT ?? 15173);
+const rawE2EPort = process.env.SKILLER_E2E_PORT;
+const e2ePort = rawE2EPort === undefined ? 15173 : Number(rawE2EPort);
+if (!Number.isInteger(e2ePort) || e2ePort < 1 || e2ePort > 65535) {
+  throw new Error(`Invalid SKILLER_E2E_PORT: ${rawE2EPort}`);
+}
 const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`;
 
 export default defineConfig({
