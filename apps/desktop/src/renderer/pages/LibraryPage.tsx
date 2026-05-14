@@ -487,11 +487,12 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setError(null);
     try {
       for (const skill of selectedGithubSkills) {
-        await skillerApi.installGithub({
+        const metadata = await skillerApi.installGithub({
           githubUrl: skill.githubUrl,
           ...(skill.githubPath ? { githubPath: skill.githubPath } : {}),
           ref: skill.ref
         });
+        if (!metadata) return;
       }
       setGithubUrl("");
       setIsGithubSheetOpen(false);
