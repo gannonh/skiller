@@ -401,7 +401,7 @@ test("installs a registry result from Discover preview mode", async ({ page }) =
 
   await page.getByRole("button", { name: "Library" }).click();
   await expect(page.getByRole("cell", { name: "agent-browser", exact: true })).toBeVisible();
-  await expect(page.getByText("Registry", { exact: true })).toBeVisible();
+  await expect(page.getByText("Skills Registry", { exact: true })).toBeVisible();
 });
 
 test("marks existing registry skills as installed by source alias", async ({ page }) => {
@@ -588,7 +588,7 @@ test("lists updateable skills on the Updates page", async ({ page }) => {
   await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sort by Last Updated" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "agent-browser" })).toBeVisible();
-  await expect(page.getByText("Registry")).toBeVisible();
+  await expect(page.getByText("Skills Registry")).toBeVisible();
   await expect(page.getByText("Skills added from GitHub or skills.sh can be updated")).toBeVisible();
   await expect(page.getByText("Keep all skills updated")).toHaveCount(0);
 });

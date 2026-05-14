@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SkillMetadata, SkillSetMetadata } from "../lib/api.js";
+import { sourceLabel } from "../lib/skill-source.js";
+import type { DiscoveredGithubSkill } from "@skiller/core";
 
 let helpers: typeof import("./LibraryPage.js");
 
@@ -132,5 +134,35 @@ describe("LibraryPage helpers", () => {
         ]
       })
     ).toBe("Target sync failed for /tmp/skills: permission denied and 1 more");
+  });
+
+  it("labels skills.sh skills as Skills Registry in the Source column", () => {
+    expect(
+      sourceLabel({
+        ...skill({ id: "registry" }),
+        source: { type: "skills.sh", skillsShId: "registry", githubUrl: "https://github.com/example/skills" }
+      })
+    ).toBe("Skills Registry");
+  });
+
+  it("derives the GitHub sheet select-all checkbox state", () => {
+    const choices: DiscoveredGithubSkill[] = [
+      { name: "one", path: "skills/one", githubUrl: "https://github.com/example/skills", ref: "HEAD", commit: "abc123" },
+      { name: "two", path: "skills/two", githubUrl: "https://github.com/example/skills", ref: "HEAD", commit: "abc123" }
+    ];
+
+    expect(helpers.githubSelectionState(choices, new Set())).toBe(false);
+    expect(helpers.githubSelectionState(choices, new Set(["skills/one"]))).toBe("indeterminate");
+    expect(helpers.githubSelectionState(choices, new Set(["skills/one", "skills/two"]))).toBe(true);
+  });
+
+  it("selects or clears every GitHub skill path for the sheet checkbox", () => {
+    const choices: DiscoveredGithubSkill[] = [
+      { name: "one", path: "skills/one", githubUrl: "https://github.com/example/skills", ref: "HEAD", commit: "abc123" },
+      { name: "two", path: "skills/two", githubUrl: "https://github.com/example/skills", ref: "HEAD", commit: "abc123" }
+    ];
+
+    expect(Array.from(helpers.githubSelectionPaths(choices, true))).toEqual(["skills/one", "skills/two"]);
+    expect(Array.from(helpers.githubSelectionPaths(choices, false))).toEqual([]);
   });
 });

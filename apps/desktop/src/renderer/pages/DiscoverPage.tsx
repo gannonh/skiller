@@ -170,6 +170,10 @@ export function DiscoverPage() {
     setStatus(`Installing ${id}`);
     try {
       const metadata = await skillerApi.installRegistry({ skillsShId: id, registrySkill: skill });
+      if (!metadata) {
+        setStatus(`Install cancelled for ${id}`);
+        return;
+      }
       setLibrarySkills((current) => [...current.filter((installed) => installed.id !== metadata.id), metadata]);
       setStatus(`Installed ${metadata.name}`);
     } catch (caught) {

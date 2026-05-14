@@ -78,7 +78,7 @@ describe("installLocalSkill", () => {
     await expect(fs.pathExists(path.join(outside, "SKILL.md"))).resolves.toBe(false);
   });
 
-  it("installs duplicate names into distinct paths without overwriting content", async () => {
+  it("fails loud when a skill with the same name already exists", async () => {
     const firstSource = path.join(tmp, "first-source");
     const secondSource = path.join(tmp, "second-source");
     const library = path.join(tmp, "library");
@@ -91,12 +91,40 @@ describe("installLocalSkill", () => {
     await fs.writeFile(path.join(secondSource, "SKILL.md"), secondContent);
 
     const first = await installLocalSkill({ sourcePath: firstSource, libraryPath: library });
-    const second = await installLocalSkill({ sourcePath: secondSource, libraryPath: library });
 
     expect(first.id).toBe("local");
-    expect(second.id).toBe("local-2");
+    await expect(installLocalSkill({ sourcePath: secondSource, libraryPath: library })).rejects.toMatchObject({
+      name: "DuplicateSkillNameError",
+      skillId: "local",
+      skillName: "local"
+    });
     expect(await fs.readFile(path.join(library, "local", "SKILL.md"), "utf8")).toBe(firstContent);
-    expect(await fs.readFile(path.join(library, "local-2", "SKILL.md"), "utf8")).toBe(secondContent);
+    await expect(fs.pathExists(path.join(library, "local-2"))).resolves.toBe(false);
+  });
+
+  it("replaces an existing skill in place when requested", async () => {
+    const firstSource = path.join(tmp, "first-source");
+    const secondSource = path.join(tmp, "second-source");
+    const library = path.join(tmp, "library");
+    const firstContent = "---\nname: local\ndescription: First.\n---\n";
+    const secondContent = "---\nname: local\ndescription: Second.\n---\n";
+
+    await fs.ensureDir(firstSource);
+    await fs.ensureDir(secondSource);
+    await fs.writeFile(path.join(firstSource, "SKILL.md"), firstContent);
+    await fs.writeFile(path.join(secondSource, "SKILL.md"), secondContent);
+
+    const first = await installLocalSkill({ sourcePath: firstSource, libraryPath: library });
+    const second = await installLocalSkill({ sourcePath: secondSource, libraryPath: library, replaceExisting: true });
+
+    expect(first.id).toBe("local");
+    expect(second).toMatchObject({
+      id: "local",
+      name: "local",
+      description: "Second."
+    });
+    expect(await fs.readFile(path.join(library, "local", "SKILL.md"), "utf8")).toBe(secondContent);
+    await expect(fs.pathExists(path.join(library, "local-2"))).resolves.toBe(false);
   });
 
   it("parses CRLF frontmatter names", async () => {
@@ -223,6 +251,70 @@ describe("remote installers", () => {
       keepUpdated: true
     });
     await expect(fs.pathExists(path.join(library, "browser", "SKILL.md"))).resolves.toBe(true);
+  });
+
+  it("replaces a duplicate GitHub skill after approval without fetching it twice", async () => {
+    const source = path.join(tmp, "source");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(source);
+    await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: browser\ndescription: Existing.\n---\n");
+    await installLocalSkill({ sourcePath: source, libraryPath: library });
+
+    const fetchedUrls: string[] = [];
+    const fetchImpl = mockFetch((url) => {
+      fetchedUrls.push(url);
+      if (fetchedUrls.filter((candidate) => candidate === url).length > 1) {
+        throw new Error(`unexpected second fetch for ${url}`);
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/commits/main") {
+        return new Response(JSON.stringify({ sha: "abc123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/abc123?recursive=1") {
+        return new Response(JSON.stringify({ tree: [{ path: "skills/browser/SKILL.md", type: "blob" }] }));
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/abc123/skills/browser/SKILL.md") {
+        return new Response("---\nname: browser\ndescription: Replacement.\n---\n");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+    const onDuplicateSkillName = vi.fn(async () => true);
+
+    const metadata = await installGithubSkill({
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "skills/browser",
+      ref: "main",
+      libraryPath: library,
+      fetchImpl,
+      onDuplicateSkillName
+    });
+
+    expect(onDuplicateSkillName).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "DuplicateSkillNameError",
+        skillId: "browser",
+        skillName: "browser"
+      })
+    );
+    expect(metadata).toMatchObject({
+      id: "browser",
+      description: "Replacement.",
+      source: {
+        type: "github",
+        githubUrl: "https://github.com/example/skills",
+        githubPath: "skills/browser",
+        ref: "main",
+        commit: "abc123"
+      }
+    });
+    expect(fetchedUrls).toEqual([
+      "https://api.github.com/repos/example/skills/commits/main",
+      "https://api.github.com/repos/example/skills/git/trees/abc123?recursive=1",
+      "https://raw.githubusercontent.com/example/skills/abc123/skills/browser/SKILL.md"
+    ]);
   });
 
   it("installs a skills.sh skill with registry and resolved provenance", async () => {

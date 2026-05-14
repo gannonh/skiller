@@ -104,9 +104,9 @@ export interface SkillerApi {
   checkUpdates: () => Promise<UpdateCheckResult>;
   updateSkill: (skillId: string) => Promise<SkillMetadata>;
   installLocal: () => Promise<SkillMetadata | null>;
-  installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => Promise<SkillMetadata>;
+  installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => Promise<SkillMetadata | null>;
   discoverGithub: (githubUrl: string) => Promise<DiscoverGithubSkillsResult>;
-  installRegistry: (input: string | { skillsShId: string; registrySkill?: DiscoverSkill }) => Promise<SkillMetadata>;
+  installRegistry: (input: string | { skillsShId: string; registrySkill?: DiscoverSkill }) => Promise<SkillMetadata | null>;
   leaderboard: (type: LeaderboardType) => Promise<{ skills: DiscoverSkill[] }>;
   search: (query: string) => Promise<{ skills: DiscoverSkill[] }>;
   registrySkill: (id: string) => Promise<DiscoverSkill>;
