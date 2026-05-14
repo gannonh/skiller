@@ -1,5 +1,6 @@
 import { dialog, ipcMain } from "electron";
 import {
+  DuplicateSkillNameError,
   MetadataStore,
   SkillsShClient,
   discoverGithubSkills,
@@ -12,13 +13,15 @@ import {
   scanTargets,
   updateInstalledSkill
 } from "@skiller/core";
-import type { ScanTargetsResult, SkillerConfig, TargetConfig } from "@skiller/core";
+import type { DuplicateSkillNameHandler, ScanTargetsResult, SkillerConfig, TargetConfig } from "@skiller/core";
 import type { AppUpdateService } from "./app-update.js";
 import { checkDesktopUpdates } from "./update-check.js";
 
 type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets">>;
-type InstallGithubInput = { githubUrl: string; githubPath?: string; ref?: string };
-type InstallRegistryInput = string | { skillsShId: string; registrySkill?: Record<string, unknown> };
+type InstallGithubInput = { githubUrl: string; githubPath?: string; ref?: string; replaceExisting?: boolean };
+type InstallRegistryInput =
+  | string
+  | { skillsShId: string; registrySkill?: Record<string, unknown>; replaceExisting?: boolean };
 export type SetSkillSetEnabledResult = {
   state: Awaited<ReturnType<MetadataStore["libraryState"]>>;
   scanErrors: ScanTargetsResult["errors"];
@@ -68,6 +71,34 @@ async function scanTargetsForConfig(config: SkillerConfig, targets: TargetConfig
     libraryPath: expandHome(config.libraryPath),
     targets: expandTargets(targets)
   });
+}
+
+async function confirmReplaceDuplicate(error: DuplicateSkillNameError): Promise<boolean> {
+  const result = await dialog.showMessageBox({
+    type: "warning",
+    message: `A skill by that name already exists: ${error.skillName}`,
+    buttons: ["Replace", "Cancel"],
+    defaultId: 0,
+    cancelId: 1
+  });
+
+  return result.response === 0;
+}
+
+async function installWithDuplicatePrompt<T>(install: (onDuplicateSkillName: DuplicateSkillNameHandler) => Promise<T>): Promise<T | null> {
+  let duplicatePromptCancelled = false;
+  const onDuplicateSkillName: DuplicateSkillNameHandler = async (error) => {
+    const shouldReplace = await confirmReplaceDuplicate(error);
+    duplicatePromptCancelled = !shouldReplace;
+    return shouldReplace;
+  };
+
+  try {
+    return await install(onDuplicateSkillName);
+  } catch (error) {
+    if (duplicatePromptCancelled && error instanceof DuplicateSkillNameError) return null;
+    throw error;
+  }
 }
 
 export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): void {
@@ -162,22 +193,31 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     if (result.canceled || result.filePaths.length === 0) return null;
 
     const config = await loadConfig();
-    const metadata = await installLocalSkill({
-      sourcePath: result.filePaths[0],
-      libraryPath: expandHome(config.libraryPath)
-    });
+    const metadata = await installWithDuplicatePrompt((onDuplicateSkillName) =>
+      installLocalSkill({
+        sourcePath: result.filePaths[0],
+        libraryPath: expandHome(config.libraryPath),
+        onDuplicateSkillName
+      })
+    );
+    if (!metadata) return null;
     await scanConfig(config);
     return metadata;
   });
 
   ipcMain.handle("library:install-github", async (_event, input: InstallGithubInput) => {
     const config = await loadConfig();
-    const metadata = await installGithubSkill({
-      githubUrl: input.githubUrl,
-      ...(input.githubPath ? { githubPath: input.githubPath } : {}),
-      ...(input.ref ? { ref: input.ref } : {}),
-      libraryPath: expandHome(config.libraryPath)
-    });
+    const metadata = await installWithDuplicatePrompt((onDuplicateSkillName) =>
+      installGithubSkill({
+        githubUrl: input.githubUrl,
+        ...(input.githubPath ? { githubPath: input.githubPath } : {}),
+        ...(input.ref ? { ref: input.ref } : {}),
+        libraryPath: expandHome(config.libraryPath),
+        ...(input.replaceExisting ? { replaceExisting: true } : {}),
+        onDuplicateSkillName
+      })
+    );
+    if (!metadata) return null;
     await scanConfig(config);
     return metadata;
   });
@@ -189,12 +229,17 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
   ipcMain.handle("library:install-registry", async (_event, input: InstallRegistryInput) => {
     const skillsShId = typeof input === "string" ? input : input.skillsShId;
     const config = await loadConfig();
-    const metadata = await installSkillsShSkill({
-      skillsShId,
-      ...(typeof input === "string" || !input.registrySkill ? {} : { registrySkill: input.registrySkill }),
-      libraryPath: expandHome(config.libraryPath),
-      client: skillsShClient
-    });
+    const metadata = await installWithDuplicatePrompt((onDuplicateSkillName) =>
+      installSkillsShSkill({
+        skillsShId,
+        ...(typeof input === "string" || !input.registrySkill ? {} : { registrySkill: input.registrySkill }),
+        libraryPath: expandHome(config.libraryPath),
+        client: skillsShClient,
+        ...(typeof input !== "string" && input.replaceExisting ? { replaceExisting: true } : {}),
+        onDuplicateSkillName
+      })
+    );
+    if (!metadata) return null;
     await scanConfig(config);
     return metadata;
   });

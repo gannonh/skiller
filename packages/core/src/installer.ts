@@ -8,9 +8,13 @@ import { extractRegistrySkillSource, fetchGithubSkillSource } from "./source-fet
 import type { SkillMetadata, SkillSource } from "./types.js";
 import { validateSkill } from "./validator.js";
 
+export type DuplicateSkillNameHandler = (error: DuplicateSkillNameError) => boolean | Promise<boolean>;
+
 export interface InstallLocalSkillInput {
   sourcePath: string;
   libraryPath: string;
+  replaceExisting?: boolean;
+  onDuplicateSkillName?: DuplicateSkillNameHandler;
 }
 
 export interface InstallGithubSkillInput {
@@ -19,6 +23,8 @@ export interface InstallGithubSkillInput {
   ref?: string;
   libraryPath: string;
   fetchImpl?: typeof fetch;
+  replaceExisting?: boolean;
+  onDuplicateSkillName?: DuplicateSkillNameHandler;
 }
 
 export interface InstallSkillsShSkillInput {
@@ -29,6 +35,8 @@ export interface InstallSkillsShSkillInput {
     skill(id: string): Promise<Record<string, unknown>>;
   };
   fetchImpl?: typeof fetch;
+  replaceExisting?: boolean;
+  onDuplicateSkillName?: DuplicateSkillNameHandler;
 }
 
 export interface UpdateInstalledSkillInput {
@@ -49,6 +57,18 @@ interface InstallSkillFromDirectoryInput {
   keepUpdated: boolean;
   skillId?: string;
   existingMetadata?: SkillMetadata;
+  replaceExisting?: boolean;
+  onDuplicateSkillName?: DuplicateSkillNameHandler;
+}
+
+export class DuplicateSkillNameError extends Error {
+  constructor(
+    readonly skillId: string,
+    readonly skillName: string
+  ) {
+    super(`Skill already exists: ${skillName}`);
+    this.name = "DuplicateSkillNameError";
+  }
 }
 
 function stringField(frontmatter: Record<string, unknown>, key: string): string | undefined {
@@ -86,24 +106,14 @@ function slugifySkillId(value: string): string {
     .replace(/^[.-]+|[.-]+$/g, "") || "skill";
 }
 
-async function uniqueSkillId(libraryPath: string, slug: string): Promise<string> {
-  let id = slug;
-  let suffix = 2;
-
-  while (await fs.pathExists(path.join(libraryPath, id))) {
-    id = `${slug}-${suffix}`;
-    suffix += 1;
-  }
-
-  return id;
-}
-
 export async function installLocalSkill(input: InstallLocalSkillInput): Promise<SkillMetadata> {
   return installSkillFromDirectory({
     sourcePath: input.sourcePath,
     libraryPath: input.libraryPath,
     source: { type: "local", path: input.sourcePath },
-    keepUpdated: false
+    keepUpdated: false,
+    replaceExisting: input.replaceExisting,
+    onDuplicateSkillName: input.onDuplicateSkillName
   });
 }
 
@@ -111,7 +121,18 @@ async function installSkillFromDirectory(input: InstallSkillFromDirectoryInput):
   const skillMd = await fs.readFile(path.join(input.sourcePath, "SKILL.md"), "utf8");
   const skillInfo = parseSkillInfo(skillMd, path.basename(input.sourcePath));
   const slug = slugifySkillId(skillInfo.name);
-  const id = input.skillId ?? await uniqueSkillId(input.libraryPath, slug);
+  const store = new MetadataStore(input.libraryPath);
+  const id = input.skillId ?? slug;
+  const existingMetadata = input.existingMetadata ?? (await store.list()).find((skill) => skill.id === id);
+  const duplicateExists = Boolean(existingMetadata) || (await fs.pathExists(path.join(input.libraryPath, id)));
+
+  if (!input.skillId && duplicateExists && !input.replaceExisting) {
+    const error = new DuplicateSkillNameError(id, skillInfo.name);
+    if (!input.onDuplicateSkillName || !(await input.onDuplicateSkillName(error))) {
+      throw error;
+    }
+  }
+
   const librarySkillPath = await copySkillToLibrary(input.sourcePath, input.libraryPath, id);
   const validation = await validateSkill(librarySkillPath);
   const now = new Date().toISOString();
@@ -122,18 +143,18 @@ async function installSkillFromDirectory(input: InstallSkillFromDirectoryInput):
     ...(skillInfo.description ? { description: skillInfo.description } : {}),
     libraryPath: librarySkillPath,
     source: input.source,
-    installedAt: input.existingMetadata?.installedAt ?? now,
+    installedAt: existingMetadata?.installedAt ?? now,
     updatedAt: now,
-    ...(input.existingMetadata?.lastCheckedAt ? { lastCheckedAt: now } : {}),
+    ...(existingMetadata?.lastCheckedAt ? { lastCheckedAt: now } : {}),
     contentHash: await hashDirectory(librarySkillPath),
     keepUpdated: input.keepUpdated,
-    enabled: input.existingMetadata?.enabled ?? true,
-    ...(input.existingMetadata?.skillSetId ? { skillSetId: input.existingMetadata.skillSetId } : {}),
-    tags: input.existingMetadata?.tags ?? [],
+    enabled: existingMetadata?.enabled ?? true,
+    ...(existingMetadata?.skillSetId ? { skillSetId: existingMetadata.skillSetId } : {}),
+    tags: existingMetadata?.tags ?? [],
     validation
   };
 
-  await new MetadataStore(input.libraryPath).save(metadata);
+  await store.save(metadata);
   return metadata;
 }
 
@@ -153,7 +174,9 @@ export async function installGithubSkill(input: InstallGithubSkillInput): Promis
       sourcePath: fetched.sourcePath,
       libraryPath: input.libraryPath,
       source: { type: "github", ...fetched.resolved },
-      keepUpdated: true
+      keepUpdated: true,
+      replaceExisting: input.replaceExisting,
+      onDuplicateSkillName: input.onDuplicateSkillName
     });
   } finally {
     if (rootPath) await fs.remove(rootPath);
@@ -178,7 +201,9 @@ export async function installSkillsShSkill(input: InstallSkillsShSkillInput): Pr
       sourcePath: fetched.sourcePath,
       libraryPath: input.libraryPath,
       source: { type: "skills.sh", skillsShId: registrySource.skillsShId, ...fetched.resolved },
-      keepUpdated: true
+      keepUpdated: true,
+      replaceExisting: input.replaceExisting,
+      onDuplicateSkillName: input.onDuplicateSkillName
     });
   } finally {
     if (rootPath) await fs.remove(rootPath);

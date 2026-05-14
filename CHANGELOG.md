@@ -1,5 +1,24 @@
 # Changelog
 
+## Skiller Desktop v0.3.0 - 2026-05-14
+
+### Added
+
+- Skill installs now ask before replacing an existing skill with the same name.
+- GitHub repository scan results now include a select-all control for choosing skills to install.
+
+### Changed
+
+- skills.sh installs now appear as `Skills Registry` in source labels.
+
+### Install Notes
+
+- Users on v0.2.4 can install this release from the in-app Update button after the update downloads.
+- macOS Apple Silicon: download `Skiller-Desktop-arm64.dmg`.
+- macOS Intel: download `Skiller-Desktop-x64.dmg`.
+- Linux x64: download `Skiller-Desktop-x86_64.AppImage` or `Skiller-Desktop-amd64.deb`.
+- Linux arm64: download `Skiller-Desktop-arm64.AppImage` or `Skiller-Desktop-arm64.deb`.
+
 ## Skiller Desktop v0.2.4 - 2026-05-13
 
 ### Changed

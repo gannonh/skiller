@@ -4,6 +4,7 @@ declare global {
   interface Window {
     __emitAppUpdateState?: (state: { status: string; version?: string }) => void;
     __installAppUpdateCalls?: number;
+    __installGithubCalls?: string[];
     __resolveAppUpdateState?: () => void;
   }
 }
@@ -363,6 +364,53 @@ test("selects skills from a GitHub repository preview", async ({ page }) => {
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toHaveCount(0);
 });
 
+test("keeps GitHub repository selection open when duplicate replacement is cancelled", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__installGithubCalls = [];
+    window.skiller = {
+      listLibrary: async () => ({ skills: [], skillSets: [], tags: [] }),
+      discoverGithub: async () => ({
+        repositoryOnly: true,
+        githubUrl: "https://github.com/example/skills",
+        ref: "main",
+        commit: "abc123",
+        skills: [
+          {
+            name: "alpha-skill",
+            path: "skills/alpha-skill",
+            githubPath: "skills/alpha-skill",
+            githubUrl: "https://github.com/example/skills",
+            ref: "main",
+            commit: "abc123"
+          },
+          {
+            name: "beta-skill",
+            path: "skills/beta-skill",
+            githubPath: "skills/beta-skill",
+            githubUrl: "https://github.com/example/skills",
+            ref: "main",
+            commit: "abc123"
+          }
+        ]
+      }),
+      installGithub: async (input) => {
+        window.__installGithubCalls?.push(input.githubPath ?? input.githubUrl);
+        return null;
+      }
+    };
+  });
+  await page.goto("/");
+
+  await page.getByLabel("GitHub URL").fill("https://github.com/example/skills");
+  await page.getByRole("button", { name: "Add from GitHub" }).click();
+  await page.getByRole("button", { name: "Install selected" }).click();
+
+  await expect(page.getByRole("heading", { name: "GitHub Skills" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /alpha-skill/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /beta-skill/ })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__installGithubCalls)).toEqual(["skills/alpha-skill"]);
+});
+
 test("normalizes GitHub shorthand when adding from a repository preview", async ({ page }) => {
   await page.goto("/");
 
@@ -401,7 +449,7 @@ test("installs a registry result from Discover preview mode", async ({ page }) =
 
   await page.getByRole("button", { name: "Library" }).click();
   await expect(page.getByRole("cell", { name: "agent-browser", exact: true })).toBeVisible();
-  await expect(page.getByText("Registry", { exact: true })).toBeVisible();
+  await expect(page.getByText("Skills Registry", { exact: true })).toBeVisible();
 });
 
 test("marks existing registry skills as installed by source alias", async ({ page }) => {
@@ -588,7 +636,7 @@ test("lists updateable skills on the Updates page", async ({ page }) => {
   await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sort by Last Updated" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "agent-browser" })).toBeVisible();
-  await expect(page.getByText("Registry")).toBeVisible();
+  await expect(page.getByText("Skills Registry")).toBeVisible();
   await expect(page.getByText("Skills added from GitHub or skills.sh can be updated")).toBeVisible();
   await expect(page.getByText("Keep all skills updated")).toHaveCount(0);
 });

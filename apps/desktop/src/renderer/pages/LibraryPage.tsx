@@ -124,6 +124,22 @@ export function setSkillSetEnabledScanErrorMessage(result: SetSkillSetEnabledRes
   return `Target sync failed for ${firstError.path}: ${firstError.message}${suffix}`;
 }
 
+export type GithubSelectionState = boolean | "indeterminate";
+
+export function githubSelectionState(
+  choices: DiscoveredGithubSkill[],
+  selectedPaths: Set<string>
+): GithubSelectionState {
+  if (choices.length === 0) return false;
+  const selectedCount = choices.filter((skill) => selectedPaths.has(skill.path)).length;
+  if (selectedCount === 0) return false;
+  return selectedCount === choices.length ? true : "indeterminate";
+}
+
+export function githubSelectionPaths(choices: DiscoveredGithubSkill[], selected: boolean): Set<string> {
+  return new Set(selected ? choices.map((skill) => skill.path) : []);
+}
+
 function statusLabel(skill: SkillMetadata): string {
   return skill.validation?.valid ? "valid" : "invalid";
 }
@@ -363,6 +379,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     () => githubChoices.filter((skill) => selectedGithubPaths.has(skill.path)),
     [githubChoices, selectedGithubPaths]
   );
+  const githubSelectAllState = useMemo(
+    () => githubSelectionState(githubChoices, selectedGithubPaths),
+    [githubChoices, selectedGithubPaths]
+  );
 
   function updateSort(column: SortColumn) {
     if (column === sortColumn) {
@@ -448,9 +468,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
         return;
       }
 
-      await skillerApi.installGithub({
+      const metadata = await skillerApi.installGithub({
         githubUrl: normalizedGithubUrl
       });
+      if (!metadata) return;
       setGithubUrl("");
       await refreshLibrary();
     } catch (caught) {
@@ -466,11 +487,12 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setError(null);
     try {
       for (const skill of selectedGithubSkills) {
-        await skillerApi.installGithub({
+        const metadata = await skillerApi.installGithub({
           githubUrl: skill.githubUrl,
           ...(skill.githubPath ? { githubPath: skill.githubPath } : {}),
           ref: skill.ref
         });
+        if (!metadata) return;
       }
       setGithubUrl("");
       setIsGithubSheetOpen(false);
@@ -494,6 +516,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
       }
       return next;
     });
+  }
+
+  function setAllGithubSkillsSelected(selected: boolean) {
+    setSelectedGithubPaths(githubSelectionPaths(githubChoices, selected));
   }
 
   async function setSkillEnabled(skillId: string, enabled: boolean) {
@@ -983,7 +1009,17 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Install</TableHead>
+                    <TableHead>
+                      <Label htmlFor="github-skill-select-all" className="flex items-center gap-2">
+                        <Checkbox
+                          id="github-skill-select-all"
+                          checked={githubSelectAllState === true}
+                          indeterminate={githubSelectAllState === "indeterminate"}
+                          onCheckedChange={(checked) => setAllGithubSkillsSelected(checked)}
+                        />
+                        Install
+                      </Label>
+                    </TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Path</TableHead>
                   </TableRow>

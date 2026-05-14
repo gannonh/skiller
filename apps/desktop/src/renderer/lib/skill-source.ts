@@ -1,7 +1,7 @@
 import type { SkillMetadata } from "./api.js";
 
 export function sourceLabel(skill: SkillMetadata): string {
-  if (skill.source.type === "skills.sh") return "Registry";
+  if (skill.source.type === "skills.sh") return "Skills Registry";
   if (skill.source.type === "github") return "GitHub";
   if (skill.source.type === "local") return "Local";
   return "Unknown";
