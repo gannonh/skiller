@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("skiller", {
   getAppUpdateState: () => ipcRenderer.invoke("app-update:get-state"),
   checkAppUpdate: () => ipcRenderer.invoke("app-update:check"),
   installAppUpdate: () => ipcRenderer.invoke("app-update:install"),
+  openExternal: (url: string) => ipcRenderer.invoke("system:open-external", url),
   installLocal: () => ipcRenderer.invoke("library:install-local"),
   installGithub: (input: { githubUrl: string; githubPath?: string; ref?: string }) => ipcRenderer.invoke("library:install-github", input),
   discoverGithub: (githubUrl: string) => ipcRenderer.invoke("library:discover-github", githubUrl),

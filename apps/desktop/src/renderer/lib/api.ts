@@ -114,6 +114,7 @@ export interface SkillerApi {
   getAppUpdateState: () => Promise<AppUpdateState>;
   checkAppUpdate: () => Promise<AppUpdateState>;
   installAppUpdate: () => Promise<void>;
+  openExternal: (url: string) => Promise<void>;
   onAppUpdateState: (callback: (state: AppUpdateState) => void) => RemoveListener;
   onCheckUpdates: (callback: () => void) => RemoveListener;
   onScanError: (callback: (error: ScanError) => void) => RemoveListener;
@@ -558,6 +559,9 @@ function createBrowserPreviewApi(): SkillerApi {
     checkAppUpdate: async () => ({ status: "unsupported" }),
     installAppUpdate: async () => {
       throw new Error("App updates are not available in browser preview");
+    },
+    openExternal: async (url) => {
+      window.open(url, "_blank", "noopener,noreferrer");
     },
     onAppUpdateState: () => () => undefined,
     onCheckUpdates: () => () => undefined,

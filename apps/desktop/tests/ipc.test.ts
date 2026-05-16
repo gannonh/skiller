@@ -48,6 +48,9 @@ vi.mock("electron", () => ({
     handle: vi.fn((channel: string, handler: (...args: unknown[]) => Promise<unknown>) => {
       mocks.handlers.set(channel, handler);
     })
+  },
+  shell: {
+    openExternal: vi.fn()
   }
 }));
 
@@ -113,6 +116,48 @@ describe("ipc handlers", () => {
     await expect(mocks.handlers.get("app-update:check")?.({})).resolves.toEqual({ status: "checking" });
     await expect(mocks.handlers.get("app-update:install")?.({})).resolves.toBeUndefined();
     expect(appUpdateService.installReadyUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens validated http and https URLs externally", async () => {
+    const { shell } = await import("electron");
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    vi.mocked(shell.openExternal).mockResolvedValue(undefined);
+
+    registerIpcHandlers();
+    const handler = mocks.handlers.get("system:open-external");
+    expect(handler).toEqual(expect.any(Function));
+
+    await expect(handler?.({}, "https://github.com/example/skills")).resolves.toBeUndefined();
+    await expect(handler?.({}, "http://github.com/example/skills")).resolves.toBeUndefined();
+
+    expect(shell.openExternal).toHaveBeenNthCalledWith(1, "https://github.com/example/skills");
+    expect(shell.openExternal).toHaveBeenNthCalledWith(2, "http://github.com/example/skills");
+  });
+
+  it("rejects invalid external URL inputs", async () => {
+    const { shell } = await import("electron");
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+
+    registerIpcHandlers();
+    const handler = mocks.handlers.get("system:open-external");
+    expect(handler).toEqual(expect.any(Function));
+
+    await expect(handler?.({}, 42)).rejects.toThrow("External URL must be a string");
+    await expect(handler?.({}, "not a url")).rejects.toThrow("External URL is invalid");
+    await expect(handler?.({}, "file:///tmp/secret")).rejects.toThrow("External URL protocol must be http or https");
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+
+  it("propagates external URL open failures", async () => {
+    const { shell } = await import("electron");
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    vi.mocked(shell.openExternal).mockRejectedValue(new Error("open failed"));
+
+    registerIpcHandlers();
+    const handler = mocks.handlers.get("system:open-external");
+    expect(handler).toEqual(expect.any(Function));
+
+    await expect(handler?.({}, "https://github.com/example/skills")).rejects.toThrow("open failed");
   });
 
   it("asks before replacing a duplicate local skill and continues the same install when confirmed", async () => {
