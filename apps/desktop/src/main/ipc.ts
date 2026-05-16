@@ -101,6 +101,25 @@ async function installWithDuplicatePrompt<T>(install: (onDuplicateSkillName: Dup
   }
 }
 
+function validateExternalUrl(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new Error("External URL must be a string");
+  }
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("External URL is invalid");
+  }
+
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error("External URL protocol must be http or https");
+  }
+
+  return url.toString();
+}
+
 export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): void {
   ipcMain.handle("library:list", async () => {
     const config = await loadConfig();
@@ -289,8 +308,8 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     await dependencies.appUpdateService.installReadyUpdate();
   });
 
-  ipcMain.handle("system:open-external", async (_event, url: string) => {
-    await shell.openExternal(url);
+  ipcMain.handle("system:open-external", async (_event, url: unknown) => {
+    await shell.openExternal(validateExternalUrl(url));
   });
 
   ipcMain.handle("updates:apply", async (_event, skillId: string) => {
