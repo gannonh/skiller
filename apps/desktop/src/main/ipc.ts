@@ -1,4 +1,4 @@
-import { dialog, ipcMain } from "electron";
+import { dialog, ipcMain, shell } from "electron";
 import {
   DuplicateSkillNameError,
   MetadataStore,
@@ -287,6 +287,10 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
       throw new Error("App updates are not available");
     }
     await dependencies.appUpdateService.installReadyUpdate();
+  });
+
+  ipcMain.handle("system:open-external", async (_event, url: string) => {
+    await shell.openExternal(url);
   });
 
   ipcMain.handle("updates:apply", async (_event, skillId: string) => {
