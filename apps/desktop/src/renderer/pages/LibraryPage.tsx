@@ -28,7 +28,7 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import { skillerApi, type LibraryState, type SetSkillSetEnabledResult, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
-import { sourceDetail, sourceLabel } from "../lib/skill-source.js";
+import { sourceDetail, sourceLabel, sourceUrl } from "../lib/skill-source.js";
 import type { DiscoveredGithubSkill } from "@skiller/core";
 
 type SortColumn = "name" | "source" | "skillSet" | "status" | "enabled" | "actions";
@@ -176,6 +176,27 @@ export function sortSkills(
     const result = primary || fallback || left.id.localeCompare(right.id);
     return direction === "asc" ? result : -result;
   });
+}
+
+function SourceDetail({ skill }: { skill: SkillMetadata }) {
+  const detail = sourceDetail(skill);
+  const url = sourceUrl(skill);
+
+  if (!url) {
+    return <span className="max-w-80 truncate text-xs text-muted-foreground">{detail}</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      className="max-w-80 truncate text-left text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      title={detail}
+      aria-label={`Open source for ${skill.name || skill.id}`}
+      onClick={() => void skillerApi.openExternal(url)}
+    >
+      {detail}
+    </button>
+  );
 }
 
 function TagTokenInput({
@@ -872,7 +893,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                     <TableCell>
                       <div className="flex flex-col gap-1">
                         <Badge variant="secondary">{sourceLabel(skill)}</Badge>
-                        <span className="max-w-80 truncate text-xs text-muted-foreground">{sourceDetail(skill)}</span>
+                        <SourceDetail skill={skill} />
                       </div>
                     </TableCell>
                     <TableCell>
