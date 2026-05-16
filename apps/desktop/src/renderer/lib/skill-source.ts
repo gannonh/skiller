@@ -26,9 +26,10 @@ export function sourceUrl(skill: SkillMetadata): string | null {
   if (skill.source.type !== "github" && skill.source.type !== "skills.sh") return null;
 
   const githubUrl = skill.source.githubUrl.replace(/\/+$/g, "");
-  if (!skill.source.githubPath) return githubUrl;
+  const githubPath = encodeGithubPath(skill.source.githubPath ?? "");
+  const skillFilePath = githubPath ? `${githubPath}/SKILL.md` : "SKILL.md";
 
-  return `${githubUrl}/tree/${encodeGithubPath(skill.source.ref ?? "HEAD")}/${encodeGithubPath(skill.source.githubPath)}`;
+  return `${githubUrl}/blob/${encodeGithubPath(skill.source.ref ?? "HEAD")}/${skillFilePath}`;
 }
 
 export function isUpdateable(skill: SkillMetadata): boolean {

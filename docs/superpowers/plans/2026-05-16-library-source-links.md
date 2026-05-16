@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make GitHub-backed Library Source column URLs clickable and open them in the user's default browser.
+**Goal:** Make GitHub-backed Library Source column URLs clickable and open the source `SKILL.md` file in the user's default browser.
 
 **Architecture:** Keep URL derivation in the renderer source helper module so display and click behavior share the same source metadata. Use the existing preload IPC bridge to ask the Electron main process to open external URLs with `shell.openExternal`. Leave local and unknown sources as text-only rows.
 
@@ -36,13 +36,13 @@ import { sourceLabel, sourceUrl } from "../lib/skill-source.js";
 Add these tests inside `describe("LibraryPage helpers", () => { ... })`, near the existing source-label test:
 
 ```ts
-  it("derives clickable GitHub source URLs", () => {
+  it("derives clickable GitHub source URLs for SKILL.md files", () => {
     expect(
       sourceUrl({
         ...skill({ id: "github-root" }),
         source: { type: "github", githubUrl: "https://github.com/example/skills" }
       })
-    ).toBe("https://github.com/example/skills");
+    ).toBe("https://github.com/example/skills/blob/HEAD/SKILL.md");
 
     expect(
       sourceUrl({
@@ -54,10 +54,10 @@ Add these tests inside `describe("LibraryPage helpers", () => { ... })`, near th
           ref: "main"
         }
       })
-    ).toBe("https://github.com/example/skills/tree/main/skills/agent%20browser");
+    ).toBe("https://github.com/example/skills/blob/main/skills/agent%20browser/SKILL.md");
   });
 
-  it("derives clickable skills registry source URLs", () => {
+  it("derives clickable skills registry source URLs for SKILL.md files", () => {
     expect(
       sourceUrl({
         ...skill({ id: "registry" }),
@@ -68,7 +68,7 @@ Add these tests inside `describe("LibraryPage helpers", () => { ... })`, near th
           githubPath: "skills/registry"
         }
       })
-    ).toBe("https://github.com/example/skills/tree/HEAD/skills/registry");
+    ).toBe("https://github.com/example/skills/blob/HEAD/skills/registry/SKILL.md");
   });
 
   it("does not derive clickable URLs for local sources", () => {
@@ -107,9 +107,10 @@ export function sourceUrl(skill: SkillMetadata): string | null {
   if (skill.source.type !== "github" && skill.source.type !== "skills.sh") return null;
 
   const githubUrl = skill.source.githubUrl.replace(/\/+$/g, "");
-  if (!skill.source.githubPath) return githubUrl;
+  const githubPath = encodeGithubPath(skill.source.githubPath ?? "");
+  const skillFilePath = githubPath ? `${githubPath}/SKILL.md` : "SKILL.md";
 
-  return `${githubUrl}/tree/${encodeGithubPath(skill.source.ref ?? "HEAD")}/${encodeGithubPath(skill.source.githubPath)}`;
+  return `${githubUrl}/blob/${encodeGithubPath(skill.source.ref ?? "HEAD")}/${skillFilePath}`;
 }
 ```
 

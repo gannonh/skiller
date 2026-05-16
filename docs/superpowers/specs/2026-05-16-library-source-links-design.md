@@ -8,15 +8,16 @@ Make GitHub-backed Source column URLs in the Library clickable. Clicking the URL
 
 - Applies to installed skills with `source.type` of `github` or `skills.sh`.
 - Local and unknown sources remain plain text.
-- When a source has `githubPath`, the link opens the exact skill folder on GitHub.
-- When no `githubPath` exists, the link opens the repository URL.
+- When a source has `githubPath`, the link opens that skill's `SKILL.md` file on GitHub.
+- When no `githubPath` exists, the link opens the repository-root `SKILL.md` file on GitHub.
 
 ## Design
 
 Add a renderer helper that derives an external source URL from `SkillMetadata`:
 
 - `github` and `skills.sh` sources return a GitHub URL.
-- Sources with `githubPath` return `<githubUrl>/tree/<ref>/<githubPath>`.
+- Sources with `githubPath` return `<githubUrl>/blob/<ref>/<githubPath>/SKILL.md`.
+- Sources without `githubPath` return `<githubUrl>/blob/<ref>/SKILL.md`.
 - If `ref` is absent, use `HEAD`.
 - Local and unknown sources return `null`.
 
@@ -40,7 +41,7 @@ Update the Library Source column:
 
 Add helper tests for source URL generation, including:
 
-- GitHub repository root.
-- GitHub source with `githubPath` and `ref`.
-- skills.sh source with `githubPath` and missing `ref`, using `HEAD`.
+- GitHub repository-root `SKILL.md`.
+- GitHub source with `githubPath` and `ref`, resolving to `SKILL.md`.
+- skills.sh source with `githubPath` and missing `ref`, resolving to `SKILL.md` with `HEAD`.
 - Local source returning `null`.

@@ -145,13 +145,13 @@ describe("LibraryPage helpers", () => {
     ).toBe("Skills Registry");
   });
 
-  it("derives clickable GitHub source URLs", () => {
+  it("derives clickable GitHub source URLs for SKILL.md files", () => {
     expect(
       sourceUrl({
         ...skill({ id: "github-root" }),
         source: { type: "github", githubUrl: "https://github.com/example/skills" }
       })
-    ).toBe("https://github.com/example/skills");
+    ).toBe("https://github.com/example/skills/blob/HEAD/SKILL.md");
 
     expect(
       sourceUrl({
@@ -163,10 +163,10 @@ describe("LibraryPage helpers", () => {
           ref: "main"
         }
       })
-    ).toBe("https://github.com/example/skills/tree/main/skills/agent%20browser");
+    ).toBe("https://github.com/example/skills/blob/main/skills/agent%20browser/SKILL.md");
   });
 
-  it("derives clickable skills registry source URLs", () => {
+  it("derives clickable skills registry source URLs for SKILL.md files", () => {
     expect(
       sourceUrl({
         ...skill({ id: "registry" }),
@@ -177,7 +177,7 @@ describe("LibraryPage helpers", () => {
           githubPath: "skills/registry"
         }
       })
-    ).toBe("https://github.com/example/skills/tree/HEAD/skills/registry");
+    ).toBe("https://github.com/example/skills/blob/HEAD/skills/registry/SKILL.md");
   });
 
   it("does not derive clickable URLs for local sources", () => {
