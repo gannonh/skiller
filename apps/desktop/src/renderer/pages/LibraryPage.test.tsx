@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SkillMetadata, SkillSetMetadata } from "../lib/api.js";
-import { sourceLabel } from "../lib/skill-source.js";
+import { sourceLabel, sourceUrl } from "../lib/skill-source.js";
 import type { DiscoveredGithubSkill } from "@skiller/core";
 
 let helpers: typeof import("./LibraryPage.js");
@@ -143,6 +143,45 @@ describe("LibraryPage helpers", () => {
         source: { type: "skills.sh", skillsShId: "registry", githubUrl: "https://github.com/example/skills" }
       })
     ).toBe("Skills Registry");
+  });
+
+  it("derives clickable GitHub source URLs", () => {
+    expect(
+      sourceUrl({
+        ...skill({ id: "github-root" }),
+        source: { type: "github", githubUrl: "https://github.com/example/skills" }
+      })
+    ).toBe("https://github.com/example/skills");
+
+    expect(
+      sourceUrl({
+        ...skill({ id: "github-path" }),
+        source: {
+          type: "github",
+          githubUrl: "https://github.com/example/skills/",
+          githubPath: "skills/agent browser",
+          ref: "main"
+        }
+      })
+    ).toBe("https://github.com/example/skills/tree/main/skills/agent%20browser");
+  });
+
+  it("derives clickable skills registry source URLs", () => {
+    expect(
+      sourceUrl({
+        ...skill({ id: "registry" }),
+        source: {
+          type: "skills.sh",
+          skillsShId: "registry",
+          githubUrl: "https://github.com/example/skills",
+          githubPath: "skills/registry"
+        }
+      })
+    ).toBe("https://github.com/example/skills/tree/HEAD/skills/registry");
+  });
+
+  it("does not derive clickable URLs for local sources", () => {
+    expect(sourceUrl(skill({ id: "local" }))).toBeNull();
   });
 
   it("derives the GitHub sheet select-all checkbox state", () => {
