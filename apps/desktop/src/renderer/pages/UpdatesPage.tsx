@@ -61,6 +61,7 @@ export function UpdatesPage() {
   const [skills, setSkills] = useState<SkillMetadata[]>([]);
   const [available, setAvailable] = useState<UpdateCheckSkill[]>([]);
   const [updateErrors, setUpdateErrors] = useState<UpdateCheckError[]>([]);
+  const [isUpdatingAll, setIsUpdatingAll] = useState(false);
   const [updatingSkillIds, setUpdatingSkillIds] = useState<Set<string>>(() => new Set());
   const [updatedSkillIds, setUpdatedSkillIds] = useState<Set<string>>(() => new Set());
   const [sortColumn, setSortColumn] = useState<SortColumn>("name");
@@ -125,6 +126,48 @@ export function UpdatesPage() {
         return next;
       });
     }
+  }
+
+  async function updateAllSkills() {
+    const pending = available.filter((skill) => !updatingSkillIds.has(skill.id) && !updatedSkillIds.has(skill.id));
+    if (pending.length === 0 || isUpdatingAll) return;
+
+    setIsUpdatingAll(true);
+    setStatus(`Updating ${pending.length} skills`);
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const skill of pending) {
+      setUpdatingSkillIds((current) => new Set(current).add(skill.id));
+      try {
+        const metadata = await skillerApi.updateSkill(skill.id);
+        setSkills((current) => current.map((candidate) => (candidate.id === metadata.id ? metadata : candidate)));
+        setAvailable((current) => current.filter((candidate) => candidate.id !== skill.id));
+        setUpdateErrors((current) => current.filter((candidate) => candidate.id !== skill.id));
+        setUpdatedSkillIds((current) => new Set(current).add(skill.id));
+        succeeded += 1;
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        setUpdateErrors((current) => [
+          ...current.filter((candidate) => candidate.id !== skill.id),
+          { id: skill.id, message }
+        ]);
+        failed += 1;
+      } finally {
+        setUpdatingSkillIds((current) => {
+          const next = new Set(current);
+          next.delete(skill.id);
+          return next;
+        });
+      }
+    }
+
+    setStatus(
+      failed === 0
+        ? `Updated ${succeeded} skill${succeeded === 1 ? "" : "s"}`
+        : `Updated ${succeeded} skill${succeeded === 1 ? "" : "s"}, ${failed} failed`
+    );
+    setIsUpdatingAll(false);
   }
 
   const availableById = new Map(available.map((skill) => [skill.id, skill]));
@@ -205,14 +248,23 @@ export function UpdatesPage() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={checkUpdates} disabled={isChecking}>
+          <Button onClick={checkUpdates} disabled={isChecking || isUpdatingAll}>
             {isChecking ? "Checking" : "Check for Updates"}
           </Button>
+          {available.length > 0 ? (
+            <Button
+              variant="secondary"
+              disabled={isChecking || isUpdatingAll}
+              onClick={() => void updateAllSkills()}
+            >
+              {isUpdatingAll ? "Updating All" : "Update All"}
+            </Button>
+          ) : null}
           <span className="text-sm text-muted-foreground">{status}</span>
         </div>
         {updateErrors.length > 0 ? (
           <Alert variant="destructive">
-            <AlertTitle>Update check errors</AlertTitle>
+            <AlertTitle>Update errors</AlertTitle>
             <AlertDescription>
               <ul className="list-disc space-y-1 pl-4">
                 {updateErrors.map((error, index) => (
@@ -260,7 +312,7 @@ export function UpdatesPage() {
                       <Button
                         size="sm"
                         aria-label={`Update ${skill.name || skill.id}`}
-                        disabled={isUpdating}
+                        disabled={isUpdating || isUpdatingAll}
                         onClick={() => void updateSkill(update)}
                       >
                         {isUpdating ? "updating" : "update"}
