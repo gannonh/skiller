@@ -146,7 +146,12 @@ export function UpdatesPage() {
         setUpdateErrors((current) => current.filter((candidate) => candidate.id !== skill.id));
         setUpdatedSkillIds((current) => new Set(current).add(skill.id));
         succeeded += 1;
-      } catch {
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        setUpdateErrors((current) => [
+          ...current.filter((candidate) => candidate.id !== skill.id),
+          { id: skill.id, message }
+        ]);
         failed += 1;
       } finally {
         setUpdatingSkillIds((current) => {
@@ -259,7 +264,7 @@ export function UpdatesPage() {
         </div>
         {updateErrors.length > 0 ? (
           <Alert variant="destructive">
-            <AlertTitle>Update check errors</AlertTitle>
+            <AlertTitle>Update errors</AlertTitle>
             <AlertDescription>
               <ul className="list-disc space-y-1 pl-4">
                 {updateErrors.map((error, index) => (

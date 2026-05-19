@@ -753,6 +753,99 @@ test("shows update check errors without marking rows current", async ({ page }) 
   await expect(row.getByText("error")).toBeVisible();
   await expect(row.getByText("current")).toHaveCount(0);
   await expect(page.getByText(/1 errors/)).toBeVisible();
-  await expect(page.getByText("Update check errors")).toBeVisible();
+  await expect(page.getByText("Update errors")).toBeVisible();
   await expect(page.getByText("rate-limited: GitHub update check failed: 403 rate limit exceeded")).toBeVisible();
+});
+
+test("shows update all failures in the error list", async ({ page }) => {
+  await page.addInitScript(() => {
+    const skill = (id) => ({
+      id,
+      name: id,
+      libraryPath: `/tmp/${id}`,
+      source: {
+        type: "github",
+        githubUrl: "https://github.com/example/skills",
+        githubPath: `skills/${id}`,
+        ref: "HEAD",
+        commit: "abc123"
+      },
+      installedAt: "2026-05-11T00:00:00.000Z",
+      updatedAt: "2026-05-11T00:00:00.000Z",
+      keepUpdated: true,
+      enabled: true,
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+    const succeeds = skill("succeeds");
+    const fails = skill("fails");
+    const libraryState = { skills: [succeeds, fails], skillSets: [], tags: [] };
+    const available = [
+      { id: "succeeds", name: "succeeds", currentCommit: "abc123", remoteCommit: "def456" },
+      { id: "fails", name: "fails", currentCommit: "abc123", remoteCommit: "def456" }
+    ];
+    window.skiller = {
+      listLibrary: async () => libraryState,
+      setSkillEnabled: async () => libraryState,
+      deleteSkill: async () => libraryState,
+      scanTargets: async () => ({ imported: [], enabled: [], disabled: [], errors: [] }),
+      saveTargets: async (targets) => ({
+        libraryPath: "~/skiller",
+        targets,
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      getConfig: async () => ({
+        libraryPath: "~/skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      saveConfig: async () => ({
+        libraryPath: "~/skiller",
+        targets: [],
+        updateSchedule: { intervalHours: 24 },
+        keepAllSkillsUpdated: false,
+        launchAtLogin: false,
+        trayEnabled: true
+      }),
+      checkUpdates: async () => ({
+        checkedAt: "2026-05-11T00:00:00.000Z",
+        considered: available,
+        available,
+        updated: [],
+        errors: []
+      }),
+      updateSkill: async (skillId) => {
+        if (skillId === "fails") throw new Error("network timeout");
+        return succeeds;
+      },
+      installLocal: async () => null,
+      installGithub: async () => succeeds,
+      discoverGithub: async () => ({ repositoryOnly: false, githubUrl: "", ref: "", commit: "", skills: [] }),
+      installRegistry: async () => succeeds,
+      leaderboard: async () => ({ skills: [] }),
+      search: async () => ({ skills: [] }),
+      registrySkill: async () => ({}),
+      registryAudit: async () => ({}),
+      onCheckUpdates: () => () => undefined,
+      onScanError: () => () => undefined
+    };
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Updates", exact: true }).click();
+  await page.getByRole("button", { name: "Check for Updates" }).click();
+  await page.getByRole("button", { name: "Update All" }).click();
+
+  await expect(page.getByText("Updated 1 skill, 1 failed")).toBeVisible();
+  await expect(page.getByText("Update errors")).toBeVisible();
+  await expect(page.getByText("fails: network timeout")).toBeVisible();
+  await expect(page.getByRole("row", { name: /succeeds/ }).getByRole("button", { name: "updated" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /fails/ }).getByText("error")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update All" })).toBeVisible();
 });
