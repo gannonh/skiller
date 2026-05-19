@@ -659,6 +659,22 @@ test("updates an available skill from the Updates page", async ({ page }) => {
   await expect(page.getByRole("row", { name: /agent-browser/ }).getByText("current")).toBeVisible();
 });
 
+test("updates all available skills from the Updates page", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByRole("row", { name: /agent-browser/ }).getByRole("button", { name: "Install" }).click();
+  await page.getByRole("row", { name: /find-skills/ }).getByRole("button", { name: "Install" }).click();
+  await page.getByRole("button", { name: "Updates", exact: true }).click();
+  await page.getByRole("button", { name: "Check for Updates" }).click();
+
+  await expect(page.getByRole("button", { name: "Update All" })).toBeVisible();
+  await page.getByRole("button", { name: "Update All" }).click();
+
+  await expect(page.getByRole("row", { name: /agent-browser/ }).getByRole("button", { name: "updated" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /find-skills/ }).getByRole("button", { name: "updated" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update All" })).toHaveCount(0);
+});
+
 test("shows update check errors without marking rows current", async ({ page }) => {
   await page.addInitScript(() => {
     const skill = {
