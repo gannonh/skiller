@@ -258,6 +258,8 @@ describe("discoverGithubSkills", () => {
     const emptyPath = await fs.mkdtemp(path.join(os.tmpdir(), "skiller-empty-path-"));
     tempRoots.push(emptyPath);
     vi.stubEnv("PATH", emptyPath);
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GH_TOKEN", "");
     vi.stubEnv("SKILLER_GH_PATH", path.join(emptyPath, "gh"));
     const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
@@ -288,6 +290,8 @@ describe("discoverGithubSkills", () => {
     await fs.writeFile(ghPath, "#!/bin/sh\nprintf token-from-gh\n");
     await fs.chmod(ghPath, 0o755);
     vi.stubEnv("PATH", binPath);
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GH_TOKEN", "");
     await vi.resetModules();
     const { discoverGithubSkills: freshDiscoverGithubSkills } = await import("./source-fetcher.js");
     const fetchImpl = mockFetch((url) => {
@@ -359,6 +363,8 @@ describe("discoverGithubSkills", () => {
     await fs.writeFile(ghPath, "#!/bin/sh\nexit 0\n");
     await fs.chmod(ghPath, 0o755);
     vi.stubEnv("PATH", binPath);
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GH_TOKEN", "");
     await vi.resetModules();
     const { discoverGithubSkills: freshDiscoverGithubSkills } = await import("./source-fetcher.js");
     const fetchImpl = mockFetch((url) => {
