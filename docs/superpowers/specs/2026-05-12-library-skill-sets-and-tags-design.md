@@ -164,3 +164,43 @@ Desktop tests should cover:
 - Multiple selected tag filters require all selected tags.
 - Organization data persists across app restarts.
 - Existing libraries load with empty sets and tags.
+
+## v2 Many-to-Many (2026-06-21)
+
+Skill sets now support many-to-many membership and per-set sync targets.
+
+### Data model
+
+```ts
+interface SkillSetMetadata {
+  id: string;
+  name: string;
+  skillIds: string[];
+  targets: TargetConfig[];
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+- Skills no longer store `skillSetId`.
+- Legacy manifests migrate `skillSetId` on skills into the matching set's `skillIds` on read.
+
+### Membership
+
+- A skill may belong to zero or more skill sets.
+- `setSkillMembership(skillId, skillSetIds)` replaces single-set assignment.
+- `saveSkillSet` creates or updates a set's name, members, and targets together.
+
+### Per-set targets and sync
+
+Each skill set may define its own `targets` list (same shape as global targets). On scan:
+
+- **Grouped skill** in sets with configured targets syncs to the union of enabled targets across those sets.
+- **Grouped skill** in sets with empty targets falls back to global enabled targets.
+- **Ungrouped skills** continue syncing to global enabled targets only.
+
+### UI
+
+- Create/edit skill sets via a modal with name, sortable skill picker, and target editor.
+- Per-skill **Skill Sets** button opens a membership modal for M2M toggles.
+- Inline create/rename forms and the per-row skill set `<select>` are removed.

@@ -3,12 +3,14 @@ import path from "node:path";
 import YAML from "yaml";
 import { copySkillToLibrary, hashDirectory, replaceWithSymlink } from "./file-ops.js";
 import { MetadataStore } from "./metadata-store.js";
-import type { SkillMetadata, TargetConfig } from "./types.js";
+import { isUngrouped } from "./skill-sets.js";
+import type { SkillMetadata, SkillSetMetadata, TargetConfig } from "./types.js";
 import { validateSkill } from "./validator.js";
 
 export interface ScanTargetsInput {
   libraryPath: string;
   targets: TargetConfig[];
+  skillSets?: SkillSetMetadata[];
 }
 
 export interface TargetSkillChange {
@@ -152,6 +154,49 @@ function changeKey(skillId: string, targetPath: string): string {
   return `${skillId}\0${targetPath}`;
 }
 
+function enabledTargetPaths(targets: TargetConfig[]): Set<string> {
+  return new Set(targets.filter((target) => target.enabled).map((target) => target.path));
+}
+
+function resolveTargetsForSkill(
+  skillId: string,
+  skillSets: SkillSetMetadata[],
+  globalTargets: TargetConfig[]
+): Set<string> {
+  if (isUngrouped(skillId, skillSets)) {
+    return enabledTargetPaths(globalTargets);
+  }
+
+  const memberSets = skillSets.filter((skillSet) => skillSet.skillIds.includes(skillId));
+  const setTargetPaths = new Set(
+    memberSets.flatMap((skillSet) => skillSet.targets.filter((target) => target.enabled).map((target) => target.path))
+  );
+
+  if (setTargetPaths.size > 0) {
+    return setTargetPaths;
+  }
+
+  return enabledTargetPaths(globalTargets);
+}
+
+function allScanTargets(globalTargets: TargetConfig[], skillSets: SkillSetMetadata[]): TargetConfig[] {
+  const byPath = new Map<string, TargetConfig>();
+
+  for (const target of globalTargets) {
+    byPath.set(target.path, target);
+  }
+
+  for (const skillSet of skillSets) {
+    for (const target of skillSet.targets) {
+      if (!byPath.has(target.path)) {
+        byPath.set(target.path, target);
+      }
+    }
+  }
+
+  return uniqueTargets([...byPath.values()]);
+}
+
 export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsResult> {
   if (!path.isAbsolute(input.libraryPath)) {
     throw new Error("Library path must be absolute before scanning targets");
@@ -159,11 +204,13 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
   const store = new MetadataStore(input.libraryPath);
   const records = await store.list();
+  const skillSets = input.skillSets ?? (await store.libraryState()).skillSets;
   const imported: SkillMetadata[] = [];
   const enabled: TargetSkillChange[] = [];
   const disabled: TargetSkillChange[] = [];
   const errors: Array<{ path: string; message: string }> = [];
-  const targets = uniqueTargets(input.targets);
+  const globalTargets = uniqueTargets(input.targets);
+  const targets = allScanTargets(globalTargets, skillSets);
   const enabledChangeKeys = new Set<string>();
   const disabledChangeKeys = new Set<string>();
   let metadataByRealLibraryPath: Map<string, SkillMetadata> | undefined;
@@ -333,6 +380,12 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
         if (!targetEnabled || !metadata.enabled) {
           await removeManagedSymlink(targetSkillPath, targetDir, metadata);
+          continue;
+        }
+
+        const allowedTargets = resolveTargetsForSkill(metadata.id, skillSets, globalTargets);
+        if (!allowedTargets.has(targetDir)) {
+          await removeManagedSymlink(targetSkillPath, targetDir, metadata);
         }
       } catch (error) {
         if (isMissingPathError(error)) continue;
@@ -345,6 +398,9 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
     for (const record of records) {
       if (!record.enabled) continue;
       if (!(await fs.pathExists(record.libraryPath))) continue;
+
+      const allowedTargets = resolveTargetsForSkill(record.id, skillSets, globalTargets);
+      if (!allowedTargets.has(targetDir)) continue;
 
       try {
         await ensureManagedSymlink(record, targetDir);

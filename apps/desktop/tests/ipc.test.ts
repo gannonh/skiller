@@ -95,7 +95,8 @@ describe("ipc handlers", () => {
     expect(mocks.setSkillSetEnabled).toHaveBeenCalledWith("automation", false);
     expect(mocks.scanTargets).toHaveBeenCalledWith({
       libraryPath: "/home/test/skiller",
-      targets: [{ path: "/home/test/skills", enabled: true }]
+      targets: [{ path: "/home/test/skills", enabled: true }],
+      skillSets: []
     });
     expect(result).toEqual({
       state: mocks.libraryState,

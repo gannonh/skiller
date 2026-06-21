@@ -27,11 +27,20 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
-import { skillerApi, type LibraryState, type SetSkillSetEnabledResult, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
+import { skillerApi, type LibraryState, type SaveSkillSetInput, type SetSkillSetEnabledResult, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
 import { sourceDetail, sourceLabel, sourceUrl } from "../lib/skill-source.js";
 import type { DiscoveredGithubSkill } from "@skiller/core";
+import { SkillMembershipDialog } from "../components/library/SkillMembershipDialog.js";
+import { SkillSetEditorDialog } from "../components/library/SkillSetEditorDialog.js";
+import {
+  filterLibrarySkills,
+  skillSetIdsForSkill,
+  skillSetState,
+  sortSkills,
+  type SkillPickerSortColumn
+} from "../components/library/library-helpers.js";
 
-type SortColumn = "name" | "source" | "skillSet" | "status" | "enabled" | "actions";
+type SortColumn = SkillPickerSortColumn | "actions";
 type SortDirection = "asc" | "desc";
 
 export type SetFilter = { type: "all" } | { type: "ungrouped" } | { type: "set"; skillSetId: string };
@@ -89,23 +98,19 @@ export function tagAutocompleteOptions(knownTags: string[], selectedTags: string
   return knownTags.filter((tag) => !selected.has(tag) && tag.includes(normalizedQuery)).slice(0, 6);
 }
 
-export function skillSetState(skills: SkillMetadata[], skillSetId: string): "on" | "off" | "mixed" {
-  const members = skills.filter((skill) => skill.skillSetId === skillSetId);
-  if (members.length === 0 || members.every((skill) => !skill.enabled)) return "off";
-  if (members.every((skill) => skill.enabled)) return "on";
-  return "mixed";
+export function skillSetStateForId(skills: SkillMetadata[], skillSets: SkillSetMetadata[], skillSetId: string): "on" | "off" | "mixed" {
+  const skillSet = skillSets.find((candidate) => candidate.id === skillSetId);
+  if (!skillSet) return "off";
+  return skillSetState(skills, skillSet);
 }
 
-export function filterLibrarySkills(
+export function filterLibrarySkillsForState(
   skills: SkillMetadata[],
   setFilter: SetFilter,
-  selectedTags: string[]
+  selectedTags: string[],
+  skillSets: SkillSetMetadata[]
 ): SkillMetadata[] {
-  return skills.filter((skill) => {
-    if (setFilter.type === "ungrouped" && skill.skillSetId) return false;
-    if (setFilter.type === "set" && skill.skillSetId !== setFilter.skillSetId) return false;
-    return selectedTags.every((tag) => skill.tags.includes(tag));
-  });
+  return filterLibrarySkills(skills, setFilter, selectedTags, skillSets);
 }
 
 export function filterAfterDeletingSkillSet(currentFilter: SetFilter, skillSetId: string): SetFilter {
@@ -144,38 +149,34 @@ function statusLabel(skill: SkillMetadata): string {
   return skill.validation?.valid ? "valid" : "invalid";
 }
 
-function skillSetSortLabel(skill: SkillMetadata, skillSets: SkillSetMetadata[]): string {
-  if (!skill.skillSetId) return "\uffff";
-  return skillSets.find((skillSet) => skillSet.id === skill.skillSetId)?.name ?? skill.skillSetId;
-}
-
-function sortValue(skill: SkillMetadata, column: SortColumn, skillSets: SkillSetMetadata[]): string {
+function sortValue(skill: SkillMetadata, column: SortColumn): string {
   if (column === "name") return skill.name || skill.id;
   if (column === "source") return `${sourceLabel(skill)} ${sourceDetail(skill)}`;
-  if (column === "skillSet") return skillSetSortLabel(skill, skillSets);
   if (column === "status") return statusLabel(skill);
   if (column === "enabled") return skill.enabled ? "enabled" : "disabled";
   return `${skill.name || skill.id} ${skill.id}`;
 }
 
-export function sortSkills(
+export function sortSkillsForLibrary(
   skills: SkillMetadata[],
   column: SortColumn,
-  direction: SortDirection,
-  skillSets: SkillSetMetadata[] = []
+  direction: SortDirection
 ): SkillMetadata[] {
-  return [...skills].sort((left, right) => {
-    const primary = sortValue(left, column, skillSets).localeCompare(sortValue(right, column, skillSets), undefined, {
-      numeric: true,
-      sensitivity: "base"
+  if (column === "actions") {
+    return [...skills].sort((left, right) => {
+      const primary = sortValue(left, column).localeCompare(sortValue(right, column), undefined, {
+        numeric: true,
+        sensitivity: "base"
+      });
+      const fallback = (left.name || left.id).localeCompare(right.name || right.id, undefined, {
+        numeric: true,
+        sensitivity: "base"
+      });
+      const result = primary || fallback || left.id.localeCompare(right.id);
+      return direction === "asc" ? result : -result;
     });
-    const fallback = (left.name || left.id).localeCompare(right.name || right.id, undefined, {
-      numeric: true,
-      sensitivity: "base"
-    });
-    const result = primary || fallback || left.id.localeCompare(right.id);
-    return direction === "asc" ? result : -result;
-  });
+  }
+  return sortSkills(skills, column, direction);
 }
 
 function SourceDetail({ skill }: { skill: SkillMetadata }) {
@@ -352,9 +353,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [setFilter, setSetFilter] = useState<SetFilter>({ type: "all" });
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [newSkillSetName, setNewSkillSetName] = useState("");
-  const [renamingSkillSetId, setRenamingSkillSetId] = useState<string | null>(null);
-  const [renamingSkillSetName, setRenamingSkillSetName] = useState("");
+  const [skillSetEditorOpen, setSkillSetEditorOpen] = useState(false);
+  const [editingSkillSet, setEditingSkillSet] = useState<SkillSetMetadata | null>(null);
+  const [membershipDialogSkillId, setMembershipDialogSkillId] = useState<string | null>(null);
   const [editingTagSkillId, setEditingTagSkillId] = useState<string | null>(null);
   const [draftTags, setDraftTags] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState("");
@@ -389,12 +390,12 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
 
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
   const filteredSkills = useMemo(
-    () => filterLibrarySkills(skills, setFilter, selectedTags),
-    [skills, setFilter, selectedTags]
+    () => filterLibrarySkillsForState(skills, setFilter, selectedTags, libraryState.skillSets),
+    [skills, setFilter, selectedTags, libraryState.skillSets]
   );
   const sortedSkills = useMemo(
-    () => sortSkills(filteredSkills, sortColumn, sortDirection, libraryState.skillSets),
-    [filteredSkills, sortColumn, sortDirection, libraryState.skillSets]
+    () => sortSkillsForLibrary(filteredSkills, sortColumn, sortDirection),
+    [filteredSkills, sortColumn, sortDirection]
   );
   const selectedGithubSkills = useMemo(
     () => githubChoices.filter((skill) => selectedGithubPaths.has(skill.path)),
@@ -446,9 +447,14 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setSelectedTags((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]));
   }
 
-  function beginRenamingSkillSet(skillSetId: string, name: string) {
-    setRenamingSkillSetId(skillSetId);
-    setRenamingSkillSetName(name);
+  function openCreateSkillSet() {
+    setEditingSkillSet(null);
+    setSkillSetEditorOpen(true);
+  }
+
+  function openEditSkillSet(skillSet: SkillSetMetadata) {
+    setEditingSkillSet(skillSet);
+    setSkillSetEditorOpen(true);
   }
 
   async function refreshLibrary() {
@@ -593,34 +599,29 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setIsOrganizing(false);
   }
 
-  async function createSkillSet(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (newSkillSetName.trim() === "") return;
+  async function saveSkillSet(input: SaveSkillSetInput) {
     if (!beginOrganizationMutation()) return;
     setError(null);
     try {
-      const updatedState = await skillerApi.createSkillSet(newSkillSetName);
+      const updatedState = await skillerApi.saveSkillSet(input);
       setLibraryState(updatedState);
-      setNewSkillSetName("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+      throw caught;
     } finally {
       finishOrganizationMutation();
     }
   }
 
-  async function renameSkillSet(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!renamingSkillSetId || renamingSkillSetName.trim() === "") return;
+  async function saveSkillMembership(skillId: string, skillSetIds: string[]) {
     if (!beginOrganizationMutation()) return;
     setError(null);
     try {
-      const updatedState = await skillerApi.renameSkillSet(renamingSkillSetId, renamingSkillSetName);
+      const updatedState = await skillerApi.setSkillMembership(skillId, skillSetIds);
       setLibraryState(updatedState);
-      setRenamingSkillSetId(null);
-      setRenamingSkillSetName("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+      throw caught;
     } finally {
       finishOrganizationMutation();
     }
@@ -640,18 +641,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     }
   }
 
-  async function assignSkillSet(skillId: string, skillSetId: string) {
-    if (!beginOrganizationMutation()) return;
-    setError(null);
-    try {
-      const updatedState = await skillerApi.assignSkillSet(skillId, skillSetId === "none" ? undefined : skillSetId);
-      setLibraryState(updatedState);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      finishOrganizationMutation();
-    }
-  }
+  const membershipDialogSkill = membershipDialogSkillId
+    ? skills.find((skill) => skill.id === membershipDialogSkillId)
+    : undefined;
 
   async function saveSkillTags(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -673,7 +665,8 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
 
   async function setWholeSetEnabled(skillSetId: string, enabled: boolean) {
     if (!beginOrganizationMutation()) return;
-    const memberIds = skills.filter((skill) => skill.skillSetId === skillSetId).map((skill) => skill.id);
+    const skillSet = libraryState.skillSets.find((candidate) => candidate.id === skillSetId);
+    const memberIds = skillSet?.skillIds ?? [];
     setPendingSkillIds((current) => new Set([...current, ...memberIds]));
     setError(null);
     try {
@@ -788,49 +781,15 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
               ) : null}
             </div>
             <div className="flex flex-col gap-3 rounded-md border p-3">
-              <form className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_auto]" onSubmit={createSkillSet}>
-                <Input
-                  value={newSkillSetName}
-                  onChange={(event) => setNewSkillSetName(event.target.value)}
-                  aria-label="New skill set name"
-                  placeholder="New skill set"
-                  disabled={isOrganizing}
-                />
-                <Button type="submit" disabled={isOrganizing || newSkillSetName.trim() === ""}>
-                  Create set
-                </Button>
-              </form>
-              {renamingSkillSetId ? (
-                <form className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_auto_auto]" onSubmit={renameSkillSet}>
-                  <Input
-                    value={renamingSkillSetName}
-                    onChange={(event) => setRenamingSkillSetName(event.target.value)}
-                    aria-label="Rename skill set"
-                    disabled={isOrganizing}
-                  />
-                  <Button type="submit" disabled={isOrganizing || renamingSkillSetName.trim() === ""}>
-                    Rename
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isOrganizing}
-                    onClick={() => {
-                      setRenamingSkillSetId(null);
-                      setRenamingSkillSetName("");
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </form>
-              ) : null}
+              <Button type="button" disabled={isOrganizing} onClick={openCreateSkillSet}>
+                Create New Skill Set
+              </Button>
               {libraryState.skillSets.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   {libraryState.skillSets.map((skillSet) => {
-                    const members = skills.filter((skill) => skill.skillSetId === skillSet.id);
-                    const state = skillSetState(skills, skillSet.id);
-                    const hasPendingMember = members.some((skill) => pendingSkillIds.has(skill.id));
-                    const disabled = members.length === 0 || hasPendingMember || isOrganizing;
+                    const state = skillSetStateForId(skills, libraryState.skillSets, skillSet.id);
+                    const hasPendingMember = skillSet.skillIds.some((skillId) => pendingSkillIds.has(skillId));
+                    const disabled = skillSet.skillIds.length === 0 || hasPendingMember || isOrganizing;
 
                     return (
                       <div
@@ -839,7 +798,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       >
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="truncate">{skillSet.name}</span>
-                          <Badge variant="secondary">{members.length === 0 ? "empty" : `${members.length} members`}</Badge>
+                          <Badge variant="secondary">
+                            {skillSet.skillIds.length === 0 ? "empty" : `${skillSet.skillIds.length} members`}
+                          </Badge>
                           <Badge variant="outline">{state}</Badge>
                         </div>
                         <Switch
@@ -853,10 +814,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                           variant="outline"
                           size="sm"
                           disabled={isOrganizing}
-                          aria-label={`Rename ${skillSet.name}`}
-                          onClick={() => beginRenamingSkillSet(skillSet.id, skillSet.name)}
+                          aria-label={`Edit ${skillSet.name}`}
+                          onClick={() => openEditSkillSet(skillSet)}
                         >
-                          Rename
+                          Edit
                         </Button>
                         <Button
                           type="button"
@@ -879,7 +840,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                 <TableRow>
                   <SortableTableHead column="name">Name</SortableTableHead>
                   <SortableTableHead column="source">Source</SortableTableHead>
-                  <SortableTableHead column="skillSet">Skill Set</SortableTableHead>
+                  <TableHead>Skill Sets</TableHead>
                   <TableHead>Tags</TableHead>
                   <SortableTableHead column="status">Status</SortableTableHead>
                   <SortableTableHead column="enabled">Enabled</SortableTableHead>
@@ -897,20 +858,19 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       </div>
                     </TableCell>
                     <TableCell>
-                      <select
-                        className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                        value={skill.skillSetId ?? "none"}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         disabled={isOrganizing || pendingSkillIds.has(skill.id)}
-                        aria-label={`Set for ${skill.name || skill.id}`}
-                        onChange={(event) => void assignSkillSet(skill.id, event.target.value)}
+                        aria-label={`Manage skill sets for ${skill.name || skill.id}`}
+                        onClick={() => setMembershipDialogSkillId(skill.id)}
                       >
-                        <option value="none">none</option>
-                        {libraryState.skillSets.map((skillSet) => (
-                          <option key={skillSet.id} value={skillSet.id}>
-                            {skillSet.name}
-                          </option>
-                        ))}
-                      </select>
+                        {(() => {
+                          const count = skillSetIdsForSkill(skill.id, libraryState.skillSets).length;
+                          return count === 0 ? "Skill Sets" : `${count} sets`;
+                        })()}
+                      </Button>
                     </TableCell>
                     <TableCell>
                       {editingTagSkillId === skill.id ? (
@@ -1088,6 +1048,25 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
           </SheetFooter>
         </SheetContent>
       </Sheet>
+      <SkillSetEditorDialog
+        open={skillSetEditorOpen}
+        skillSet={editingSkillSet}
+        skills={skills}
+        disabled={isOrganizing}
+        onOpenChange={setSkillSetEditorOpen}
+        onSave={saveSkillSet}
+      />
+      <SkillMembershipDialog
+        open={membershipDialogSkillId !== null}
+        skillId={membershipDialogSkillId}
+        skillName={membershipDialogSkill?.name || membershipDialogSkill?.id || "skill"}
+        skillSets={libraryState.skillSets}
+        disabled={isOrganizing}
+        onOpenChange={(open) => {
+          if (!open) setMembershipDialogSkillId(null);
+        }}
+        onSave={saveSkillMembership}
+      />
     </Card>
   );
 }

@@ -49,7 +49,6 @@ export interface SkillMetadata {
   contentHash?: string;
   keepUpdated: boolean;
   enabled: boolean;
-  skillSetId?: string;
   tags: string[];
   validation: ValidationResult;
 }
@@ -57,6 +56,8 @@ export interface SkillMetadata {
 export interface SkillSetMetadata {
   id: string;
   name: string;
+  skillIds: string[];
+  targets: TargetConfig[];
   createdAt: string;
   updatedAt: string;
 }

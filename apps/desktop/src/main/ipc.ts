@@ -58,18 +58,28 @@ function changedTargets(currentTargets: TargetConfig[], nextTargets: TargetConfi
 }
 
 async function scanConfig(config: SkillerConfig, extraTargets: TargetConfig[] = []) {
+  const libraryPath = expandHome(config.libraryPath);
+  const store = new MetadataStore(libraryPath);
+  const { skillSets } = await store.libraryState();
+
   return scanTargets({
-    libraryPath: expandHome(config.libraryPath),
-    targets: [...expandTargets(config.targets), ...extraTargets]
+    libraryPath,
+    targets: [...expandTargets(config.targets), ...extraTargets],
+    skillSets
   });
 }
 
 async function scanTargetsForConfig(config: SkillerConfig, targets: TargetConfig[]) {
   if (targets.length === 0) return;
 
+  const libraryPath = expandHome(config.libraryPath);
+  const store = new MetadataStore(libraryPath);
+  const { skillSets } = await store.libraryState();
+
   await scanTargets({
-    libraryPath: expandHome(config.libraryPath),
-    targets: expandTargets(targets)
+    libraryPath,
+    targets: expandTargets(targets),
+    skillSets
   });
 }
 
@@ -139,20 +149,22 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     return store.libraryState();
   });
 
-  ipcMain.handle("library:create-skill-set", async (_event, name: string) => {
+  ipcMain.handle("library:save-skill-set", async (_event, input: import("@skiller/core").SaveSkillSetInput) => {
     const config = await loadConfig();
     const store = new MetadataStore(expandHome(config.libraryPath));
 
-    await store.createSkillSet(name);
+    await store.saveSkillSet(input);
+    await scanConfig(config);
     return store.libraryState();
   });
 
-  ipcMain.handle("library:rename-skill-set", async (_event, skillSetId: string, name: string) => {
+  ipcMain.handle("library:set-skill-membership", async (_event, skillId: string, skillSetIds: string[]) => {
     const config = await loadConfig();
     const store = new MetadataStore(expandHome(config.libraryPath));
 
-    await store.renameSkillSet(skillSetId, name);
-    return store.libraryState();
+    const state = await store.setSkillMembership(skillId, skillSetIds);
+    await scanConfig(config);
+    return state;
   });
 
   ipcMain.handle("library:delete-skill-set", async (_event, skillSetId: string) => {
@@ -160,14 +172,6 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     const store = new MetadataStore(expandHome(config.libraryPath));
 
     await store.deleteSkillSet(skillSetId);
-    return store.libraryState();
-  });
-
-  ipcMain.handle("library:assign-skill-set", async (_event, skillId: string, skillSetId?: string) => {
-    const config = await loadConfig();
-    const store = new MetadataStore(expandHome(config.libraryPath));
-
-    await store.assignSkillSet(skillId, skillSetId);
     return store.libraryState();
   });
 

@@ -115,33 +115,42 @@ test("manages skill sets and tag filters from the library", async ({ page }) => 
     };
     window.skiller = {
       listLibrary: async () => state,
-      createSkillSet: async (name) => {
-        state.skillSets.push({
-          id: name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "") || "skill-set",
-          name: name.trim(),
-          createdAt: "2026-05-12T00:00:00.000Z",
-          updatedAt: "2026-05-12T00:00:00.000Z"
-        });
+      saveSkillSet: async (input) => {
+        const now = "2026-05-12T00:00:00.000Z";
+        if (input.id) {
+          const skillSet = state.skillSets.find((candidate) => candidate.id === input.id);
+          if (skillSet) {
+            skillSet.name = input.name.trim();
+            skillSet.skillIds = [...input.skillIds];
+            skillSet.targets = input.targets.map((target) => ({ ...target }));
+            skillSet.updatedAt = now;
+          }
+        } else {
+          state.skillSets.push({
+            id: input.name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "") || "skill-set",
+            name: input.name.trim(),
+            skillIds: [...input.skillIds],
+            targets: input.targets.map((target) => ({ ...target })),
+            createdAt: now,
+            updatedAt: now
+          });
+        }
         return state;
       },
-      renameSkillSet: async (skillSetId, name) => {
-        const skillSet = state.skillSets.find((candidate) => candidate.id === skillSetId);
-        if (skillSet) skillSet.name = name.trim();
+      setSkillMembership: async (skillId, skillSetIds) => {
+        const selected = new Set(skillSetIds);
+        for (const skillSet of state.skillSets) {
+          const shouldInclude = selected.has(skillSet.id);
+          const currentlyIncluded = skillSet.skillIds.includes(skillId);
+          if (shouldInclude === currentlyIncluded) continue;
+          skillSet.skillIds = shouldInclude
+            ? [...skillSet.skillIds, skillId]
+            : skillSet.skillIds.filter((id) => id !== skillId);
+        }
         return state;
       },
       deleteSkillSet: async (skillSetId) => {
         state.skillSets = state.skillSets.filter((candidate) => candidate.id !== skillSetId);
-        for (const candidate of state.skills) {
-          if (candidate.skillSetId === skillSetId) delete candidate.skillSetId;
-        }
-        return state;
-      },
-      assignSkillSet: async (skillId, skillSetId) => {
-        const target = state.skills.find((candidate) => candidate.id === skillId);
-        if (target) {
-          if (skillSetId) target.skillSetId = skillSetId;
-          else delete target.skillSetId;
-        }
         return state;
       },
       replaceSkillTags: async (skillId, tags) => {
@@ -151,8 +160,11 @@ test("manages skill sets and tag filters from the library", async ({ page }) => 
         return state;
       },
       setSkillSetEnabled: async (skillSetId, enabled) => {
-        for (const candidate of state.skills) {
-          if (candidate.skillSetId === skillSetId) candidate.enabled = enabled;
+        const skillSet = state.skillSets.find((candidate) => candidate.id === skillSetId);
+        if (skillSet) {
+          for (const candidate of state.skills) {
+            if (skillSet.skillIds.includes(candidate.id)) candidate.enabled = enabled;
+          }
         }
         return { state, scanErrors: [] };
       }
@@ -160,14 +172,19 @@ test("manages skill sets and tag filters from the library", async ({ page }) => 
   });
   await page.goto("/");
 
-  await page.getByLabel("New skill set name").fill("Agent v1.0");
-  await page.getByRole("button", { name: "Create set" }).click();
+  await page.getByRole("button", { name: "Create New Skill Set" }).click();
+  await page.locator("#skill-set-name").fill("Agent v1.0");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("button", { name: "Agent v1.0", exact: true })).toHaveAttribute("aria-pressed", "false");
 
-  await page.getByLabel("Set for alpha-skill").selectOption("agent-v1.0");
-  await page.getByLabel("Set for beta-skill").selectOption("agent-v1.0");
-  await expect(page.getByText("2 members")).toBeVisible();
-  await expect(page.getByText("mixed")).toBeVisible();
+  await page.getByRole("button", { name: "Manage skill sets for alpha-skill" }).click();
+  await page.getByRole("checkbox", { name: /Agent v1\.0/ }).check();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Manage skill sets for beta-skill" }).click();
+  await page.getByRole("checkbox", { name: /Agent v1\.0/ }).check();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator('[data-slot="badge"]').filter({ hasText: "2 members" })).toBeVisible();
+  await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^mixed$/ })).toBeVisible();
 
   await page.getByRole("button", { name: "browser" }).click();
   await page.getByRole("button", { name: "testing" }).click();
@@ -182,14 +199,14 @@ test("manages skill sets and tag filters from the library", async ({ page }) => 
   await page.getByLabel("Enable Agent v1.0").click();
   await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^on$/ })).toBeVisible();
 
-  await page.getByRole("button", { name: "Rename Agent v1.0" }).click();
-  await page.getByLabel("Rename skill set").fill("Runtime");
-  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await page.getByRole("button", { name: "Edit Agent v1.0" }).click();
+  await page.locator("#skill-set-name").fill("Runtime");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("button", { name: "Runtime", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Delete Runtime" }).click();
   await expect(page.getByRole("button", { name: "Runtime", exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Set for alpha-skill")).toHaveValue("none");
+  await expect(page.getByRole("button", { name: "1 sets" })).toHaveCount(0);
 });
 
 test("deletes a library skill from the browser preview API", async ({ page }) => {

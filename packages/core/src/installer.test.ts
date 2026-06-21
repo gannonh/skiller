@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installGithubSkill, installLocalSkill, installSkillsShSkill, updateInstalledSkill } from "./installer.js";
+import { MetadataStore } from "./metadata-store.js";
 
 let tmp: string;
 
@@ -667,6 +668,8 @@ describe("updateInstalledSkill", () => {
         {
           id: "automation",
           name: "Automation",
+          skillIds: ["browser"],
+          targets: [],
           createdAt: "2026-05-12T00:00:00.000Z",
           updatedAt: "2026-05-12T00:00:00.000Z"
         }
@@ -687,7 +690,6 @@ describe("updateInstalledSkill", () => {
           installedAt: "2026-05-09T00:00:00.000Z",
           keepUpdated: true,
           enabled: true,
-          skillSetId: "automation",
           tags: ["browser", "testing"],
           validation: { valid: true, issues: [] }
         }
@@ -717,8 +719,10 @@ describe("updateInstalledSkill", () => {
 
     expect(updated).toMatchObject({
       id: "browser",
-      skillSetId: "automation",
       tags: ["browser", "testing"]
+    });
+    await expect(new MetadataStore(library).libraryState()).resolves.toMatchObject({
+      skillSets: [{ id: "automation", skillIds: ["browser"] }]
     });
   });
 

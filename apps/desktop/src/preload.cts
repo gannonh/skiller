@@ -6,10 +6,11 @@ contextBridge.exposeInMainWorld("skiller", {
   listLibrary: () => ipcRenderer.invoke("library:list"),
   setSkillEnabled: (skillId: string, enabled: boolean) => ipcRenderer.invoke("library:set-enabled", skillId, enabled),
   deleteSkill: (skillId: string) => ipcRenderer.invoke("library:delete", skillId),
-  createSkillSet: (name: string) => ipcRenderer.invoke("library:create-skill-set", name),
-  renameSkillSet: (skillSetId: string, name: string) => ipcRenderer.invoke("library:rename-skill-set", skillSetId, name),
+  saveSkillSet: (input: { id?: string; name: string; skillIds: string[]; targets: Array<{ path: string; enabled: boolean }> }) =>
+    ipcRenderer.invoke("library:save-skill-set", input),
+  setSkillMembership: (skillId: string, skillSetIds: string[]) =>
+    ipcRenderer.invoke("library:set-skill-membership", skillId, skillSetIds),
   deleteSkillSet: (skillSetId: string) => ipcRenderer.invoke("library:delete-skill-set", skillSetId),
-  assignSkillSet: (skillId: string, skillSetId?: string) => ipcRenderer.invoke("library:assign-skill-set", skillId, skillSetId),
   replaceSkillTags: (skillId: string, tags: string[]) => ipcRenderer.invoke("library:replace-skill-tags", skillId, tags),
   setSkillSetEnabled: (skillSetId: string, enabled: boolean) => ipcRenderer.invoke("library:set-skill-set-enabled", skillSetId, enabled),
   scanTargets: () => ipcRenderer.invoke("targets:scan"),

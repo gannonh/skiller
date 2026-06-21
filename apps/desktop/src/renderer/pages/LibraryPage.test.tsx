@@ -15,15 +15,16 @@ function skill(input: Partial<SkillMetadata> & { id: string }): SkillMetadata {
     keepUpdated: false,
     enabled: input.enabled ?? true,
     tags: input.tags ?? [],
-    ...(input.skillSetId ? { skillSetId: input.skillSetId } : {}),
     validation: { valid: true, issues: [] }
   };
 }
 
-function skillSet(id: string, name: string): SkillSetMetadata {
+function skillSet(id: string, name: string, skillIds: string[] = []): SkillSetMetadata {
   return {
     id,
     name,
+    skillIds,
+    targets: [],
     createdAt: "2026-05-12T00:00:00.000Z",
     updatedAt: "2026-05-12T00:00:00.000Z"
   };
@@ -58,59 +59,53 @@ describe("LibraryPage helpers", () => {
 
   it("filters by set ungrouped and all selected tags", () => {
     const skills = [
-      skill({ id: "one", skillSetId: "automation", tags: ["browser", "testing"] }),
+      skill({ id: "one", tags: ["browser", "testing"] }),
       skill({ id: "two", tags: ["browser"] }),
-      skill({ id: "three", skillSetId: "automation", tags: ["browser"] })
+      skill({ id: "three", tags: ["browser"] })
     ];
+    const skillSets = [skillSet("automation", "Automation", ["one", "three"])];
 
     expect(
-      helpers.filterLibrarySkills(skills, { type: "set", skillSetId: "automation" }, ["browser", "testing"]).map((item) => item.id)
+      helpers.filterLibrarySkillsForState(skills, { type: "set", skillSetId: "automation" }, ["browser", "testing"], skillSets).map(
+        (item) => item.id
+      )
     ).toEqual(["one"]);
-    expect(helpers.filterLibrarySkills(skills, { type: "ungrouped" }, ["browser"]).map((item) => item.id)).toEqual([
-      "two"
-    ]);
+    expect(
+      helpers.filterLibrarySkillsForState(skills, { type: "ungrouped" }, ["browser"], skillSets).map((item) => item.id)
+    ).toEqual(["two"]);
   });
 
   it("distinguishes set ids from reserved filter names", () => {
-    const skills = [
-      skill({ id: "one", skillSetId: "ungrouped", tags: ["browser"] }),
-      skill({ id: "two", tags: ["browser"] }),
-      skill({ id: "three", skillSetId: "all", tags: ["browser"] })
-    ];
+    const skills = [skill({ id: "one", tags: ["browser"] }), skill({ id: "two", tags: ["browser"] }), skill({ id: "three", tags: ["browser"] })];
+    const skillSets = [skillSet("ungrouped", "Ungrouped", ["one"]), skillSet("all", "All", ["three"])];
 
-    expect(helpers.filterLibrarySkills(skills, { type: "set", skillSetId: "ungrouped" }, []).map((item) => item.id)).toEqual([
-      "one"
-    ]);
-    expect(helpers.filterLibrarySkills(skills, { type: "set", skillSetId: "all" }, []).map((item) => item.id)).toEqual([
+    expect(
+      helpers.filterLibrarySkillsForState(skills, { type: "set", skillSetId: "ungrouped" }, [], skillSets).map((item) => item.id)
+    ).toEqual(["one"]);
+    expect(helpers.filterLibrarySkillsForState(skills, { type: "set", skillSetId: "all" }, [], skillSets).map((item) => item.id)).toEqual([
       "three"
     ]);
-    expect(helpers.filterLibrarySkills(skills, { type: "ungrouped" }, []).map((item) => item.id)).toEqual(["two"]);
+    expect(helpers.filterLibrarySkillsForState(skills, { type: "ungrouped" }, [], skillSets).map((item) => item.id)).toEqual(["two"]);
   });
 
   it("derives skill set state", () => {
-    expect(helpers.skillSetState([skill({ id: "one", skillSetId: "set", enabled: true })], "set")).toBe("on");
-    expect(helpers.skillSetState([skill({ id: "one", skillSetId: "set", enabled: false })], "set")).toBe("off");
+    const skillSets = [skillSet("set", "Set", ["one", "two"])];
+
+    expect(helpers.skillSetStateForId([skill({ id: "one", enabled: true })], skillSets, "set")).toBe("on");
+    expect(helpers.skillSetStateForId([skill({ id: "one", enabled: false })], skillSets, "set")).toBe("off");
     expect(
-      helpers.skillSetState(
-        [skill({ id: "one", skillSetId: "set", enabled: true }), skill({ id: "two", skillSetId: "set", enabled: false })],
+      helpers.skillSetStateForId(
+        [skill({ id: "one", enabled: true }), skill({ id: "two", enabled: false })],
+        skillSets,
         "set"
       )
     ).toBe("mixed");
   });
 
-  it("sorts by displayed skill set name with ungrouped skills last", () => {
-    const skills = [
-      skill({ id: "one", skillSetId: "zeta" }),
-      skill({ id: "two" }),
-      skill({ id: "three", skillSetId: "alpha" })
-    ];
-    const skillSets = [skillSet("zeta", "Zeta"), skillSet("alpha", "Alpha")];
+  it("sorts by name for library table", () => {
+    const skills = [skill({ id: "zeta" }), skill({ id: "alpha" }), skill({ id: "beta" })];
 
-    expect(helpers.sortSkills(skills, "skillSet", "asc", skillSets).map((item) => item.id)).toEqual([
-      "three",
-      "one",
-      "two"
-    ]);
+    expect(helpers.sortSkillsForLibrary(skills, "name", "asc").map((item) => item.id)).toEqual(["alpha", "beta", "zeta"]);
   });
 
   it("resets only the current filter for the deleted skill set", () => {

@@ -149,7 +149,6 @@ async function installSkillFromDirectory(input: InstallSkillFromDirectoryInput):
     contentHash: await hashDirectory(librarySkillPath),
     keepUpdated: input.keepUpdated,
     enabled: existingMetadata?.enabled ?? true,
-    ...(existingMetadata?.skillSetId ? { skillSetId: existingMetadata.skillSetId } : {}),
     tags: existingMetadata?.tags ?? [],
     validation
   };
