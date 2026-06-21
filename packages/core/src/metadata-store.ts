@@ -233,7 +233,7 @@ function migrateLegacyMembership(
     existing.skillIds.push(skill.id);
   }
 
-  return skillSets.map((skillSet) => skillSetById.get(skillSet.id) ?? skillSet);
+  return skillSets.map((skillSet) => skillSetById.get(skillSet.id)!);
 }
 
 function normalizeSaveSkillSetTargets(targets: TargetConfig[]): TargetConfig[] {

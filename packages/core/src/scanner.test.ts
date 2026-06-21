@@ -1336,6 +1336,44 @@ describe("scanTargets", () => {
     expect(await fs.pathExists(path.join(globalTarget, "grouped-skill"))).toBe(false);
   });
 
+  it("removes grouped skill symlinks from disallowed global targets", async () => {
+    const globalTarget = path.join(tmp, "global-target");
+    const setTarget = path.join(tmp, "set-target");
+    const library = path.join(tmp, "library");
+    const skillPath = path.join(library, "grouped-skill");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(globalTarget);
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "---\nname: grouped-skill\ndescription: Grouped.\n---\n");
+    await store.save({
+      id: "grouped-skill",
+      name: "grouped-skill",
+      libraryPath: skillPath,
+      source: { type: "local", path: skillPath },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+    await fs.symlink(skillPath, path.join(globalTarget, "grouped-skill"), "dir");
+    await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["grouped-skill"],
+      targets: [enabledTarget(setTarget)]
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(globalTarget)],
+      skillSets: (await store.libraryState()).skillSets
+    });
+
+    expect(result.disabled).toEqual([{ skillId: "grouped-skill", targetPath: globalTarget }]);
+    expect(await fs.pathExists(path.join(globalTarget, "grouped-skill"))).toBe(false);
+  });
+
   it("falls back to global targets for grouped skills in sets without targets", async () => {
     const globalTarget = path.join(tmp, "global-target");
     const library = path.join(tmp, "library");

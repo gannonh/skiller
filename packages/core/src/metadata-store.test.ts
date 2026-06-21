@@ -126,6 +126,30 @@ describe("MetadataStore", () => {
     });
   });
 
+  it("ignores duplicate legacy memberships during migration", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skillSets: [
+        {
+          id: "automation",
+          name: "Automation",
+          skillIds: ["example-skill"],
+          targets: [],
+          createdAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z"
+        }
+      ],
+      skills: [{ ...metadataFor(skillPath), skillSetId: "automation", tags: [] }]
+    });
+
+    await expect(new MetadataStore(libraryPath).libraryState()).resolves.toMatchObject({
+      skillSets: [{ id: "automation", skillIds: ["example-skill"] }]
+    });
+  });
+
   it("drops legacy skill set ids that do not exist", async () => {
     const libraryPath = await makeTempDir();
     const skillPath = path.join(libraryPath, "example-skill");
@@ -743,6 +767,64 @@ describe("MetadataStore", () => {
       version: 1,
       skills: [existingMetadata],
       skillSets: []
+    });
+  });
+
+  it("removes pruned skills from skill set membership", async () => {
+    const libraryPath = await makeTempDir();
+    const existingPath = path.join(libraryPath, "existing-skill");
+    const missingPath = path.join(libraryPath, "missing-skill");
+    const existingMetadata = { ...metadataFor(existingPath), id: "existing-skill", name: "Existing Skill" };
+    const missingMetadata = { ...metadataFor(missingPath), id: "missing-skill", name: "Missing Skill" };
+    const store = new MetadataStore(libraryPath);
+
+    await fs.ensureDir(existingPath);
+    await store.saveSkillSet({ name: "Automation", skillIds: ["existing-skill", "missing-skill"], targets: [] });
+    await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
+      version: 1,
+      skillSets: [
+        {
+          id: "automation",
+          name: "Automation",
+          skillIds: ["existing-skill", "missing-skill"],
+          targets: [],
+          createdAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z"
+        }
+      ],
+      skills: [existingMetadata, missingMetadata]
+    });
+
+    await expect(store.pruneMissing()).resolves.toEqual([missingMetadata]);
+    await expect(store.libraryState()).resolves.toMatchObject({
+      skillSets: [{ id: "automation", skillIds: ["existing-skill"] }]
+    });
+  });
+
+  it("removes deleted skills from skill set membership", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const otherSkillPath = path.join(libraryPath, "other-skill");
+    const store = new MetadataStore(libraryPath);
+    const metadata = metadataFor(skillPath);
+    const otherMetadata = { ...metadataFor(otherSkillPath), id: "other-skill", name: "Other Skill" };
+
+    await fs.ensureDir(skillPath);
+    await fs.ensureDir(otherSkillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "example");
+    await fs.writeFile(path.join(otherSkillPath, "SKILL.md"), "other");
+    await store.save(metadata);
+    await store.save(otherMetadata);
+    await store.saveSkillSet({ name: "Automation", skillIds: ["example-skill"], targets: [] });
+    await store.saveSkillSet({ name: "Other", skillIds: ["other-skill"], targets: [] });
+
+    await store.delete("example-skill");
+
+    await expect(store.libraryState()).resolves.toMatchObject({
+      skillSets: [
+        { id: "automation", skillIds: [] },
+        { id: "other", skillIds: ["other-skill"] }
+      ]
     });
   });
 
