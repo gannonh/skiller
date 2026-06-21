@@ -225,6 +225,8 @@ test("keeps the sidebar width on the Library first paint with wide content", asy
       (name, index) => ({
         id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
         name,
+        skillIds: [] as string[],
+        targets: [],
         createdAt: "2026-05-13T00:00:00.000Z",
         updatedAt: "2026-05-13T00:00:00.000Z",
         enabled: index % 2 === 0
@@ -234,21 +236,17 @@ test("keeps the sidebar width on the Library first paint with wide content", asy
       listLibrary: async () => ({
         skillSets,
         tags: ["frameworks", "pull requests", "tdd", "ux"],
-        skills: Array.from({ length: 56 }, (_, index) => {
-          const set = skillSets[index % skillSets.length];
-          return {
-            id: `skill-${index + 1}`,
-            name: `skill-${index + 1}`,
-            libraryPath: `/tmp/skill-${index + 1}`,
-            source: { type: "github", githubUrl: "https://github.com/example/skills", githubPath: `skills/skill-${index + 1}` },
-            installedAt: "2026-05-13T00:00:00.000Z",
-            keepUpdated: true,
-            enabled: true,
-            skillSetId: set.id,
-            tags: ["frameworks", "pull requests"],
-            validation: { valid: true, issues: [] }
-          };
-        })
+        skills: Array.from({ length: 56 }, (_, index) => ({
+          id: `skill-${index + 1}`,
+          name: `skill-${index + 1}`,
+          libraryPath: `/tmp/skill-${index + 1}`,
+          source: { type: "github", githubUrl: "https://github.com/example/skills", githubPath: `skills/skill-${index + 1}` },
+          installedAt: "2026-05-13T00:00:00.000Z",
+          keepUpdated: true,
+          enabled: true,
+          tags: ["frameworks", "pull requests"],
+          validation: { valid: true, issues: [] }
+        }))
       })
     };
   });
@@ -274,9 +272,10 @@ test("sorts library columns with name as the default", async ({ page }) => {
   await page.getByRole("button", { name: "Install selected" }).click();
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
 
-  for (const column of ["Name", "Source", "Skill Set", "Status", "Enabled", "Actions"]) {
+  for (const column of ["Name", "Source", "Status", "Enabled", "Actions"]) {
     await expect(page.getByRole("button", { name: `Sort by ${column}` })).toBeVisible();
   }
+  await expect(page.getByRole("columnheader", { name: "Skill Sets" })).toBeVisible();
 
   const rows = page.locator("tbody tr");
   await expect(rows.nth(0).locator("td").first()).toHaveText("alpha-skill");
