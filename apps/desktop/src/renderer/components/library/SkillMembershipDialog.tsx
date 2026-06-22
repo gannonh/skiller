@@ -27,14 +27,16 @@ export function SkillMembershipDialog({
   skillSets: SkillSetMetadata[];
   disabled?: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (skillId: string, skillSetIds: string[]) => Promise<void>;
+  onSave: (skillId: string, skillSetIds: string[]) => Promise<boolean>;
 }) {
   const [selectedSetIds, setSelectedSetIds] = useState<Set<string>>(() => new Set());
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !skillId) return;
     setSelectedSetIds(new Set(skillSets.filter((skillSet) => skillSet.skillIds.includes(skillId)).map((skillSet) => skillSet.id)));
+    setError(null);
   }, [open, skillId, skillSets]);
 
   function toggleSet(skillSetId: string, selected: boolean) {
@@ -49,9 +51,12 @@ export function SkillMembershipDialog({
   async function handleSave() {
     if (!skillId || isSaving || disabled) return;
     setIsSaving(true);
+    setError(null);
     try {
-      await onSave(skillId, [...selectedSetIds]);
-      onOpenChange(false);
+      const saved = await onSave(skillId, [...selectedSetIds]);
+      if (saved) onOpenChange(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setIsSaving(false);
     }
@@ -65,6 +70,7 @@ export function SkillMembershipDialog({
           <DialogDescription>Add {skillName} to skill sets or remove it from existing sets.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2">
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {skillSets.length === 0 ? (
             <p className="text-sm text-muted-foreground">No skill sets yet. Create one from the library page.</p>
           ) : (

@@ -93,83 +93,8 @@ test("autocompletes row tags from existing library tags", async ({ page }) => {
 });
 
 test("manages skill sets and tag filters from the library", async ({ page }) => {
-  await page.addInitScript(() => {
-    const skill = (id, tags, enabled = true) => ({
-      id,
-      name: id,
-      libraryPath: `/tmp/${id}`,
-      source: { type: "local", path: `/tmp/${id}` },
-      installedAt: "2026-05-12T00:00:00.000Z",
-      keepUpdated: false,
-      enabled,
-      tags,
-      validation: { valid: true, issues: [] }
-    });
-    const state = {
-      skills: [skill("alpha-skill", ["browser", "testing"]), skill("beta-skill", ["browser"], false)],
-      skillSets: [],
-      tags: ["browser", "testing"]
-    };
-    const refreshTags = () => {
-      state.tags = Array.from(new Set(state.skills.flatMap((candidate) => candidate.tags))).sort();
-    };
-    window.skiller = {
-      listLibrary: async () => state,
-      saveSkillSet: async (input) => {
-        const now = "2026-05-12T00:00:00.000Z";
-        if (input.id) {
-          const skillSet = state.skillSets.find((candidate) => candidate.id === input.id);
-          if (skillSet) {
-            skillSet.name = input.name.trim();
-            skillSet.skillIds = [...input.skillIds];
-            skillSet.targets = input.targets.map((target) => ({ ...target }));
-            skillSet.updatedAt = now;
-          }
-        } else {
-          state.skillSets.push({
-            id: input.name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "") || "skill-set",
-            name: input.name.trim(),
-            skillIds: [...input.skillIds],
-            targets: input.targets.map((target) => ({ ...target })),
-            createdAt: now,
-            updatedAt: now
-          });
-        }
-        return state;
-      },
-      setSkillMembership: async (skillId, skillSetIds) => {
-        const selected = new Set(skillSetIds);
-        for (const skillSet of state.skillSets) {
-          const shouldInclude = selected.has(skillSet.id);
-          const currentlyIncluded = skillSet.skillIds.includes(skillId);
-          if (shouldInclude === currentlyIncluded) continue;
-          skillSet.skillIds = shouldInclude
-            ? [...skillSet.skillIds, skillId]
-            : skillSet.skillIds.filter((id) => id !== skillId);
-        }
-        return state;
-      },
-      deleteSkillSet: async (skillSetId) => {
-        state.skillSets = state.skillSets.filter((candidate) => candidate.id !== skillSetId);
-        return state;
-      },
-      replaceSkillTags: async (skillId, tags) => {
-        const target = state.skills.find((candidate) => candidate.id === skillId);
-        if (target) target.tags = tags;
-        refreshTags();
-        return state;
-      },
-      setSkillSetEnabled: async (skillSetId, enabled) => {
-        const skillSet = state.skillSets.find((candidate) => candidate.id === skillSetId);
-        if (skillSet) {
-          for (const candidate of state.skills) {
-            if (skillSet.skillIds.includes(candidate.id)) candidate.enabled = enabled;
-          }
-        }
-        return { state, scanErrors: [] };
-      }
-    };
-  });
+  const { installLibrarySkillSetsMock } = await import("./fixtures/library-skill-sets-mock.js");
+  await page.addInitScript(installLibrarySkillSetsMock);
   await page.goto("/");
 
   await page.getByRole("button", { name: "Create New Skill Set" }).click();

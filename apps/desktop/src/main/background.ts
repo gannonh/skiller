@@ -7,8 +7,8 @@ import {
   watchTargetDirectories
 } from "@skiller/core";
 import type { BrowserWindow } from "electron";
-import type { SkillSetMetadata, TargetConfig } from "@skiller/core";
 import { checkDesktopUpdates } from "./update-check.js";
+import { buildScanTargetsInput } from "./scan-helpers.js";
 
 interface BackgroundJobDependencies {
   loadConfig: typeof loadConfig;
@@ -34,21 +34,13 @@ type BackgroundWindow = Pick<BrowserWindow, "webContents">;
 
 const SCAN_DEBOUNCE_MS = 250;
 
-function isTransientWatcherError(error: unknown): boolean {
+export function isTransientWatcherError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   if (/\b(EINVAL|ENOENT)\b/.test(message)) return true;
 
   if (!(error && typeof error === "object" && "code" in error)) return false;
   const code = (error as NodeJS.ErrnoException).code;
   return code === "EINVAL" || code === "ENOENT";
-}
-
-function expandTargets(targets: TargetConfig[], expandPath: typeof expandHome): TargetConfig[] {
-  return targets.map((target) => ({ ...target, path: expandPath(target.path) }));
-}
-
-function expandSkillSets(skillSets: SkillSetMetadata[], expandPath: typeof expandHome): SkillSetMetadata[] {
-  return skillSets.map((skillSet) => ({ ...skillSet, targets: expandTargets(skillSet.targets, expandPath) }));
 }
 
 export async function startBackgroundJobs(
@@ -76,13 +68,7 @@ export async function startBackgroundJobs(
       const store = new deps.metadataStore(libraryPath);
       await store.pruneMissing();
       const { skillSets } = await store.libraryState();
-      await deps.scanTargets({
-        libraryPath,
-        targets: expandTargets(scanConfig.targets, deps.expandHome),
-        skillSets: expandSkillSets(skillSets, deps.expandHome),
-        globalTargetInstallMode: scanConfig.globalTargetInstallMode,
-        projectTargetInstallMode: scanConfig.projectTargetInstallMode
-      });
+      await deps.scanTargets(buildScanTargetsInput(scanConfig, skillSets, scanConfig.targets, deps.expandHome));
     } catch (error: unknown) {
       console.error("Background scan failed", error);
       window.webContents.send("background:scan-error", {
@@ -90,6 +76,7 @@ export async function startBackgroundJobs(
       });
     } finally {
       scanInFlight = false;
+      // Queue-of-one: a new event while in-flight sets scanQueued; the finally block drains it once.
       if (scanQueued) {
         scanQueued = false;
         void executeScan();

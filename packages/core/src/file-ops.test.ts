@@ -161,4 +161,40 @@ describe("file operations", () => {
     expect(stat.isSymbolicLink()).toBe(false);
     await expect(fs.readFile(path.join(target, "SKILL.md"), "utf8")).resolves.toBe("hello");
   });
+
+  it("restores the original target folder when copy replacement fails", async () => {
+    const source = path.join(tmp, "master");
+    const target = path.join(tmp, "target");
+    await fs.ensureDir(source);
+    await fs.ensureDir(target);
+    await fs.writeFile(path.join(source, "SKILL.md"), "hello");
+    await fs.writeFile(path.join(target, "SKILL.md"), "stale");
+
+    const originalCopy = fs.copy.bind(fs);
+    vi.spyOn(fs, "copy").mockImplementationOnce(async () => {
+      throw new Error("copy failed");
+    });
+
+    await expect(replaceWithCopy(target, source)).rejects.toThrow("copy failed");
+    await expect(fs.readFile(path.join(target, "SKILL.md"), "utf8")).resolves.toBe("stale");
+    vi.mocked(fs.copy).mockImplementation(originalCopy);
+  });
+
+  it("throws the copy error when rollback restore also fails", async () => {
+    const source = path.join(tmp, "master");
+    const target = path.join(tmp, "target");
+    await fs.ensureDir(source);
+    await fs.ensureDir(target);
+    await fs.writeFile(path.join(source, "SKILL.md"), "hello");
+    await fs.writeFile(path.join(target, "SKILL.md"), "stale");
+
+    const originalMove = fs.move.bind(fs);
+    vi.spyOn(fs, "copy").mockRejectedValueOnce(new Error("copy failed"));
+    vi.spyOn(fs, "move").mockImplementation(((...args: Parameters<typeof fs.move>) => {
+      if (args[1] === target) return Promise.reject(new Error("restore failed"));
+      return originalMove(...args);
+    }) as typeof fs.move);
+
+    await expect(replaceWithCopy(target, source)).rejects.toThrow("copy failed");
+  });
 });

@@ -241,14 +241,6 @@ function migrateLegacyMembership(
   return skillSets.map((skillSet) => skillSetById.get(skillSet.id)!);
 }
 
-function normalizeSaveSkillSetTargets(targets: TargetConfig[]): TargetConfig[] {
-  return normalizeSkillSetTargets(targets);
-}
-
-function normalizeSaveSkillSetSkillIds(skillIds: string[], validSkillIds: Set<string>): string[] {
-  return normalizeSkillSetSkillIds(skillIds, validSkillIds);
-}
-
 function removeSkillFromSets(skillSets: SkillSetMetadata[], skillId: string): SkillSetMetadata[] {
   const now = new Date().toISOString();
   return skillSets.map((skillSet) => {
@@ -359,12 +351,10 @@ export class MetadataStore {
     const rawSkills = Array.isArray(manifest.skills) ? manifest.skills : [];
     const skills = rawSkills.map((metadata) => normalizeMetadata(metadata));
     const validSkillIds = new Set(skills.map((skill) => skill.id));
-    let skillSets = normalizeSkillSets(manifest.skillSets, validSkillIds);
-    skillSets = migrateLegacyMembership(rawSkills.map((metadata) => metadata as SkillMetadata), skillSets);
-    skillSets = skillSets.map((skillSet) => ({
-      ...skillSet,
-      skillIds: normalizeSkillSetSkillIds(skillSet.skillIds, validSkillIds)
-    }));
+    const skillSets = migrateLegacyMembership(
+      rawSkills.map((metadata) => metadata as SkillMetadata),
+      normalizeSkillSets(manifest.skillSets, validSkillIds)
+    );
 
     return { skills, skillSets };
   }
@@ -457,8 +447,8 @@ export class MetadataStore {
     return this.withWriteLock(async () => {
       const currentState = await this.readManifest();
       const validSkillIds = new Set(currentState.skills.map((skill) => skill.id));
-      const skillIds = normalizeSaveSkillSetSkillIds(input.skillIds, validSkillIds);
-      const targets = normalizeSaveSkillSetTargets(input.targets);
+      const skillIds = normalizeSkillSetSkillIds(input.skillIds, validSkillIds);
+      const targets = normalizeSkillSetTargets(input.targets);
       const now = new Date().toISOString();
 
       if (input.id) {

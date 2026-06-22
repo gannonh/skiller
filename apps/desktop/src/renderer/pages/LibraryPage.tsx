@@ -3,10 +3,7 @@ import {
   Cancel01Icon,
   CheckmarkCircle01Icon,
   Delete02Icon,
-  Edit02Icon,
-  Sorting01Icon,
-  SortingDownIcon,
-  SortingUpIcon
+  Edit02Icon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert";
@@ -27,23 +24,26 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
-import { skillerApi, type LibraryState, type SaveSkillSetInput, type SetSkillSetEnabledResult, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
+import { skillerApi, type LibraryState, type SaveSkillSetInput, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
+import { runOrganizationAction } from "../lib/organization-mutation.js";
 import { sourceDetail, sourceLabel, sourceUrl } from "../lib/skill-source.js";
 import type { DiscoveredGithubSkill, SkillTargetScope, TargetConfig } from "@skiller/core";
 import { SkillMembershipDialog } from "../components/library/SkillMembershipDialog.js";
 import { SkillSetEditorDialog } from "../components/library/SkillSetEditorDialog.js";
+import { SortableTableHead } from "../components/library/SortableTableHead.js";
 import {
+  filterAfterDeletingSkillSet,
   filterLibrarySkills,
+  setSkillSetEnabledScanErrorMessage,
   skillSetIdsForSkill,
-  skillSetState,
+  skillSetStateForId,
+  skillStatusLabel,
   sortSkills,
+  type SetFilter,
   type SkillPickerSortColumn
 } from "../components/library/library-helpers.js";
 
-type SortColumn = SkillPickerSortColumn | "actions";
 type SortDirection = "asc" | "desc";
-
-export type SetFilter = { type: "all" } | { type: "ungrouped" } | { type: "set"; skillSetId: string };
 
 const emptyLibraryState: LibraryState = {
   skills: [],
@@ -98,35 +98,8 @@ export function tagAutocompleteOptions(knownTags: string[], selectedTags: string
   return knownTags.filter((tag) => !selected.has(tag) && tag.includes(normalizedQuery)).slice(0, 6);
 }
 
-export function skillSetStateForId(skills: SkillMetadata[], skillSets: SkillSetMetadata[], skillSetId: string): "on" | "off" | "mixed" {
-  const skillSet = skillSets.find((candidate) => candidate.id === skillSetId);
-  if (!skillSet) return "off";
-  return skillSetState(skills, skillSet);
-}
-
-export function filterLibrarySkillsForState(
-  skills: SkillMetadata[],
-  setFilter: SetFilter,
-  selectedTags: string[],
-  skillSets: SkillSetMetadata[]
-): SkillMetadata[] {
-  return filterLibrarySkills(skills, setFilter, selectedTags, skillSets);
-}
-
-export function filterAfterDeletingSkillSet(currentFilter: SetFilter, skillSetId: string): SetFilter {
-  if (currentFilter.type === "set" && currentFilter.skillSetId === skillSetId) return { type: "all" };
-  return currentFilter;
-}
-
 export function reconcileSelectedTags(selectedTags: string[], knownTags: string[]): string[] {
   return selectedTags.filter((tag) => knownTags.includes(tag));
-}
-
-export function setSkillSetEnabledScanErrorMessage(result: SetSkillSetEnabledResult): string | null {
-  if (result.scanErrors.length === 0) return null;
-  const firstError = result.scanErrors[0];
-  const suffix = result.scanErrors.length === 1 ? "" : ` and ${result.scanErrors.length - 1} more`;
-  return `Target sync failed for ${firstError.path}: ${firstError.message}${suffix}`;
 }
 
 export type GithubSelectionState = boolean | "indeterminate";
@@ -143,40 +116,6 @@ export function githubSelectionState(
 
 export function githubSelectionPaths(choices: DiscoveredGithubSkill[], selected: boolean): Set<string> {
   return new Set(selected ? choices.map((skill) => skill.path) : []);
-}
-
-function statusLabel(skill: SkillMetadata): string {
-  return skill.validation?.valid ? "valid" : "invalid";
-}
-
-function sortValue(skill: SkillMetadata, column: SortColumn): string {
-  if (column === "name") return skill.name || skill.id;
-  if (column === "source") return `${sourceLabel(skill)} ${sourceDetail(skill)}`;
-  if (column === "status") return statusLabel(skill);
-  if (column === "enabled") return skill.enabled ? "enabled" : "disabled";
-  return `${skill.name || skill.id} ${skill.id}`;
-}
-
-export function sortSkillsForLibrary(
-  skills: SkillMetadata[],
-  column: SortColumn,
-  direction: SortDirection
-): SkillMetadata[] {
-  if (column === "actions") {
-    return [...skills].sort((left, right) => {
-      const primary = sortValue(left, column).localeCompare(sortValue(right, column), undefined, {
-        numeric: true,
-        sensitivity: "base"
-      });
-      const fallback = (left.name || left.id).localeCompare(right.name || right.id, undefined, {
-        numeric: true,
-        sensitivity: "base"
-      });
-      const result = primary || fallback || left.id.localeCompare(right.id);
-      return direction === "asc" ? result : -result;
-    });
-  }
-  return sortSkills(skills, column, direction);
 }
 
 function SourceDetail({ skill }: { skill: SkillMetadata }) {
@@ -355,7 +294,7 @@ export function LibraryPage({
   const [githubChoices, setGithubChoices] = useState<DiscoveredGithubSkill[]>([]);
   const [selectedGithubPaths, setSelectedGithubPaths] = useState<Set<string>>(() => new Set());
   const [isGithubSheetOpen, setIsGithubSheetOpen] = useState(false);
-  const [sortColumn, setSortColumn] = useState<SortColumn>("name");
+  const [sortColumn, setSortColumn] = useState<SkillPickerSortColumn>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [setFilter, setSetFilter] = useState<SetFilter>({ type: "all" });
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -400,11 +339,11 @@ export function LibraryPage({
 
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
   const filteredSkills = useMemo(
-    () => filterLibrarySkillsForState(skills, setFilter, selectedTags, libraryState.skillSets),
+    () => filterLibrarySkills(skills, setFilter, selectedTags, libraryState.skillSets),
     [skills, setFilter, selectedTags, libraryState.skillSets]
   );
   const sortedSkills = useMemo(
-    () => sortSkillsForLibrary(filteredSkills, sortColumn, sortDirection),
+    () => sortSkills(filteredSkills, sortColumn, sortDirection),
     [filteredSkills, sortColumn, sortDirection]
   );
   const selectedGithubSkills = useMemo(
@@ -416,37 +355,13 @@ export function LibraryPage({
     [githubChoices, selectedGithubPaths]
   );
 
-  function updateSort(column: SortColumn) {
+  function updateSort(column: SkillPickerSortColumn) {
     if (column === sortColumn) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
       return;
     }
     setSortColumn(column);
     setSortDirection("asc");
-  }
-
-  function sortIcon(column: SortColumn) {
-    if (column !== sortColumn) return Sorting01Icon;
-    return sortDirection === "asc" ? SortingUpIcon : SortingDownIcon;
-  }
-
-  function SortableTableHead({ column, children }: { column: SortColumn; children: string }) {
-    const active = column === sortColumn;
-    return (
-      <TableHead aria-sort={active ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="-ml-2 h-8 px-2"
-          aria-label={`Sort by ${children}`}
-          onClick={() => updateSort(column)}
-        >
-          {children}
-          <HugeiconsIcon icon={sortIcon(column)} strokeWidth={2} data-icon="inline-end" />
-        </Button>
-      </TableHead>
-    );
   }
 
   function isSetFilterActive(skillSetId: string): boolean {
@@ -637,32 +552,28 @@ export function LibraryPage({
     }
   }
 
-  async function saveSkillSet(input: SaveSkillSetInput) {
-    if (!beginOrganizationMutation()) return;
-    setError(null);
-    try {
-      const updatedState = await skillerApi.saveSkillSet(input);
-      setLibraryState(updatedState);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-      throw caught;
-    } finally {
-      finishOrganizationMutation();
-    }
+  async function saveSkillSet(input: SaveSkillSetInput): Promise<boolean> {
+    return runOrganizationAction(
+      beginOrganizationMutation,
+      finishOrganizationMutation,
+      (message) => setError(message),
+      async () => {
+        const updatedState = await skillerApi.saveSkillSet(input);
+        setLibraryState(updatedState);
+      }
+    );
   }
 
-  async function saveSkillMembership(skillId: string, skillSetIds: string[]) {
-    if (!beginOrganizationMutation()) return;
-    setError(null);
-    try {
-      const updatedState = await skillerApi.setSkillMembership(skillId, skillSetIds);
-      setLibraryState(updatedState);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-      throw caught;
-    } finally {
-      finishOrganizationMutation();
-    }
+  async function saveSkillMembership(skillId: string, skillSetIds: string[]): Promise<boolean> {
+    return runOrganizationAction(
+      beginOrganizationMutation,
+      finishOrganizationMutation,
+      (message) => setError(message),
+      async () => {
+        const updatedState = await skillerApi.setSkillMembership(skillId, skillSetIds);
+        setLibraryState(updatedState);
+      }
+    );
   }
 
   async function deleteSkillSet(skillSetId: string) {
@@ -876,14 +787,22 @@ export function LibraryPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <SortableTableHead column="name">Name</SortableTableHead>
-                  <SortableTableHead column="source">Source</SortableTableHead>
+                  <SortableTableHead column="name" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+                    Name
+                  </SortableTableHead>
+                  <SortableTableHead column="source" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+                    Source
+                  </SortableTableHead>
                   <TableHead>Skill Sets</TableHead>
                   <TableHead>Tags</TableHead>
-                  <SortableTableHead column="status">Status</SortableTableHead>
-                  <SortableTableHead column="enabled">Enabled</SortableTableHead>
+                  <SortableTableHead column="status" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+                    Status
+                  </SortableTableHead>
+                  <SortableTableHead column="enabled" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+                    Enabled
+                  </SortableTableHead>
                   <TableHead>Target Scope</TableHead>
-                  <SortableTableHead column="actions">Actions</SortableTableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -975,9 +894,9 @@ export function LibraryPage({
                     </TableCell>
                     <TableCell>
                       {skill.validation?.valid ? (
-                        <Badge variant="outline">{statusLabel(skill)}</Badge>
+                        <Badge variant="outline">{skillStatusLabel(skill)}</Badge>
                       ) : (
-                        <Badge variant="destructive">{statusLabel(skill)}</Badge>
+                        <Badge variant="destructive">{skillStatusLabel(skill)}</Badge>
                       )}
                     </TableCell>
                     <TableCell>

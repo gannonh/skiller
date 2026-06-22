@@ -4,7 +4,7 @@ import YAML from "yaml";
 import { copySkillToLibrary, hashDirectory, replaceWithCopy, replaceWithSymlink } from "./file-ops.js";
 import { MetadataStore } from "./metadata-store.js";
 import { expandHome } from "./paths.js";
-import type { SkillMetadata, SkillSetMetadata, SkillTargetScope, TargetConfig, TargetInstallMode } from "./types.js";
+import type { SkillMetadata, SkillSetMetadata, TargetConfig, TargetInstallMode } from "./types.js";
 import { validateSkill } from "./validator.js";
 
 export interface ScanTargetsInput {
@@ -170,20 +170,12 @@ function enabledTargetPaths(targets: TargetConfig[]): Set<string> {
   return new Set(targets.filter((target) => target.enabled).map((target) => target.path));
 }
 
-function targetScopeForSkill(metadata: SkillMetadata): SkillTargetScope {
-  return metadata.targetScope ?? "both";
-}
-
-function isProjectSkillSetTarget(target: TargetConfig): boolean {
-  return target.scope !== "global";
-}
-
 function resolveTargetsForSkill(
   metadata: SkillMetadata,
   skillSets: SkillSetMetadata[],
   globalTargets: TargetConfig[]
 ): Set<string> {
-  const targetScope = targetScopeForSkill(metadata);
+  const targetScope = metadata.targetScope ?? "both";
   const targets = new Set<string>();
 
   if (targetScope === "global" || targetScope === "both") {
@@ -200,6 +192,10 @@ function resolveTargetsForSkill(
   }
 
   return targets;
+}
+
+function isProjectSkillSetTarget(target: TargetConfig): boolean {
+  return target.scope === "project";
 }
 
 function upsertScanTarget(targetsByPath: Map<string, TargetConfig>, target: TargetConfig): void {
@@ -223,12 +219,8 @@ function allScanTargets(globalTargets: TargetConfig[], skillSets: SkillSetMetada
   return uniqueTargets([...byPath.values()]);
 }
 
-function expandedTargetPath(targetPath: string): string {
-  return expandHome(targetPath);
-}
-
 function expandTargetConfig(target: TargetConfig): TargetConfig {
-  return { ...target, path: expandedTargetPath(target.path) };
+  return { ...target, path: expandHome(target.path) };
 }
 
 function expandSkillSets(skillSets: SkillSetMetadata[]): SkillSetMetadata[] {
@@ -242,7 +234,7 @@ function projectTargetPaths(skillSets: SkillSetMetadata[]): Set<string> {
   return new Set(
     skillSets
       .flatMap((skillSet) => skillSet.targets.filter(isProjectSkillSetTarget))
-      .map((target) => expandedTargetPath(target.path))
+      .map((target) => expandHome(target.path))
   );
 }
 
@@ -251,18 +243,22 @@ function installModeForTargetDir(
   projectPaths: Set<string>,
   installModes: { global: TargetInstallMode; project: TargetInstallMode }
 ): TargetInstallMode {
-  return projectPaths.has(expandedTargetPath(targetDir)) ? installModes.project : installModes.global;
+  return projectPaths.has(expandHome(targetDir)) ? installModes.project : installModes.global;
 }
 
 export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsResult> {
   if (!path.isAbsolute(input.libraryPath)) throw new Error("Library path must be absolute before scanning targets");
   const store = new MetadataStore(input.libraryPath);
-  const records = await store.list();
-  let skillSets = input.skillSets;
-  if (skillSets === undefined) {
-    skillSets = (await store.libraryState()).skillSets;
+  let records: SkillMetadata[];
+  let skillSets: SkillSetMetadata[];
+  if (input.skillSets === undefined) {
+    const libraryState = await store.libraryState();
+    records = libraryState.skills;
+    skillSets = expandSkillSets(libraryState.skillSets);
+  } else {
+    records = await store.list();
+    skillSets = expandSkillSets(input.skillSets);
   }
-  skillSets = expandSkillSets(skillSets);
   const imported: SkillMetadata[] = [];
   const enabled: TargetSkillChange[] = [];
   const disabled: TargetSkillChange[] = [];

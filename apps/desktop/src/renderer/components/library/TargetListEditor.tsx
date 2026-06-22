@@ -22,7 +22,7 @@ function asGlobalTarget(target: TargetConfig): TargetConfig {
 }
 
 function isProjectTarget(target: TargetConfig): boolean {
-  return target.scope !== "global";
+  return target.scope === "project";
 }
 
 export function TargetListEditor({

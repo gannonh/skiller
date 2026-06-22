@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BrowserWindow } from "electron";
 import type { SkillerConfig } from "@skiller/core";
+import { isTransientWatcherError } from "../src/main/background.js";
 
 const config: SkillerConfig = {
   libraryPath: "~/persisted-skiller",
@@ -16,6 +17,17 @@ const config: SkillerConfig = {
 function metadataStoreMock() {
   return vi.fn(() => ({ pruneMissing: vi.fn(async () => []), libraryState: vi.fn(async () => ({ skills: [], skillSets: [], tags: [] })) })) as never;
 }
+
+describe("isTransientWatcherError", () => {
+  it.each([
+    [Object.assign(new Error("EINVAL: invalid argument, watch"), { code: "EINVAL" }), true],
+    [new Error("EINVAL: invalid argument, watch '/home/test/skills'"), true],
+    [Object.assign(new Error("path missing"), { code: "ENOENT" }), true],
+    [new Error("permission denied"), false]
+  ])("classifies watcher errors", (error, expected) => {
+    expect(isTransientWatcherError(error)).toBe(expected);
+  });
+});
 
 describe("background jobs", () => {
   afterEach(() => {
@@ -97,14 +109,14 @@ describe("background jobs", () => {
 
     expect(scanTargets).toHaveBeenNthCalledWith(1, {
       libraryPath: "/home/test/persisted-skiller",
-      targets: [{ path: "/home/test/skills", enabled: true }],
+      targets: [{ path: "~/skills", enabled: true }],
       skillSets: [],
       globalTargetInstallMode: "symlink",
       projectTargetInstallMode: "symlink"
     });
     expect(scanTargets).toHaveBeenNthCalledWith(2, {
       libraryPath: "/home/test/updated-skiller",
-      targets: [{ path: "/home/test/updated-skills", enabled: true }],
+      targets: [{ path: "~/updated-skills", enabled: true }],
       skillSets: [],
       globalTargetInstallMode: "symlink",
       projectTargetInstallMode: "symlink"

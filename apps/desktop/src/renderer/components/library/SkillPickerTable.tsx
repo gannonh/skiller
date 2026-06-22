@@ -1,6 +1,4 @@
 import { useMemo, useState } from "react";
-import { Sorting01Icon, SortingDownIcon, SortingUpIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
@@ -9,11 +7,8 @@ import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import type { SkillMetadata } from "../../lib/api.js";
 import { sourceDetail, sourceLabel } from "../../lib/skill-source.js";
-import { sortSkills, type SkillPickerSortColumn } from "./library-helpers.js";
-
-function statusLabel(skill: SkillMetadata): string {
-  return skill.validation?.valid ? "valid" : "invalid";
-}
+import { skillStatusLabel, sortSkills, type SkillPickerSortColumn } from "./library-helpers.js";
+import { SortableTableHead } from "./SortableTableHead.js";
 
 export function SkillPickerTable({
   skills,
@@ -50,30 +45,6 @@ export function SkillPickerTable({
     setSortDirection("asc");
   }
 
-  function sortIcon(column: SkillPickerSortColumn) {
-    if (column !== sortColumn) return Sorting01Icon;
-    return sortDirection === "asc" ? SortingUpIcon : SortingDownIcon;
-  }
-
-  function SortableTableHead({ column, children }: { column: SkillPickerSortColumn; children: string }) {
-    const active = column === sortColumn;
-    return (
-      <TableHead aria-sort={active ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="-ml-2 h-8 px-2"
-          aria-label={`Sort by ${children}`}
-          onClick={() => updateSort(column)}
-        >
-          {children}
-          <HugeiconsIcon icon={sortIcon(column)} strokeWidth={2} data-icon="inline-end" />
-        </Button>
-      </TableHead>
-    );
-  }
-
   function setSkillSelected(skillId: string, selected: boolean) {
     const next = new Set(selectedSkillIds);
     if (selected) next.add(skillId);
@@ -102,10 +73,18 @@ export function SkillPickerTable({
                 Include
               </Label>
             </TableHead>
-            <SortableTableHead column="name">Name</SortableTableHead>
-            <SortableTableHead column="source">Source</SortableTableHead>
-            <SortableTableHead column="status">Status</SortableTableHead>
-            <SortableTableHead column="enabled">Enabled</SortableTableHead>
+            <SortableTableHead column="name" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+              Name
+            </SortableTableHead>
+            <SortableTableHead column="source" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+              Source
+            </SortableTableHead>
+            <SortableTableHead column="status" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+              Status
+            </SortableTableHead>
+            <SortableTableHead column="enabled" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+              Enabled
+            </SortableTableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -133,9 +112,9 @@ export function SkillPickerTable({
                 </TableCell>
                 <TableCell>
                   {skill.validation?.valid ? (
-                    <Badge variant="outline">{statusLabel(skill)}</Badge>
+                    <Badge variant="outline">{skillStatusLabel(skill)}</Badge>
                   ) : (
-                    <Badge variant="destructive">{statusLabel(skill)}</Badge>
+                    <Badge variant="destructive">{skillStatusLabel(skill)}</Badge>
                   )}
                 </TableCell>
                 <TableCell>

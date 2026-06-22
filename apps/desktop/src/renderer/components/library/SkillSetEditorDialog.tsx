@@ -14,6 +14,7 @@ import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { SkillPickerTable } from "./SkillPickerTable.js";
 import { TargetListEditor } from "./TargetListEditor.js";
+import { computeSkillSetEditorState } from "./skill-set-editor-state.js";
 
 export function SkillSetEditorDialog({
   open,
@@ -32,7 +33,7 @@ export function SkillSetEditorDialog({
   disabled?: boolean;
   globalTargets?: TargetConfig[];
   onOpenChange: (open: boolean) => void;
-  onSave: (input: SaveSkillSetInput) => Promise<void>;
+  onSave: (input: SaveSkillSetInput) => Promise<boolean>;
   onManageGlobalTargets?: () => void;
   onBrowseTarget?: () => Promise<string | null>;
 }) {
@@ -40,38 +41,31 @@ export function SkillSetEditorDialog({
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set());
   const [targets, setTargets] = useState<TargetConfig[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    const savedTargets = skillSet?.targets.map((target) => ({ ...target })) ?? [];
-    const savedGlobalTargets = savedTargets.filter((target) => target.scope === "global");
-    const projectTargets = savedTargets.filter((target) => target.scope !== "global");
-    const hasExplicitTargets = savedTargets.length > 0;
-    const initialGlobalTargets = globalTargets.map((globalTarget) => {
-      const saved = savedGlobalTargets.find((target) => target.path === globalTarget.path);
-      return {
-        path: globalTarget.path,
-        enabled: saved?.enabled ?? (!hasExplicitTargets && globalTarget.enabled),
-        scope: "global" as const
-      };
-    });
-
-    setName(skillSet?.name ?? "");
-    setSelectedSkillIds(new Set(skillSet?.skillIds ?? []));
-    setTargets([...projectTargets, ...initialGlobalTargets]);
+    const initial = computeSkillSetEditorState(skillSet, globalTargets);
+    setName(initial.name);
+    setSelectedSkillIds(initial.selectedSkillIds);
+    setTargets(initial.targets);
+    setError(null);
   }, [open, skillSet, globalTargets]);
 
   async function handleSave() {
     if (name.trim() === "" || isSaving || disabled) return;
     setIsSaving(true);
+    setError(null);
     try {
-      await onSave({
+      const saved = await onSave({
         ...(skillSet ? { id: skillSet.id } : {}),
         name,
         skillIds: [...selectedSkillIds],
         targets
       });
-      onOpenChange(false);
+      if (saved) onOpenChange(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setIsSaving(false);
     }
@@ -87,6 +81,7 @@ export function SkillSetEditorDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-6">
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="grid gap-2">
             <Label htmlFor="skill-set-name">Name</Label>
             <Input
