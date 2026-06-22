@@ -1,7 +1,7 @@
 ---
 type: Spec
 title: Skiller Desktop Design
-description: Cross-platform desktop app for managing local agent skills, library sync, and skills.sh discovery.
+description: macOS and Linux desktop app for managing local agent skills, library sync, and skills.sh discovery.
 tags: [desktop, architecture, core]
 timestamp: 2026-05-09T00:00:00Z
 ---
@@ -12,7 +12,7 @@ Related: [Skiller Desktop implementation plan](/specs/skiller-desktop.md), [Mono
 
 ## Summary
 
-Skiller is a cross-platform desktop app for managing local agent skills. It keeps master skill copies in a user-selected library, defaults to `~/skiller`, watches agent skill directories, imports discovered skills automatically, and enables skills through symlinks.
+Skiller is a macOS and Linux desktop app for managing local agent skills. It keeps master skill copies in a user-selected library, defaults to `~/skiller`, watches agent skill directories, imports discovered skills automatically, and enables skills through symlinks.
 
 The app also acts as a desktop browser for skills.sh. Users can search, inspect, install, validate, update, and enable skills from one place.
 

@@ -383,6 +383,15 @@ jobs:
             fi
           done
 
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/release/prepare-github-release.ts \
+            --dist dist \
+            --repository "${{ github.repository }}" \
+            --tag "${{ needs.release_meta.outputs.tag }}" \
+            --version "${{ needs.release_meta.outputs.version }}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -391,8 +400,15 @@ jobs:
           target_commitish: ${{ github.sha }}
           prerelease: ${{ needs.release_meta.outputs.is_prerelease }}
           make_latest: ${{ needs.release_meta.outputs.make_latest }}
-          generate_release_notes: true
-          files: dist/**/*
+          body_path: dist/release-body.md
+          files: |
+            dist/Skiller-*.dmg
+            dist/Skiller-*.zip
+            dist/Skiller-*.AppImage
+            dist/Skiller-*.deb
+            dist/*.blockmap
+            dist/*-mac.yml
+            dist/*-linux*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

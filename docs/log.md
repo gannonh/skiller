@@ -2,6 +2,8 @@
 
 ## 2026-06-22
 
+- Added release asset renaming and platform-organized GitHub Release download tables.
+- Removed Windows references from desktop platform and auto-update docs after dropping Windows from the release pipeline.
 - Added CI parity for `pnpm test:release-scripts` and refreshed release docs for `.github/workflows/release.yml`.
 - Initialized the OKF bundle from existing `docs/superpowers` specs and plans.
 - Migrated eleven concept documents into [specs/](/specs/index.md).

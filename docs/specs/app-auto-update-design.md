@@ -24,8 +24,6 @@ This feature is separate from skill updates. The existing `Updates` page continu
 - Publish the updater metadata required by Electron Builder.
 - Keep user-visible app update UI in the left panel heading.
 
-Windows update support is out of scope for this version.
-
 ## Architecture
 
 Add an app update service under `apps/desktop/src/main`. The service owns `electron-updater`, starts after `app.whenReady()`, checks GitHub Releases on startup and periodically in the background, downloads updates automatically, and exposes normalized state to the renderer. The app update check interval is owned by this service and stays separate from the existing skill update schedule.

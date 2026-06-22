@@ -10,7 +10,7 @@ timestamp: 2026-06-22T00:00:00Z
 
 Related: [App auto update design](/specs/app-auto-update-design.md), [App auto update plan](/specs/app-auto-update.md)
 
-Skiller Desktop uses `electron-builder` and [`.github/workflows/release.yml`](https://github.com/gannonh/skiller/blob/main/.github/workflows/release.yml) to build signed, notarized macOS artifacts and Linux packages, then publish GitHub Releases. Windows desktop builds are not supported or published.
+Skiller Desktop uses `electron-builder` and [`.github/workflows/release.yml`](https://github.com/gannonh/skiller/blob/main/.github/workflows/release.yml) to build signed, notarized macOS artifacts and Linux packages, then publish GitHub Releases.
 
 ## Workflow triggers
 
@@ -48,7 +48,7 @@ If using the Kata local secrets as a guide, `.secrets/signing-cert.p12.base64` i
 
 ## Release behavior
 
-The workflow resolves release metadata, validates macOS signing secrets, builds per-platform artifacts, merges macOS updater manifests with `scripts/release/merge-update-manifests.ts`, and publishes a GitHub Release. Stable releases can run a finalize job that commits the released version back to `apps/desktop/package.json` on `main`.
+The workflow resolves release metadata, validates macOS signing secrets, builds per-platform artifacts, merges macOS updater manifests with `scripts/release/merge-update-manifests.ts`, renames installers for clearer GitHub Release assets with `scripts/release/prepare-github-release.ts`, and publishes a GitHub Release with a platform-organized download table. Stable releases can run a finalize job that commits the released version back to `apps/desktop/package.json` on `main`.
 
 Release notes should come from the changelog entry for that version. Do not write separate ad hoc release notes during tagging.
 

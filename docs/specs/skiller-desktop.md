@@ -12,7 +12,7 @@ Related: [Skiller Desktop design](/specs/skiller-desktop-design.md)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a cross-platform Electron desktop app and CLI for discovering, validating, importing, updating, and symlink-enabling agent skills.
+**Goal:** Build a macOS and Linux Electron desktop app and CLI for discovering, validating, importing, updating, and symlink-enabling agent skills.
 
 **Architecture:** Use a pnpm monorepo with a shared Node/TypeScript core, a CLI package, and an Electron/Vite React desktop app. The core owns filesystem state, validation, skills.sh API access, scanning, import, updates, and symlink operations. The desktop app calls core behavior through typed Electron IPC and runs tray/background work in the main process.
 
