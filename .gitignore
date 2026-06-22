@@ -11,3 +11,4 @@ playwright-report/
 test-results/
 apps/desktop/release/
 skill-dist
+.agents/skills/
