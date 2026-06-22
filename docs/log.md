@@ -2,6 +2,7 @@
 
 ## 2026-06-22
 
+- Added CI parity for `pnpm test:release-scripts` and refreshed release docs for `.github/workflows/release.yml`.
 - Initialized the OKF bundle from existing `docs/superpowers` specs and plans.
 - Migrated eleven concept documents into [specs/](/specs/index.md).
 - Added [monorepo architecture](/architecture/monorepo.md) and [desktop release guide](/guides/desktop-release.md).

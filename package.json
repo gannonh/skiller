@@ -11,6 +11,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "check": "pnpm typecheck && pnpm test:coverage && pnpm test:release-scripts && pnpm test:e2e && pnpm build",
+    "check:pre-push": "pnpm typecheck && pnpm test:coverage && pnpm test:release-scripts && pnpm build",
     "test:release-scripts": "vitest run --config scripts/release/vitest.config.ts",
     "dev": "pnpm --filter @skiller/desktop dev",
     "dev:renderer": "pnpm --filter @skiller/desktop dev:renderer",

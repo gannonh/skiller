@@ -34,7 +34,7 @@ Related: [App auto update design](/specs/app-auto-update-design.md)
 - Modify `e2e/skiller.spec.ts`: verify the sidebar app update button appears only for ready app updates and does not affect the skill `Updates` page.
 - Modify `apps/desktop/package.json` and `pnpm-lock.yaml`: add `electron-updater` as an app dependency.
 - Modify `apps/desktop/electron-builder.yml`: add GitHub publish config and ensure updater metadata generation.
-- Modify `.github/workflows/desktop-release.yml`: upload `latest-mac.yml` and `latest-linux.yml` with release assets.
+- Modify `.github/workflows/release.yml`: upload `latest-mac.yml` and `latest-linux.yml` with release assets.
 
 ---
 
@@ -44,7 +44,7 @@ Related: [App auto update design](/specs/app-auto-update-design.md)
 - Modify: `apps/desktop/package.json`
 - Modify: `pnpm-lock.yaml`
 - Modify: `apps/desktop/electron-builder.yml`
-- Modify: `.github/workflows/desktop-release.yml`
+- Modify: `.github/workflows/release.yml`
 
 - [ ] **Step 1: Add the app dependency**
 
@@ -72,7 +72,7 @@ Expected: Electron Builder has enough provider metadata to create `app-update.ym
 
 - [ ] **Step 3: Upload macOS update metadata**
 
-In `.github/workflows/desktop-release.yml`, update the macOS verify step so it checks update metadata:
+In `.github/workflows/release.yml`, update the macOS verify step so it checks update metadata:
 
 ```yaml
       - name: Verify artifacts
@@ -127,7 +127,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/desktop/package.json pnpm-lock.yaml apps/desktop/electron-builder.yml .github/workflows/desktop-release.yml
+git add apps/desktop/package.json pnpm-lock.yaml apps/desktop/electron-builder.yml .github/workflows/release.yml
 git commit -m "chore(desktop): publish app update metadata"
 ```
 

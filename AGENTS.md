@@ -19,7 +19,7 @@ pnpm install
 pnpm dev                 # Build core/desktop and launch Electron with Vite renderer
 pnpm dev:renderer        # Start renderer-only Vite preview on 127.0.0.1:5173
 pnpm cli -- --help       # Run the CLI from source
-pnpm check               # typecheck, coverage, e2e, build
+pnpm check               # typecheck, coverage, release scripts, e2e, build
 pnpm test:e2e            # Playwright renderer tests from ./e2e
 ```
 
@@ -36,7 +36,7 @@ pnpm test:e2e            # Playwright renderer tests from ./e2e
 
 ## Testing
 
-- `.husky/pre-push` runs `pnpm check`; fix hook failures before pushing.
+- `.husky/pre-push` runs `pnpm check:pre-push` (typecheck, coverage, release scripts, build; no e2e). CI still runs e2e. Fix hook failures before pushing.
 - Playwright tests use `playwright.config.ts`, start `pnpm --filter @skiller/desktop dev:renderer -- --port 5173`, and exercise the renderer preview API.
 
 ### agent-browser

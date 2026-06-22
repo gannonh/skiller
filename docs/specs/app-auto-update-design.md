@@ -60,7 +60,7 @@ Add Electron Builder GitHub publish config for `gannonh/skiller`. Build output m
 - `latest-mac.yml`
 - `latest-linux.yml`
 
-Update `.github/workflows/desktop-release.yml` so GitHub releases upload the metadata files with the existing DMG, zip, AppImage, and deb assets.
+Update `.github/workflows/release.yml` so GitHub releases upload the metadata files with the existing DMG, zip, AppImage, and deb assets.
 
 ## UI
 
