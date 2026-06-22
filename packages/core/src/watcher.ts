@@ -10,7 +10,8 @@ export function watchTargetDirectories(
   return chokidar
     .watch(targetDirectories, {
       ignoreInitial: true,
-      depth: 2,
+      depth: 1,
+      followSymlinks: false,
       awaitWriteFinish: true
     })
     .on("addDir", onChange)

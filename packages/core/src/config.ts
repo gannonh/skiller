@@ -1,4 +1,4 @@
-import type { SkillerConfig } from "./types.js";
+import type { SkillerConfig, TargetInstallMode } from "./types.js";
 import { defaultTargetDirectories } from "./paths.js";
 import fs from "fs-extra";
 import os from "node:os";
@@ -32,11 +32,17 @@ export function defaultConfig(): SkillerConfig {
   return {
     libraryPath: "~/skiller",
     targets: defaultTargetDirectories().map((targetPath) => ({ path: targetPath, enabled: true })),
+    globalTargetInstallMode: "symlink",
+    projectTargetInstallMode: "symlink",
     updateSchedule: { intervalHours: 24 },
     keepAllSkillsUpdated: false,
     launchAtLogin: false,
     trayEnabled: true
   };
+}
+
+function normalizeInstallMode(value: unknown, fallback: TargetInstallMode): TargetInstallMode {
+  return value === "copy" ? "copy" : fallback;
 }
 
 function normalizeTargetPath(targetPath: string): string {
@@ -73,7 +79,9 @@ export function normalizeConfig(input: ConfigInput): SkillerConfig {
       ...defaults.updateSchedule,
       ...input.updateSchedule
     },
-    targets: normalizeTargets(input, defaults)
+    targets: normalizeTargets(input, defaults),
+    globalTargetInstallMode: normalizeInstallMode(input.globalTargetInstallMode, defaults.globalTargetInstallMode),
+    projectTargetInstallMode: normalizeInstallMode(input.projectTargetInstallMode, defaults.projectTargetInstallMode)
   };
 }
 

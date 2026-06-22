@@ -1,14 +1,18 @@
 import fs from "fs-extra";
 import path from "node:path";
 import YAML from "yaml";
-import { copySkillToLibrary, hashDirectory, replaceWithSymlink } from "./file-ops.js";
+import { copySkillToLibrary, hashDirectory, replaceWithCopy, replaceWithSymlink } from "./file-ops.js";
 import { MetadataStore } from "./metadata-store.js";
-import type { SkillMetadata, TargetConfig } from "./types.js";
+import { expandHome } from "./paths.js";
+import type { SkillMetadata, SkillSetMetadata, TargetConfig, TargetInstallMode } from "./types.js";
 import { validateSkill } from "./validator.js";
 
 export interface ScanTargetsInput {
   libraryPath: string;
   targets: TargetConfig[];
+  skillSets?: SkillSetMetadata[];
+  globalTargetInstallMode?: TargetInstallMode;
+  projectTargetInstallMode?: TargetInstallMode;
 }
 
 export interface TargetSkillChange {
@@ -39,6 +43,10 @@ function slugFromPath(skillPath: string): string {
 
 function isMissingPathError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function isInvalidPathError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "EINVAL";
 }
 
 async function skillIdFromSkillPath(skillPath: string): Promise<string> {
@@ -75,7 +83,13 @@ async function resolveEffectivePath(targetPath: string): Promise<string> {
     existingAncestor = parent;
   }
 
-  const realAncestor = await fs.realpath(existingAncestor);
+  let realAncestor = existingAncestor;
+  try {
+    realAncestor = await fs.realpath(existingAncestor);
+  } catch (error) {
+    if (!isMissingPathError(error) && !isInvalidPathError(error)) throw error;
+  }
+
   const suffix = path.relative(existingAncestor, targetPath);
   return suffix === "" ? realAncestor : path.join(realAncestor, suffix);
 }
@@ -152,25 +166,144 @@ function changeKey(skillId: string, targetPath: string): string {
   return `${skillId}\0${targetPath}`;
 }
 
-export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsResult> {
-  if (!path.isAbsolute(input.libraryPath)) {
-    throw new Error("Library path must be absolute before scanning targets");
+function resolveTargetsForSkill(
+  metadata: SkillMetadata,
+  skillSets: SkillSetMetadata[],
+  globalTargets: TargetConfig[]
+): Set<string> {
+  const targetScope = metadata.targetScope ?? "both";
+  const targets = new Set<string>();
+  const memberSets = skillSets.filter((skillSet) => skillSet.skillIds.includes(metadata.id));
+
+  if (targetScope === "global" || targetScope === "both") {
+    const scopedGlobals = memberSets.flatMap((skillSet) => skillSet.targets.filter(isGlobalSkillSetTarget));
+    const effectiveGlobals =
+      memberSets.length > 0 && scopedGlobals.length > 0 ? scopedGlobals : globalTargets.filter((target) => target.enabled);
+    for (const target of effectiveGlobals) {
+      if (target.enabled) targets.add(expandHome(target.path));
+    }
   }
 
+  if (targetScope === "projects" || targetScope === "both") {
+    for (const target of memberSets.flatMap((skillSet) => skillSet.targets.filter(isProjectSkillSetTarget))) {
+      if (target.enabled) targets.add(target.path);
+    }
+  }
+
+  return targets;
+}
+
+function isGlobalSkillSetTarget(target: TargetConfig): boolean {
+  return target.scope === "global";
+}
+
+function isProjectSkillSetTarget(target: TargetConfig): boolean {
+  return target.scope === "project";
+}
+
+function upsertScanTarget(targetsByPath: Map<string, TargetConfig>, target: TargetConfig): void {
+  const existing = targetsByPath.get(target.path);
+  targetsByPath.set(target.path, { ...target, enabled: existing ? existing.enabled || target.enabled : target.enabled });
+}
+
+function allScanTargets(globalTargets: TargetConfig[], skillSets: SkillSetMetadata[]): TargetConfig[] {
+  const byPath = new Map<string, TargetConfig>();
+
+  for (const target of globalTargets) {
+    upsertScanTarget(byPath, target);
+  }
+
+  for (const skillSet of skillSets) {
+    for (const target of skillSet.targets.filter(isProjectSkillSetTarget)) {
+      upsertScanTarget(byPath, target);
+    }
+  }
+
+  return uniqueTargets([...byPath.values()]);
+}
+
+function expandTargetConfig(target: TargetConfig): TargetConfig {
+  return { ...target, path: expandHome(target.path) };
+}
+
+function expandSkillSets(skillSets: SkillSetMetadata[]): SkillSetMetadata[] {
+  return skillSets.map((skillSet) => ({
+    ...skillSet,
+    targets: skillSet.targets.map(expandTargetConfig)
+  }));
+}
+
+function projectTargetPaths(skillSets: SkillSetMetadata[]): Set<string> {
+  return new Set(
+    skillSets
+      .flatMap((skillSet) => skillSet.targets.filter(isProjectSkillSetTarget))
+      .map((target) => expandHome(target.path))
+  );
+}
+
+function installModeForTargetDir(
+  targetDir: string,
+  projectPaths: Set<string>,
+  installModes: { global: TargetInstallMode; project: TargetInstallMode }
+): TargetInstallMode {
+  return projectPaths.has(targetDir) ? installModes.project : installModes.global;
+}
+
+export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsResult> {
+  if (!path.isAbsolute(input.libraryPath)) throw new Error("Library path must be absolute before scanning targets");
   const store = new MetadataStore(input.libraryPath);
-  const records = await store.list();
+  let records: SkillMetadata[];
+  let skillSets: SkillSetMetadata[];
+  if (input.skillSets === undefined) {
+    const libraryState = await store.libraryState();
+    records = libraryState.skills;
+    skillSets = expandSkillSets(libraryState.skillSets);
+  } else {
+    records = await store.list();
+    skillSets = expandSkillSets(input.skillSets);
+  }
   const imported: SkillMetadata[] = [];
   const enabled: TargetSkillChange[] = [];
   const disabled: TargetSkillChange[] = [];
   const errors: Array<{ path: string; message: string }> = [];
-  const targets = uniqueTargets(input.targets);
+  const globalTargets = uniqueTargets(input.targets.map(expandTargetConfig));
+  const targets = allScanTargets(globalTargets, skillSets);
+  const projectPaths = projectTargetPaths(skillSets);
+  const installModes = {
+    global: input.globalTargetInstallMode ?? "symlink",
+    project: input.projectTargetInstallMode ?? "symlink"
+  };
   const enabledChangeKeys = new Set<string>();
   const disabledChangeKeys = new Set<string>();
   let metadataByRealLibraryPath: Map<string, SkillMetadata> | undefined;
 
+  async function isManagedCopy(targetSkillPath: string, metadata: SkillMetadata): Promise<boolean> {
+    if (!metadata.contentHash) return false;
+
+    try {
+      return (await hashDirectory(targetSkillPath)) === metadata.contentHash;
+    } catch {
+      return false;
+    }
+  }
+
+  async function installToTarget(targetPath: string, masterPath: string, mode: TargetInstallMode): Promise<void> {
+    if (mode === "copy") {
+      await replaceWithCopy(targetPath, masterPath);
+      return;
+    }
+
+    await replaceWithSymlink(targetPath, masterPath);
+  }
+
   async function findMetadataByRealLibraryPath(libraryPath: string): Promise<SkillMetadata | undefined> {
     metadataByRealLibraryPath ??= await buildMetadataByRealLibraryPath(records);
-    return metadataByRealLibraryPath.get(await fs.realpath(libraryPath));
+    try {
+      return metadataByRealLibraryPath.get(await fs.realpath(libraryPath));
+    } catch (error) {
+      if (isMissingPathError(error) || isInvalidPathError(error)) return undefined;
+      throw error;
+    }
   }
 
   function markEnabled(metadata: SkillMetadata, targetDir: string): void {
@@ -213,6 +346,80 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
     markDisabled(metadata, targetDir);
   }
 
+  async function removeManagedCopy(
+    targetSkillPath: string,
+    targetDir: string,
+    verifiedMetadata?: SkillMetadata
+  ): Promise<void> {
+    let stat;
+
+    try {
+      stat = await fs.lstat(targetSkillPath);
+    } catch (error) {
+      if (isMissingPathError(error)) return;
+      throw error;
+    }
+
+    /* v8 ignore next 3 */
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return;
+    if (!(await isSkillDirectory(targetSkillPath))) return;
+
+    /* v8 ignore next -- removeManagedCopy is only called after metadata is resolved */
+    const metadata = verifiedMetadata ?? findMetadataById(records, path.basename(targetSkillPath));
+    /* v8 ignore next */
+    if (!metadata || path.basename(targetSkillPath) !== metadata.id) return;
+
+    const declaredId = await skillIdFromSkillPath(targetSkillPath);
+    /* v8 ignore next */
+    if (declaredId !== metadata.id) return;
+
+    await fs.remove(targetSkillPath);
+    markDisabled(metadata, targetDir);
+  }
+
+  async function ensureManagedCopy(metadata: SkillMetadata, targetDir: string): Promise<void> {
+    const targetSkillPath = path.join(targetDir, metadata.id);
+
+    try {
+      const stat = await fs.lstat(targetSkillPath);
+
+      if (stat.isSymbolicLink()) {
+        await fs.remove(targetSkillPath);
+      } else if (stat.isDirectory()) {
+        if (!(await isSkillDirectory(targetSkillPath))) return;
+
+        const declaredId = await skillIdFromSkillPath(targetSkillPath);
+        /* v8 ignore next */
+        if (declaredId !== metadata.id) return;
+
+        const currentHash = await hashDirectory(targetSkillPath);
+        if (currentHash === metadata.contentHash) {
+          markEnabled(metadata, targetDir);
+          return;
+        }
+
+        await fs.remove(targetSkillPath);
+      } else {
+        return;
+      }
+    } catch (error) {
+      /* v8 ignore next */
+      if (!isMissingPathError(error)) throw error;
+    }
+
+    await replaceWithCopy(targetSkillPath, metadata.libraryPath);
+    markEnabled(metadata, targetDir);
+  }
+
+  async function ensureManagedInstall(metadata: SkillMetadata, targetDir: string, mode: TargetInstallMode): Promise<void> {
+    if (mode === "copy") {
+      await ensureManagedCopy(metadata, targetDir);
+      return;
+    }
+
+    await ensureManagedSymlink(metadata, targetDir);
+  }
+
   async function ensureManagedSymlink(metadata: SkillMetadata, targetDir: string): Promise<void> {
     const targetSkillPath = path.join(targetDir, metadata.id);
 
@@ -239,6 +446,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
   for (const { path: targetDir, enabled: targetEnabled } of targets) {
     if (!targetEnabled) continue;
     if (await isUnsafeTargetDirectory(targetDir, input.libraryPath)) continue;
+    const installMode = installModeForTargetDir(targetDir, projectPaths, installModes);
     await prepareTargetDirectory(targetDir, targetEnabled);
 
     let entries: string[];
@@ -264,7 +472,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
         if (existingMetadata) {
           if (!existingMetadata.enabled) continue;
           if (!(await fs.pathExists(existingMetadata.libraryPath))) continue;
-          await replaceWithSymlink(targetSkillPath, existingMetadata.libraryPath);
+          await installToTarget(targetSkillPath, existingMetadata.libraryPath, installMode);
           markEnabled(existingMetadata, targetDir);
           continue;
         }
@@ -288,7 +496,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
             validation
           };
 
-          await replaceWithSymlink(targetSkillPath, librarySkillPath);
+          await installToTarget(targetSkillPath, librarySkillPath, installMode);
           linked = true;
           await store.save(metadata);
           records.push(metadata);
@@ -311,6 +519,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
   for (const { path: targetDir, enabled: targetEnabled } of targets) {
     if (await isUnsafeTargetDirectory(targetDir, input.libraryPath)) continue;
     if (!(await prepareTargetDirectory(targetDir, targetEnabled))) continue;
+    const installMode = installModeForTargetDir(targetDir, projectPaths, installModes);
 
     let entries: string[];
     try {
@@ -326,13 +535,36 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
 
       try {
         const stat = await fs.lstat(targetSkillPath);
-        if (!stat.isSymbolicLink()) continue;
 
-        const metadata = await findMetadataByRealLibraryPath(targetSkillPath);
-        if (!metadata) continue;
+        if (stat.isSymbolicLink()) {
+          const metadata = await findMetadataByRealLibraryPath(targetSkillPath);
+          if (!metadata) continue;
 
-        if (!targetEnabled || !metadata.enabled) {
-          await removeManagedSymlink(targetSkillPath, targetDir, metadata);
+          const allowedTargets = resolveTargetsForSkill(metadata, skillSets, globalTargets);
+          const shouldRemove =
+            !targetEnabled || !metadata.enabled || !allowedTargets.has(targetDir) || installMode === "copy";
+
+          if (shouldRemove) {
+            await removeManagedSymlink(targetSkillPath, targetDir, metadata);
+          }
+
+          continue;
+        }
+
+        if (!stat.isDirectory() || !(await isSkillDirectory(targetSkillPath))) continue;
+
+        const declaredId = await skillIdFromSkillPath(targetSkillPath);
+        const metadata = findMetadataById(records, declaredId);
+        if (!metadata || entry !== metadata.id) continue;
+
+        const allowedTargets = resolveTargetsForSkill(metadata, skillSets, globalTargets);
+        const managedCopy = await isManagedCopy(targetSkillPath, metadata);
+        const shouldRemove =
+          managedCopy &&
+          (!targetEnabled || !metadata.enabled || !allowedTargets.has(targetDir) || installMode === "symlink");
+
+        if (shouldRemove) {
+          await removeManagedCopy(targetSkillPath, targetDir, metadata);
         }
       } catch (error) {
         if (isMissingPathError(error)) continue;
@@ -346,8 +578,11 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
       if (!record.enabled) continue;
       if (!(await fs.pathExists(record.libraryPath))) continue;
 
+      const allowedTargets = resolveTargetsForSkill(record, skillSets, globalTargets);
+      if (!allowedTargets.has(targetDir)) continue;
+
       try {
-        await ensureManagedSymlink(record, targetDir);
+        await ensureManagedInstall(record, targetDir, installMode);
       } catch (error) {
         if (isMissingPathError(error)) continue;
         errors.push({

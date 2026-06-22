@@ -93,81 +93,23 @@ test("autocompletes row tags from existing library tags", async ({ page }) => {
 });
 
 test("manages skill sets and tag filters from the library", async ({ page }) => {
-  await page.addInitScript(() => {
-    const skill = (id, tags, enabled = true) => ({
-      id,
-      name: id,
-      libraryPath: `/tmp/${id}`,
-      source: { type: "local", path: `/tmp/${id}` },
-      installedAt: "2026-05-12T00:00:00.000Z",
-      keepUpdated: false,
-      enabled,
-      tags,
-      validation: { valid: true, issues: [] }
-    });
-    const state = {
-      skills: [skill("alpha-skill", ["browser", "testing"]), skill("beta-skill", ["browser"], false)],
-      skillSets: [],
-      tags: ["browser", "testing"]
-    };
-    const refreshTags = () => {
-      state.tags = Array.from(new Set(state.skills.flatMap((candidate) => candidate.tags))).sort();
-    };
-    window.skiller = {
-      listLibrary: async () => state,
-      createSkillSet: async (name) => {
-        state.skillSets.push({
-          id: name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "") || "skill-set",
-          name: name.trim(),
-          createdAt: "2026-05-12T00:00:00.000Z",
-          updatedAt: "2026-05-12T00:00:00.000Z"
-        });
-        return state;
-      },
-      renameSkillSet: async (skillSetId, name) => {
-        const skillSet = state.skillSets.find((candidate) => candidate.id === skillSetId);
-        if (skillSet) skillSet.name = name.trim();
-        return state;
-      },
-      deleteSkillSet: async (skillSetId) => {
-        state.skillSets = state.skillSets.filter((candidate) => candidate.id !== skillSetId);
-        for (const candidate of state.skills) {
-          if (candidate.skillSetId === skillSetId) delete candidate.skillSetId;
-        }
-        return state;
-      },
-      assignSkillSet: async (skillId, skillSetId) => {
-        const target = state.skills.find((candidate) => candidate.id === skillId);
-        if (target) {
-          if (skillSetId) target.skillSetId = skillSetId;
-          else delete target.skillSetId;
-        }
-        return state;
-      },
-      replaceSkillTags: async (skillId, tags) => {
-        const target = state.skills.find((candidate) => candidate.id === skillId);
-        if (target) target.tags = tags;
-        refreshTags();
-        return state;
-      },
-      setSkillSetEnabled: async (skillSetId, enabled) => {
-        for (const candidate of state.skills) {
-          if (candidate.skillSetId === skillSetId) candidate.enabled = enabled;
-        }
-        return { state, scanErrors: [] };
-      }
-    };
-  });
+  const { installLibrarySkillSetsMock } = await import("./fixtures/library-skill-sets-mock.js");
+  await page.addInitScript(installLibrarySkillSetsMock);
   await page.goto("/");
 
-  await page.getByLabel("New skill set name").fill("Agent v1.0");
-  await page.getByRole("button", { name: "Create set" }).click();
+  await page.getByRole("button", { name: "Create New Skill Set" }).click();
+  await page.locator("#skill-set-name").fill("Agent v1.0");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("button", { name: "Agent v1.0", exact: true })).toHaveAttribute("aria-pressed", "false");
 
-  await page.getByLabel("Set for alpha-skill").selectOption("agent-v1.0");
-  await page.getByLabel("Set for beta-skill").selectOption("agent-v1.0");
-  await expect(page.getByText("2 members")).toBeVisible();
-  await expect(page.getByText("mixed")).toBeVisible();
+  await page.getByRole("button", { name: "Manage skill sets for alpha-skill" }).click();
+  await page.getByRole("checkbox", { name: /Agent v1\.0/ }).check();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Manage skill sets for beta-skill" }).click();
+  await page.getByRole("checkbox", { name: /Agent v1\.0/ }).check();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator('[data-slot="badge"]').filter({ hasText: "2 members" })).toBeVisible();
+  await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^mixed$/ })).toBeVisible();
 
   await page.getByRole("button", { name: "browser" }).click();
   await page.getByRole("button", { name: "testing" }).click();
@@ -182,14 +124,14 @@ test("manages skill sets and tag filters from the library", async ({ page }) => 
   await page.getByLabel("Enable Agent v1.0").click();
   await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^on$/ })).toBeVisible();
 
-  await page.getByRole("button", { name: "Rename Agent v1.0" }).click();
-  await page.getByLabel("Rename skill set").fill("Runtime");
-  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await page.getByRole("button", { name: "Edit Agent v1.0" }).click();
+  await page.locator("#skill-set-name").fill("Runtime");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("button", { name: "Runtime", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Delete Runtime" }).click();
   await expect(page.getByRole("button", { name: "Runtime", exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Set for alpha-skill")).toHaveValue("none");
+  await expect(page.getByRole("button", { name: "1 sets" })).toHaveCount(0);
 });
 
 test("deletes a library skill from the browser preview API", async ({ page }) => {
@@ -208,6 +150,8 @@ test("keeps the sidebar width on the Library first paint with wide content", asy
       (name, index) => ({
         id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
         name,
+        skillIds: [] as string[],
+        targets: [],
         createdAt: "2026-05-13T00:00:00.000Z",
         updatedAt: "2026-05-13T00:00:00.000Z",
         enabled: index % 2 === 0
@@ -217,21 +161,17 @@ test("keeps the sidebar width on the Library first paint with wide content", asy
       listLibrary: async () => ({
         skillSets,
         tags: ["frameworks", "pull requests", "tdd", "ux"],
-        skills: Array.from({ length: 56 }, (_, index) => {
-          const set = skillSets[index % skillSets.length];
-          return {
-            id: `skill-${index + 1}`,
-            name: `skill-${index + 1}`,
-            libraryPath: `/tmp/skill-${index + 1}`,
-            source: { type: "github", githubUrl: "https://github.com/example/skills", githubPath: `skills/skill-${index + 1}` },
-            installedAt: "2026-05-13T00:00:00.000Z",
-            keepUpdated: true,
-            enabled: true,
-            skillSetId: set.id,
-            tags: ["frameworks", "pull requests"],
-            validation: { valid: true, issues: [] }
-          };
-        })
+        skills: Array.from({ length: 56 }, (_, index) => ({
+          id: `skill-${index + 1}`,
+          name: `skill-${index + 1}`,
+          libraryPath: `/tmp/skill-${index + 1}`,
+          source: { type: "github", githubUrl: "https://github.com/example/skills", githubPath: `skills/skill-${index + 1}` },
+          installedAt: "2026-05-13T00:00:00.000Z",
+          keepUpdated: true,
+          enabled: true,
+          tags: ["frameworks", "pull requests"],
+          validation: { valid: true, issues: [] }
+        }))
       })
     };
   });
@@ -257,9 +197,10 @@ test("sorts library columns with name as the default", async ({ page }) => {
   await page.getByRole("button", { name: "Install selected" }).click();
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
 
-  for (const column of ["Name", "Source", "Skill Set", "Status", "Enabled", "Actions"]) {
+  for (const column of ["Name", "Source", "Status", "Enabled", "Actions"]) {
     await expect(page.getByRole("button", { name: `Sort by ${column}` })).toBeVisible();
   }
+  await expect(page.getByRole("columnheader", { name: "Skill Sets" })).toBeVisible();
 
   const rows = page.locator("tbody tr");
   await expect(rows.nth(0).locator("td").first()).toHaveText("alpha-skill");
@@ -275,9 +216,9 @@ test("sorts library columns with name as the default", async ({ page }) => {
 
 test("shows configured target directories and refreshes scans", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Targets" }).click();
+  await page.getByRole("button", { name: "Global Targets" }).click();
 
-  await expect(page.getByText("Default and custom agent skill directories")).toBeVisible();
+  await expect(page.getByText("Default agent skill directories shared across skill sets")).toBeVisible();
   await expect(page.getByText("~/.agents/skills")).toBeVisible();
   await expect(page.getByText("~/.claude/skills")).toBeVisible();
 
@@ -290,7 +231,7 @@ test("validates settings paths in browser preview mode", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Settings" }).click();
 
-  await expect(page.getByText("Library, scan, startup, and tray behavior")).toBeVisible();
+  await expect(page.getByText("Library, target install behavior, startup, and tray settings")).toBeVisible();
   const input = page.getByLabel("Master library path");
   await expect(input).toHaveValue("~/skiller");
 
@@ -704,6 +645,8 @@ test("shows update check errors without marking rows current", async ({ page }) 
       saveTargets: async (targets) => ({
         libraryPath: "~/skiller",
         targets,
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -712,6 +655,8 @@ test("shows update check errors without marking rows current", async ({ page }) 
       getConfig: async () => ({
         libraryPath: "~/skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -720,6 +665,8 @@ test("shows update check errors without marking rows current", async ({ page }) 
       saveConfig: async () => ({
         libraryPath: "~/skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -792,6 +739,8 @@ test("shows update all failures in the error list", async ({ page }) => {
       saveTargets: async (targets) => ({
         libraryPath: "~/skiller",
         targets,
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -800,6 +749,8 @@ test("shows update all failures in the error list", async ({ page }) => {
       getConfig: async () => ({
         libraryPath: "~/skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -808,6 +759,8 @@ test("shows update all failures in the error list", async ({ page }) => {
       saveConfig: async () => ({
         libraryPath: "~/skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,

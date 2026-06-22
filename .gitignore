@@ -10,3 +10,6 @@ coverage/
 playwright-report/
 test-results/
 apps/desktop/release/
+apps/desktop/electron-builder.generated.yml
+skill-dist
+.agents/skills/

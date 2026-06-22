@@ -3,10 +3,7 @@ import {
   Cancel01Icon,
   CheckmarkCircle01Icon,
   Delete02Icon,
-  Edit02Icon,
-  Sorting01Icon,
-  SortingDownIcon,
-  SortingUpIcon
+  Edit02Icon
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/alert";
@@ -27,14 +24,26 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
-import { skillerApi, type LibraryState, type SetSkillSetEnabledResult, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
+import { skillerApi, type LibraryState, type SaveSkillSetInput, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
+import { runOrganizationAction } from "../lib/organization-mutation.js";
 import { sourceDetail, sourceLabel, sourceUrl } from "../lib/skill-source.js";
-import type { DiscoveredGithubSkill } from "@skiller/core";
+import type { DiscoveredGithubSkill, SkillTargetScope, TargetConfig } from "@skiller/core";
+import { SkillMembershipDialog } from "../components/library/SkillMembershipDialog.js";
+import { SkillSetEditorDialog } from "../components/library/SkillSetEditorDialog.js";
+import { SortableTableHead } from "../components/library/SortableTableHead.js";
+import {
+  filterAfterDeletingSkillSet,
+  filterLibrarySkills,
+  setSkillSetEnabledScanErrorMessage,
+  skillSetIdsForSkill,
+  skillSetStateForId,
+  skillStatusLabel,
+  sortSkills,
+  type SetFilter,
+  type SkillPickerSortColumn
+} from "../components/library/library-helpers.js";
 
-type SortColumn = "name" | "source" | "skillSet" | "status" | "enabled" | "actions";
 type SortDirection = "asc" | "desc";
-
-export type SetFilter = { type: "all" } | { type: "ungrouped" } | { type: "set"; skillSetId: string };
 
 const emptyLibraryState: LibraryState = {
   skills: [],
@@ -89,39 +98,8 @@ export function tagAutocompleteOptions(knownTags: string[], selectedTags: string
   return knownTags.filter((tag) => !selected.has(tag) && tag.includes(normalizedQuery)).slice(0, 6);
 }
 
-export function skillSetState(skills: SkillMetadata[], skillSetId: string): "on" | "off" | "mixed" {
-  const members = skills.filter((skill) => skill.skillSetId === skillSetId);
-  if (members.length === 0 || members.every((skill) => !skill.enabled)) return "off";
-  if (members.every((skill) => skill.enabled)) return "on";
-  return "mixed";
-}
-
-export function filterLibrarySkills(
-  skills: SkillMetadata[],
-  setFilter: SetFilter,
-  selectedTags: string[]
-): SkillMetadata[] {
-  return skills.filter((skill) => {
-    if (setFilter.type === "ungrouped" && skill.skillSetId) return false;
-    if (setFilter.type === "set" && skill.skillSetId !== setFilter.skillSetId) return false;
-    return selectedTags.every((tag) => skill.tags.includes(tag));
-  });
-}
-
-export function filterAfterDeletingSkillSet(currentFilter: SetFilter, skillSetId: string): SetFilter {
-  if (currentFilter.type === "set" && currentFilter.skillSetId === skillSetId) return { type: "all" };
-  return currentFilter;
-}
-
 export function reconcileSelectedTags(selectedTags: string[], knownTags: string[]): string[] {
   return selectedTags.filter((tag) => knownTags.includes(tag));
-}
-
-export function setSkillSetEnabledScanErrorMessage(result: SetSkillSetEnabledResult): string | null {
-  if (result.scanErrors.length === 0) return null;
-  const firstError = result.scanErrors[0];
-  const suffix = result.scanErrors.length === 1 ? "" : ` and ${result.scanErrors.length - 1} more`;
-  return `Target sync failed for ${firstError.path}: ${firstError.message}${suffix}`;
 }
 
 export type GithubSelectionState = boolean | "indeterminate";
@@ -138,44 +116,6 @@ export function githubSelectionState(
 
 export function githubSelectionPaths(choices: DiscoveredGithubSkill[], selected: boolean): Set<string> {
   return new Set(selected ? choices.map((skill) => skill.path) : []);
-}
-
-function statusLabel(skill: SkillMetadata): string {
-  return skill.validation?.valid ? "valid" : "invalid";
-}
-
-function skillSetSortLabel(skill: SkillMetadata, skillSets: SkillSetMetadata[]): string {
-  if (!skill.skillSetId) return "\uffff";
-  return skillSets.find((skillSet) => skillSet.id === skill.skillSetId)?.name ?? skill.skillSetId;
-}
-
-function sortValue(skill: SkillMetadata, column: SortColumn, skillSets: SkillSetMetadata[]): string {
-  if (column === "name") return skill.name || skill.id;
-  if (column === "source") return `${sourceLabel(skill)} ${sourceDetail(skill)}`;
-  if (column === "skillSet") return skillSetSortLabel(skill, skillSets);
-  if (column === "status") return statusLabel(skill);
-  if (column === "enabled") return skill.enabled ? "enabled" : "disabled";
-  return `${skill.name || skill.id} ${skill.id}`;
-}
-
-export function sortSkills(
-  skills: SkillMetadata[],
-  column: SortColumn,
-  direction: SortDirection,
-  skillSets: SkillSetMetadata[] = []
-): SkillMetadata[] {
-  return [...skills].sort((left, right) => {
-    const primary = sortValue(left, column, skillSets).localeCompare(sortValue(right, column, skillSets), undefined, {
-      numeric: true,
-      sensitivity: "base"
-    });
-    const fallback = (left.name || left.id).localeCompare(right.name || right.id, undefined, {
-      numeric: true,
-      sensitivity: "base"
-    });
-    const result = primary || fallback || left.id.localeCompare(right.id);
-    return direction === "asc" ? result : -result;
-  });
 }
 
 function SourceDetail({ skill }: { skill: SkillMetadata }) {
@@ -337,7 +277,13 @@ function TagTokenInput({
   );
 }
 
-export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => void }) {
+export function LibraryPage({
+  onBrowseRegistry,
+  onManageGlobalTargets
+}: {
+  onBrowseRegistry?: () => void;
+  onManageGlobalTargets?: () => void;
+}) {
   const [libraryState, setLibraryState] = useState<LibraryState>(emptyLibraryState);
   const skills = libraryState.skills;
   const [error, setError] = useState<string | null>(null);
@@ -348,13 +294,14 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [githubChoices, setGithubChoices] = useState<DiscoveredGithubSkill[]>([]);
   const [selectedGithubPaths, setSelectedGithubPaths] = useState<Set<string>>(() => new Set());
   const [isGithubSheetOpen, setIsGithubSheetOpen] = useState(false);
-  const [sortColumn, setSortColumn] = useState<SortColumn>("name");
+  const [sortColumn, setSortColumn] = useState<SkillPickerSortColumn>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [setFilter, setSetFilter] = useState<SetFilter>({ type: "all" });
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [newSkillSetName, setNewSkillSetName] = useState("");
-  const [renamingSkillSetId, setRenamingSkillSetId] = useState<string | null>(null);
-  const [renamingSkillSetName, setRenamingSkillSetName] = useState("");
+  const [globalTargets, setGlobalTargets] = useState<TargetConfig[]>([]);
+  const [skillSetEditorOpen, setSkillSetEditorOpen] = useState(false);
+  const [editingSkillSet, setEditingSkillSet] = useState<SkillSetMetadata | null>(null);
+  const [membershipDialogSkillId, setMembershipDialogSkillId] = useState<string | null>(null);
   const [editingTagSkillId, setEditingTagSkillId] = useState<string | null>(null);
   const [draftTags, setDraftTags] = useState<string[]>([]);
   const [tagQuery, setTagQuery] = useState("");
@@ -374,6 +321,15 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
         if (isMountedRef.current) setIsLoading(false);
       });
 
+    void skillerApi
+      .getConfig()
+      .then((config) => {
+        if (isMountedRef.current) setGlobalTargets(config.targets);
+      })
+      .catch((caught: unknown) => {
+        console.error("Failed to load global targets", caught);
+      });
+
     return () => {
       isMountedRef.current = false;
     };
@@ -389,12 +345,12 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
 
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
   const filteredSkills = useMemo(
-    () => filterLibrarySkills(skills, setFilter, selectedTags),
-    [skills, setFilter, selectedTags]
+    () => filterLibrarySkills(skills, setFilter, selectedTags, libraryState.skillSets),
+    [skills, setFilter, selectedTags, libraryState.skillSets]
   );
   const sortedSkills = useMemo(
-    () => sortSkills(filteredSkills, sortColumn, sortDirection, libraryState.skillSets),
-    [filteredSkills, sortColumn, sortDirection, libraryState.skillSets]
+    () => sortSkills(filteredSkills, sortColumn, sortDirection),
+    [filteredSkills, sortColumn, sortDirection]
   );
   const selectedGithubSkills = useMemo(
     () => githubChoices.filter((skill) => selectedGithubPaths.has(skill.path)),
@@ -405,37 +361,13 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     [githubChoices, selectedGithubPaths]
   );
 
-  function updateSort(column: SortColumn) {
+  function updateSort(column: SkillPickerSortColumn) {
     if (column === sortColumn) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
       return;
     }
     setSortColumn(column);
     setSortDirection("asc");
-  }
-
-  function sortIcon(column: SortColumn) {
-    if (column !== sortColumn) return Sorting01Icon;
-    return sortDirection === "asc" ? SortingUpIcon : SortingDownIcon;
-  }
-
-  function SortableTableHead({ column, children }: { column: SortColumn; children: string }) {
-    const active = column === sortColumn;
-    return (
-      <TableHead aria-sort={active ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="-ml-2 h-8 px-2"
-          aria-label={`Sort by ${children}`}
-          onClick={() => updateSort(column)}
-        >
-          {children}
-          <HugeiconsIcon icon={sortIcon(column)} strokeWidth={2} data-icon="inline-end" />
-        </Button>
-      </TableHead>
-    );
   }
 
   function isSetFilterActive(skillSetId: string): boolean {
@@ -446,9 +378,14 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setSelectedTags((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]));
   }
 
-  function beginRenamingSkillSet(skillSetId: string, name: string) {
-    setRenamingSkillSetId(skillSetId);
-    setRenamingSkillSetName(name);
+  function openCreateSkillSet() {
+    setEditingSkillSet(null);
+    setSkillSetEditorOpen(true);
+  }
+
+  function openEditSkillSet(skillSet: SkillSetMetadata) {
+    setEditingSkillSet(skillSet);
+    setSkillSetEditorOpen(true);
   }
 
   async function refreshLibrary() {
@@ -562,6 +499,25 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     }
   }
 
+  async function setSkillTargetScope(skillId: string, targetScope: SkillTargetScope) {
+    if (!beginOrganizationMutation()) return;
+    setPendingSkillIds((current) => new Set(current).add(skillId));
+    setError(null);
+    try {
+      const updatedState = await skillerApi.setSkillTargetScope(skillId, targetScope);
+      setLibraryState(updatedState);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPendingSkillIds((current) => {
+        const next = new Set(current);
+        next.delete(skillId);
+        return next;
+      });
+      finishOrganizationMutation();
+    }
+  }
+
   async function deleteSkill(skillId: string) {
     if (!beginOrganizationMutation()) return;
     setPendingSkillIds((current) => new Set(current).add(skillId));
@@ -593,37 +549,39 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     setIsOrganizing(false);
   }
 
-  async function createSkillSet(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (newSkillSetName.trim() === "") return;
-    if (!beginOrganizationMutation()) return;
-    setError(null);
+  async function browseTargetDirectory(): Promise<string | null> {
     try {
-      const updatedState = await skillerApi.createSkillSet(newSkillSetName);
-      setLibraryState(updatedState);
-      setNewSkillSetName("");
+      return await skillerApi.chooseTargetDirectory();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      finishOrganizationMutation();
+      return null;
     }
   }
 
-  async function renameSkillSet(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!renamingSkillSetId || renamingSkillSetName.trim() === "") return;
-    if (!beginOrganizationMutation()) return;
+  async function saveSkillSet(input: SaveSkillSetInput): Promise<boolean> {
     setError(null);
-    try {
-      const updatedState = await skillerApi.renameSkillSet(renamingSkillSetId, renamingSkillSetName);
-      setLibraryState(updatedState);
-      setRenamingSkillSetId(null);
-      setRenamingSkillSetName("");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      finishOrganizationMutation();
-    }
+    return runOrganizationAction(
+      beginOrganizationMutation,
+      finishOrganizationMutation,
+      (message) => setError(message),
+      async () => {
+        const updatedState = await skillerApi.saveSkillSet(input);
+        setLibraryState(updatedState);
+      }
+    );
+  }
+
+  async function saveSkillMembership(skillId: string, skillSetIds: string[]): Promise<boolean> {
+    setError(null);
+    return runOrganizationAction(
+      beginOrganizationMutation,
+      finishOrganizationMutation,
+      (message) => setError(message),
+      async () => {
+        const updatedState = await skillerApi.setSkillMembership(skillId, skillSetIds);
+        setLibraryState(updatedState);
+      }
+    );
   }
 
   async function deleteSkillSet(skillSetId: string) {
@@ -640,18 +598,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     }
   }
 
-  async function assignSkillSet(skillId: string, skillSetId: string) {
-    if (!beginOrganizationMutation()) return;
-    setError(null);
-    try {
-      const updatedState = await skillerApi.assignSkillSet(skillId, skillSetId === "none" ? undefined : skillSetId);
-      setLibraryState(updatedState);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      finishOrganizationMutation();
-    }
-  }
+  const membershipDialogSkill = membershipDialogSkillId
+    ? skills.find((skill) => skill.id === membershipDialogSkillId)
+    : undefined;
 
   async function saveSkillTags(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -673,7 +622,8 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
 
   async function setWholeSetEnabled(skillSetId: string, enabled: boolean) {
     if (!beginOrganizationMutation()) return;
-    const memberIds = skills.filter((skill) => skill.skillSetId === skillSetId).map((skill) => skill.id);
+    const skillSet = libraryState.skillSets.find((candidate) => candidate.id === skillSetId);
+    const memberIds = skillSet?.skillIds ?? [];
     setPendingSkillIds((current) => new Set([...current, ...memberIds]));
     setError(null);
     try {
@@ -788,49 +738,15 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
               ) : null}
             </div>
             <div className="flex flex-col gap-3 rounded-md border p-3">
-              <form className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_auto]" onSubmit={createSkillSet}>
-                <Input
-                  value={newSkillSetName}
-                  onChange={(event) => setNewSkillSetName(event.target.value)}
-                  aria-label="New skill set name"
-                  placeholder="New skill set"
-                  disabled={isOrganizing}
-                />
-                <Button type="submit" disabled={isOrganizing || newSkillSetName.trim() === ""}>
-                  Create set
-                </Button>
-              </form>
-              {renamingSkillSetId ? (
-                <form className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_auto_auto]" onSubmit={renameSkillSet}>
-                  <Input
-                    value={renamingSkillSetName}
-                    onChange={(event) => setRenamingSkillSetName(event.target.value)}
-                    aria-label="Rename skill set"
-                    disabled={isOrganizing}
-                  />
-                  <Button type="submit" disabled={isOrganizing || renamingSkillSetName.trim() === ""}>
-                    Rename
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isOrganizing}
-                    onClick={() => {
-                      setRenamingSkillSetId(null);
-                      setRenamingSkillSetName("");
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </form>
-              ) : null}
+              <Button type="button" disabled={isOrganizing} onClick={openCreateSkillSet}>
+                Create New Skill Set
+              </Button>
               {libraryState.skillSets.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   {libraryState.skillSets.map((skillSet) => {
-                    const members = skills.filter((skill) => skill.skillSetId === skillSet.id);
-                    const state = skillSetState(skills, skillSet.id);
-                    const hasPendingMember = members.some((skill) => pendingSkillIds.has(skill.id));
-                    const disabled = members.length === 0 || hasPendingMember || isOrganizing;
+                    const state = skillSetStateForId(skills, libraryState.skillSets, skillSet.id);
+                    const hasPendingMember = skillSet.skillIds.some((skillId) => pendingSkillIds.has(skillId));
+                    const disabled = skillSet.skillIds.length === 0 || hasPendingMember || isOrganizing;
 
                     return (
                       <div
@@ -839,7 +755,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       >
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="truncate">{skillSet.name}</span>
-                          <Badge variant="secondary">{members.length === 0 ? "empty" : `${members.length} members`}</Badge>
+                          <Badge variant="secondary">
+                            {skillSet.skillIds.length === 0 ? "empty" : `${skillSet.skillIds.length} members`}
+                          </Badge>
                           <Badge variant="outline">{state}</Badge>
                         </div>
                         <Switch
@@ -853,10 +771,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                           variant="outline"
                           size="sm"
                           disabled={isOrganizing}
-                          aria-label={`Rename ${skillSet.name}`}
-                          onClick={() => beginRenamingSkillSet(skillSet.id, skillSet.name)}
+                          aria-label={`Edit ${skillSet.name}`}
+                          onClick={() => openEditSkillSet(skillSet)}
                         >
-                          Rename
+                          Edit
                         </Button>
                         <Button
                           type="button"
@@ -877,13 +795,22 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
             <Table>
               <TableHeader>
                 <TableRow>
-                  <SortableTableHead column="name">Name</SortableTableHead>
-                  <SortableTableHead column="source">Source</SortableTableHead>
-                  <SortableTableHead column="skillSet">Skill Set</SortableTableHead>
+                  <SortableTableHead column="name" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+                    Name
+                  </SortableTableHead>
+                  <SortableTableHead column="source" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+                    Source
+                  </SortableTableHead>
+                  <TableHead>Skill Sets</TableHead>
                   <TableHead>Tags</TableHead>
-                  <SortableTableHead column="status">Status</SortableTableHead>
-                  <SortableTableHead column="enabled">Enabled</SortableTableHead>
-                  <SortableTableHead column="actions">Actions</SortableTableHead>
+                  <SortableTableHead column="status" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+                    Status
+                  </SortableTableHead>
+                  <SortableTableHead column="enabled" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
+                    Enabled
+                  </SortableTableHead>
+                  <TableHead>Target Scope</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -897,20 +824,19 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       </div>
                     </TableCell>
                     <TableCell>
-                      <select
-                        className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                        value={skill.skillSetId ?? "none"}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         disabled={isOrganizing || pendingSkillIds.has(skill.id)}
-                        aria-label={`Set for ${skill.name || skill.id}`}
-                        onChange={(event) => void assignSkillSet(skill.id, event.target.value)}
+                        aria-label={`Manage skill sets for ${skill.name || skill.id}`}
+                        onClick={() => setMembershipDialogSkillId(skill.id)}
                       >
-                        <option value="none">none</option>
-                        {libraryState.skillSets.map((skillSet) => (
-                          <option key={skillSet.id} value={skillSet.id}>
-                            {skillSet.name}
-                          </option>
-                        ))}
-                      </select>
+                        {(() => {
+                          const count = skillSetIdsForSkill(skill.id, libraryState.skillSets).length;
+                          return count === 0 ? "Skill Sets" : `${count} sets`;
+                        })()}
+                      </Button>
                     </TableCell>
                     <TableCell>
                       {editingTagSkillId === skill.id ? (
@@ -976,9 +902,9 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                     </TableCell>
                     <TableCell>
                       {skill.validation?.valid ? (
-                        <Badge variant="outline">{statusLabel(skill)}</Badge>
+                        <Badge variant="outline">{skillStatusLabel(skill)}</Badge>
                       ) : (
-                        <Badge variant="destructive">{statusLabel(skill)}</Badge>
+                        <Badge variant="destructive">{skillStatusLabel(skill)}</Badge>
                       )}
                     </TableCell>
                     <TableCell>
@@ -988,6 +914,19 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                         disabled={isOrganizing || pendingSkillIds.has(skill.id)}
                         aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name || skill.id}`}
                       />
+                    </TableCell>
+                    <TableCell>
+                      <select
+                        aria-label={`Target scope for ${skill.name || skill.id}`}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                        value={skill.targetScope ?? "both"}
+                        disabled={isOrganizing || pendingSkillIds.has(skill.id)}
+                        onChange={(event) => void setSkillTargetScope(skill.id, event.target.value as SkillTargetScope)}
+                      >
+                        <option value="both">Both</option>
+                        <option value="global">Global</option>
+                        <option value="projects">Projects</option>
+                      </select>
                     </TableCell>
                     <TableCell>
                       <Button
@@ -1004,7 +943,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                 ))}
                 {filteredSkills.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-muted-foreground">
+                    <TableCell colSpan={8} className="text-muted-foreground">
                       {skills.length > 0 ? "No skills match the current filters." : "No skills installed."}
                     </TableCell>
                   </TableRow>
@@ -1088,6 +1027,28 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
           </SheetFooter>
         </SheetContent>
       </Sheet>
+      <SkillSetEditorDialog
+        open={skillSetEditorOpen}
+        skillSet={editingSkillSet}
+        skills={skills}
+        disabled={isOrganizing}
+        globalTargets={globalTargets}
+        onOpenChange={setSkillSetEditorOpen}
+        onSave={saveSkillSet}
+        onManageGlobalTargets={onManageGlobalTargets}
+        onBrowseTarget={browseTargetDirectory}
+      />
+      <SkillMembershipDialog
+        open={membershipDialogSkillId !== null}
+        skillId={membershipDialogSkillId}
+        skillName={membershipDialogSkill?.name || membershipDialogSkill?.id || "skill"}
+        skillSets={libraryState.skillSets}
+        disabled={isOrganizing}
+        onOpenChange={(open) => {
+          if (!open) setMembershipDialogSkillId(null);
+        }}
+        onSave={saveSkillMembership}
+      />
     </Card>
   );
 }

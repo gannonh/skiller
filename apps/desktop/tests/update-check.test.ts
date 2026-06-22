@@ -16,6 +16,8 @@ describe("desktop update checks", () => {
     const config: SkillerConfig = {
       libraryPath: "~/persisted-skiller",
       targets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink",
       updateSchedule: { intervalHours: 24 },
       keepAllSkillsUpdated: true,
       launchAtLogin: false,

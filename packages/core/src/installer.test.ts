@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installGithubSkill, installLocalSkill, installSkillsShSkill, updateInstalledSkill } from "./installer.js";
+import { MetadataStore } from "./metadata-store.js";
 
 let tmp: string;
 
@@ -125,6 +126,25 @@ describe("installLocalSkill", () => {
     });
     expect(await fs.readFile(path.join(library, "local", "SKILL.md"), "utf8")).toBe(secondContent);
     await expect(fs.pathExists(path.join(library, "local-2"))).resolves.toBe(false);
+  });
+
+  it("preserves target scope when replacing an existing skill", async () => {
+    const firstSource = path.join(tmp, "first-source");
+    const secondSource = path.join(tmp, "second-source");
+    const library = path.join(tmp, "library");
+
+    await fs.ensureDir(firstSource);
+    await fs.ensureDir(secondSource);
+    await fs.writeFile(path.join(firstSource, "SKILL.md"), "---\nname: local\ndescription: First.\n---\n");
+    await fs.writeFile(path.join(secondSource, "SKILL.md"), "---\nname: local\ndescription: Second.\n---\n");
+
+    await installLocalSkill({ sourcePath: firstSource, libraryPath: library });
+    const store = new MetadataStore(library);
+    await store.setTargetScope("local", "projects");
+
+    const second = await installLocalSkill({ sourcePath: secondSource, libraryPath: library, replaceExisting: true });
+
+    expect(second.targetScope).toBe("projects");
   });
 
   it("parses CRLF frontmatter names", async () => {
@@ -667,6 +687,8 @@ describe("updateInstalledSkill", () => {
         {
           id: "automation",
           name: "Automation",
+          skillIds: ["browser"],
+          targets: [],
           createdAt: "2026-05-12T00:00:00.000Z",
           updatedAt: "2026-05-12T00:00:00.000Z"
         }
@@ -687,7 +709,6 @@ describe("updateInstalledSkill", () => {
           installedAt: "2026-05-09T00:00:00.000Z",
           keepUpdated: true,
           enabled: true,
-          skillSetId: "automation",
           tags: ["browser", "testing"],
           validation: { valid: true, issues: [] }
         }
@@ -717,8 +738,10 @@ describe("updateInstalledSkill", () => {
 
     expect(updated).toMatchObject({
       id: "browser",
-      skillSetId: "automation",
       tags: ["browser", "testing"]
+    });
+    await expect(new MetadataStore(library).libraryState()).resolves.toMatchObject({
+      skillSets: [{ id: "automation", skillIds: ["browser"] }]
     });
   });
 

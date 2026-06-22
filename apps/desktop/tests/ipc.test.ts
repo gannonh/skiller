@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => {
     loadConfig: vi.fn(async () => ({
       libraryPath: "~/skiller",
       targets: [{ path: "~/skills", enabled: true }],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink",
       updateSchedule: { intervalHours: 1 },
       keepAllSkillsUpdated: false,
       launchAtLogin: false,
@@ -35,7 +37,29 @@ const mocks = vi.hoisted(() => {
     })),
     installGithubSkill: vi.fn(),
     installLocalSkill: vi.fn(),
-    setSkillSetEnabled: vi.fn(async () => [])
+    setSkillSetEnabled: vi.fn(async () => []),
+    saveSkillSet: vi.fn(async () => undefined),
+    deleteSkillSet: vi.fn(async () => ({
+      id: "automation",
+      name: "Automation",
+      skillIds: ["example-skill"],
+      targets: [{ path: "~/project-skills", enabled: true, scope: "project" as const }],
+      createdAt: "2026-05-12T00:00:00.000Z",
+      updatedAt: "2026-05-12T00:00:00.000Z"
+    })),
+    setSkillMembership: vi.fn(async () => mocks.libraryState),
+    setTargetScope: vi.fn(async () => ({
+      id: "example-skill",
+      name: "example-skill",
+      libraryPath: "/home/test/skiller/example-skill",
+      source: { type: "local", path: "/home/test/skiller/example-skill" },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      targetScope: "projects",
+      tags: [],
+      validation: { valid: true, issues: [] }
+    }))
   };
 });
 
@@ -58,6 +82,10 @@ vi.mock("@skiller/core", () => ({
   DuplicateSkillNameError: mocks.DuplicateSkillNameError,
   MetadataStore: vi.fn(() => ({
     setSkillSetEnabled: mocks.setSkillSetEnabled,
+    saveSkillSet: mocks.saveSkillSet,
+    deleteSkillSet: mocks.deleteSkillSet,
+    setSkillMembership: mocks.setSkillMembership,
+    setTargetScope: mocks.setTargetScope,
     libraryState: vi.fn(async () => mocks.libraryState)
   })),
   SkillsShClient: vi.fn(() => ({
@@ -83,6 +111,92 @@ describe("ipc handlers", () => {
     mocks.handlers.clear();
   });
 
+  it("updates target scope and returns library state before background scan completes", async () => {
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    registerIpcHandlers();
+
+    const handler = mocks.handlers.get("library:set-target-scope");
+    expect(handler).toEqual(expect.any(Function));
+
+    const result = await handler?.({}, "example-skill", "projects");
+
+    expect(mocks.setTargetScope).toHaveBeenCalledWith("example-skill", "projects");
+    expect(result).toEqual(mocks.libraryState);
+
+    await vi.waitFor(() => {
+      expect(mocks.scanTargets).toHaveBeenCalledWith({
+        libraryPath: "/home/test/skiller",
+        targets: [{ path: "~/skills", enabled: true }],
+        skillSets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink"
+      });
+    });
+  });
+
+  it("saves skill sets and rescans targets", async () => {
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    registerIpcHandlers();
+
+    const handler = mocks.handlers.get("library:save-skill-set");
+    const input = {
+      name: "Automation",
+      skillIds: ["example-skill"],
+      targets: [{ path: "~/project-skills", enabled: true, scope: "project" as const }]
+    };
+
+    const result = await handler?.({}, input);
+
+    expect(mocks.saveSkillSet).toHaveBeenCalledWith(input);
+    expect(mocks.scanTargets).toHaveBeenCalledWith({
+      libraryPath: "/home/test/skiller",
+      targets: [{ path: "~/skills", enabled: true }],
+      skillSets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink"
+    });
+    expect(result).toEqual(mocks.libraryState);
+  });
+
+  it("updates skill membership and rescans targets", async () => {
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    registerIpcHandlers();
+
+    const handler = mocks.handlers.get("library:set-skill-membership");
+    const result = await handler?.({}, "example-skill", ["automation"]);
+
+    expect(mocks.setSkillMembership).toHaveBeenCalledWith("example-skill", ["automation"]);
+    expect(mocks.scanTargets).toHaveBeenCalledWith({
+      libraryPath: "/home/test/skiller",
+      targets: [{ path: "~/skills", enabled: true }],
+      skillSets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink"
+    });
+    expect(result).toEqual(mocks.libraryState);
+  });
+
+  it("deletes skill sets and rescans deleted project targets", async () => {
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    registerIpcHandlers();
+
+    const handler = mocks.handlers.get("library:delete-skill-set");
+    const result = await handler?.({}, "automation");
+
+    expect(mocks.deleteSkillSet).toHaveBeenCalledWith("automation");
+    expect(mocks.scanTargets).toHaveBeenCalledWith({
+      libraryPath: "/home/test/skiller",
+      targets: [
+        { path: "~/skills", enabled: true },
+        { path: "~/project-skills", enabled: true, scope: "project" }
+      ],
+      skillSets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink"
+    });
+    expect(result).toEqual(mocks.libraryState);
+  });
+
   it("returns saved library state and scan errors for skill set toggles", async () => {
     const { registerIpcHandlers } = await import("../src/main/ipc.js");
     registerIpcHandlers();
@@ -95,7 +209,10 @@ describe("ipc handlers", () => {
     expect(mocks.setSkillSetEnabled).toHaveBeenCalledWith("automation", false);
     expect(mocks.scanTargets).toHaveBeenCalledWith({
       libraryPath: "/home/test/skiller",
-      targets: [{ path: "/home/test/skills", enabled: true }]
+      targets: [{ path: "~/skills", enabled: true }],
+      skillSets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink"
     });
     expect(result).toEqual({
       state: mocks.libraryState,

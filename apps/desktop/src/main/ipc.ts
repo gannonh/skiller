@@ -10,31 +10,35 @@ import {
   installSkillsShSkill,
   loadConfig,
   saveConfig,
-  scanTargets,
   updateInstalledSkill
 } from "@skiller/core";
-import type { DuplicateSkillNameHandler, ScanTargetsResult, SkillerConfig, TargetConfig } from "@skiller/core";
+import type {
+  DuplicateSkillNameHandler,
+  SaveSkillSetInput,
+  SkillTargetScope,
+  SkillerConfig,
+  TargetConfig
+} from "@skiller/core";
 import type { AppUpdateService } from "./app-update.js";
+import { runLibraryScan } from "./scan-helpers.js";
 import { checkDesktopUpdates } from "./update-check.js";
 
-type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets">>;
+type ConfigUpdate = Partial<
+  Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets" | "globalTargetInstallMode" | "projectTargetInstallMode">
+>;
 type InstallGithubInput = { githubUrl: string; githubPath?: string; ref?: string; replaceExisting?: boolean };
 type InstallRegistryInput =
   | string
   | { skillsShId: string; registrySkill?: Record<string, unknown>; replaceExisting?: boolean };
 export type SetSkillSetEnabledResult = {
   state: Awaited<ReturnType<MetadataStore["libraryState"]>>;
-  scanErrors: ScanTargetsResult["errors"];
+  scanErrors: Awaited<ReturnType<typeof runLibraryScan>>["errors"];
 };
 export interface IpcHandlerDependencies {
   appUpdateService?: Pick<AppUpdateService, "getState" | "checkNow" | "installReadyUpdate">;
 }
 
 const skillsShClient = new SkillsShClient();
-
-function expandTargets(targets: TargetConfig[]): TargetConfig[] {
-  return targets.map((target) => ({ ...target, path: expandHome(target.path) }));
-}
 
 function changedTargets(currentTargets: TargetConfig[], nextTargets: TargetConfig[]): TargetConfig[] {
   const currentByPath = new Map(currentTargets.map((target) => [target.path, target]));
@@ -58,19 +62,12 @@ function changedTargets(currentTargets: TargetConfig[], nextTargets: TargetConfi
 }
 
 async function scanConfig(config: SkillerConfig, extraTargets: TargetConfig[] = []) {
-  return scanTargets({
-    libraryPath: expandHome(config.libraryPath),
-    targets: [...expandTargets(config.targets), ...extraTargets]
-  });
+  return runLibraryScan(config, { extraTargets });
 }
 
 async function scanTargetsForConfig(config: SkillerConfig, targets: TargetConfig[]) {
   if (targets.length === 0) return;
-
-  await scanTargets({
-    libraryPath: expandHome(config.libraryPath),
-    targets: expandTargets(targets)
-  });
+  await runLibraryScan(config, { targets });
 }
 
 async function confirmReplaceDuplicate(error: DuplicateSkillNameError): Promise<boolean> {
@@ -139,35 +136,44 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     return store.libraryState();
   });
 
-  ipcMain.handle("library:create-skill-set", async (_event, name: string) => {
+  ipcMain.handle("library:set-target-scope", async (_event, skillId: string, targetScope: SkillTargetScope) => {
+    const config = await loadConfig();
+    const libraryPath = expandHome(config.libraryPath);
+    const store = new MetadataStore(libraryPath);
+
+    await store.setTargetScope(skillId, targetScope);
+    const state = await store.libraryState();
+    // Return updated state immediately; target sync can run in the background for this toggle.
+    void scanConfig(config).catch((error) => {
+      console.error("Target scope scan failed", error);
+    });
+    return state;
+  });
+
+  ipcMain.handle("library:save-skill-set", async (_event, input: SaveSkillSetInput) => {
     const config = await loadConfig();
     const store = new MetadataStore(expandHome(config.libraryPath));
 
-    await store.createSkillSet(name);
+    await store.saveSkillSet(input);
+    await scanConfig(config);
     return store.libraryState();
   });
 
-  ipcMain.handle("library:rename-skill-set", async (_event, skillSetId: string, name: string) => {
+  ipcMain.handle("library:set-skill-membership", async (_event, skillId: string, skillSetIds: string[]) => {
     const config = await loadConfig();
     const store = new MetadataStore(expandHome(config.libraryPath));
 
-    await store.renameSkillSet(skillSetId, name);
-    return store.libraryState();
+    const state = await store.setSkillMembership(skillId, skillSetIds);
+    await scanConfig(config);
+    return state;
   });
 
   ipcMain.handle("library:delete-skill-set", async (_event, skillSetId: string) => {
     const config = await loadConfig();
     const store = new MetadataStore(expandHome(config.libraryPath));
 
-    await store.deleteSkillSet(skillSetId);
-    return store.libraryState();
-  });
-
-  ipcMain.handle("library:assign-skill-set", async (_event, skillId: string, skillSetId?: string) => {
-    const config = await loadConfig();
-    const store = new MetadataStore(expandHome(config.libraryPath));
-
-    await store.assignSkillSet(skillId, skillSetId);
+    const deleted = await store.deleteSkillSet(skillSetId);
+    await scanConfig(config, deleted.targets);
     return store.libraryState();
   });
 
@@ -277,16 +283,20 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     return config;
   });
 
+  ipcMain.handle("targets:choose-directory", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Choose Target Directory",
+      properties: ["openDirectory", "createDirectory"]
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
   ipcMain.handle("config:get", async () => {
     return loadConfig();
   });
 
   ipcMain.handle("config:save", async (_event, config: ConfigUpdate) => {
-    return saveConfig({
-      libraryPath: config.libraryPath,
-      keepAllSkillsUpdated: config.keepAllSkillsUpdated,
-      targets: config.targets
-    });
+    return saveConfig(config);
   });
 
   ipcMain.handle("updates:check", async () => {

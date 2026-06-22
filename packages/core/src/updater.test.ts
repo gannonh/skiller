@@ -19,6 +19,8 @@ function configFor(libraryPath: string, keepAllSkillsUpdated = false): SkillerCo
   return {
     libraryPath,
     targets: [],
+    globalTargetInstallMode: "symlink",
+    projectTargetInstallMode: "symlink",
     updateSchedule: { intervalHours: 24 },
     keepAllSkillsUpdated,
     launchAtLogin: false,

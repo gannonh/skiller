@@ -5,18 +5,27 @@ type ScanError = { message: string };
 contextBridge.exposeInMainWorld("skiller", {
   listLibrary: () => ipcRenderer.invoke("library:list"),
   setSkillEnabled: (skillId: string, enabled: boolean) => ipcRenderer.invoke("library:set-enabled", skillId, enabled),
+  setSkillTargetScope: (skillId: string, targetScope: "projects" | "global" | "both") =>
+    ipcRenderer.invoke("library:set-target-scope", skillId, targetScope),
   deleteSkill: (skillId: string) => ipcRenderer.invoke("library:delete", skillId),
-  createSkillSet: (name: string) => ipcRenderer.invoke("library:create-skill-set", name),
-  renameSkillSet: (skillSetId: string, name: string) => ipcRenderer.invoke("library:rename-skill-set", skillSetId, name),
+  saveSkillSet: (input: { id?: string; name: string; skillIds: string[]; targets: Array<{ path: string; enabled: boolean; scope?: "global" | "project" }> }) =>
+    ipcRenderer.invoke("library:save-skill-set", input),
+  setSkillMembership: (skillId: string, skillSetIds: string[]) =>
+    ipcRenderer.invoke("library:set-skill-membership", skillId, skillSetIds),
   deleteSkillSet: (skillSetId: string) => ipcRenderer.invoke("library:delete-skill-set", skillSetId),
-  assignSkillSet: (skillId: string, skillSetId?: string) => ipcRenderer.invoke("library:assign-skill-set", skillId, skillSetId),
   replaceSkillTags: (skillId: string, tags: string[]) => ipcRenderer.invoke("library:replace-skill-tags", skillId, tags),
   setSkillSetEnabled: (skillSetId: string, enabled: boolean) => ipcRenderer.invoke("library:set-skill-set-enabled", skillSetId, enabled),
   scanTargets: () => ipcRenderer.invoke("targets:scan"),
-  saveTargets: (targets: Array<{ path: string; enabled: boolean }>) => ipcRenderer.invoke("targets:save", targets),
+  saveTargets: (targets: Array<{ path: string; enabled: boolean; scope?: "global" | "project" }>) => ipcRenderer.invoke("targets:save", targets),
+  chooseTargetDirectory: () => ipcRenderer.invoke("targets:choose-directory"),
   getConfig: () => ipcRenderer.invoke("config:get"),
-  saveConfig: (config: { libraryPath?: string; keepAllSkillsUpdated?: boolean; targets?: Array<{ path: string; enabled: boolean }> }) =>
-    ipcRenderer.invoke("config:save", config),
+  saveConfig: (config: {
+    libraryPath?: string;
+    keepAllSkillsUpdated?: boolean;
+    targets?: Array<{ path: string; enabled: boolean }>;
+    globalTargetInstallMode?: "symlink" | "copy";
+    projectTargetInstallMode?: "symlink" | "copy";
+  }) => ipcRenderer.invoke("config:save", config),
   checkUpdates: () => ipcRenderer.invoke("updates:check"),
   updateSkill: (skillId: string) => ipcRenderer.invoke("updates:apply", skillId),
   getAppUpdateState: () => ipcRenderer.invoke("app-update:get-state"),
