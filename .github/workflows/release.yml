@@ -1,0 +1,473 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "!v*-nightly.*"
+  schedule:
+    # Automatic nightly every 3 hours (UTC). Only proceeds when main has
+    # changed since the last nightly tag (see check_changes job below).
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel"
+        type: choice
+        options:
+          - stable
+          - nightly
+        default: stable
+      version:
+        description: "Release version (for example 0.3.3 or v0.3.3). Required for stable."
+        type: string
+        required: false
+      dry_run:
+        description: "Build + sign only; create no GitHub Release and publish nothing"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check_changes:
+    name: Check for changes since last nightly
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: check
+        name: Compare HEAD to last nightly tag
+        run: |
+          set -euo pipefail
+          last_nightly_tag=$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -n 1)
+          if [[ -z "$last_nightly_tag" ]]; then
+            echo "No previous nightly tag found. Proceeding with release."
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          last_nightly_sha=$(git rev-parse "$last_nightly_tag^{commit}")
+          head_sha=$(git rev-parse HEAD)
+
+          if [[ "$last_nightly_sha" == "$head_sha" ]]; then
+            echo "No changes on main since last nightly release ($last_nightly_tag). Skipping."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changes detected on main since $last_nightly_tag ($last_nightly_sha → $head_sha). Proceeding."
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release_meta:
+    needs: [check_changes]
+    if: |
+      !failure() && !cancelled() &&
+      (github.event_name != 'schedule' || needs.check_changes.outputs.has_changes == 'true')
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.meta.outputs.channel }}
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      name: ${{ steps.meta.outputs.name }}
+      is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
+      make_latest: ${{ steps.meta.outputs.make_latest }}
+      dry_run: ${{ steps.meta.outputs.dry_run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve release metadata
+        id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            tag="$REF_NAME"
+            version="${tag#v}"
+            if printf '%s' "$version" | grep -q -- '-nightly\.'; then
+              channel="nightly"; is_prerelease="true"; make_latest="false"
+            else
+              channel="stable"; is_prerelease="false"; make_latest="true"
+            fi
+            name="Skiller Desktop v$version"
+            dry_run="false"
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            channel="nightly"
+            dry_run="false"
+            meta="$(pnpm exec tsx scripts/release/resolve-nightly-release.ts \
+              --date "$(date -u +%Y%m%d)" \
+              --run-number "$RUN_NUMBER" \
+              --sha "$SHA")"
+            version="$(printf '%s\n' "$meta" | grep '^version=' | cut -d= -f2-)"
+            tag="$(printf '%s\n' "$meta" | grep '^tag=' | cut -d= -f2-)"
+            name="$(printf '%s\n' "$meta" | grep '^name=' | cut -d= -f2-)"
+            is_prerelease="true"; make_latest="false"
+          else
+            channel="${INPUT_CHANNEL:-stable}"
+            dry_run="${INPUT_DRY_RUN:-false}"
+            if [ "$channel" = "nightly" ]; then
+              meta="$(pnpm exec tsx scripts/release/resolve-nightly-release.ts \
+                --date "$(date -u +%Y%m%d)" \
+                --run-number "$RUN_NUMBER" \
+                --sha "$SHA")"
+              version="$(printf '%s\n' "$meta" | grep '^version=' | cut -d= -f2-)"
+              tag="$(printf '%s\n' "$meta" | grep '^tag=' | cut -d= -f2-)"
+              name="$(printf '%s\n' "$meta" | grep '^name=' | cut -d= -f2-)"
+              is_prerelease="true"; make_latest="false"
+            else
+              raw="${INPUT_VERSION:-}"
+              if [ -z "$raw" ]; then
+                echo "workflow_dispatch stable releases require the 'version' input." >&2
+                exit 1
+              fi
+              version="${raw#v}"
+              if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+                echo "Invalid release version: $raw" >&2
+                exit 1
+              fi
+              tag="v$version"
+              name="Skiller Desktop v$version"
+              is_prerelease="false"; make_latest="true"
+            fi
+          fi
+
+          {
+            echo "channel=$channel"
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "name=$name"
+            echo "is_prerelease=$is_prerelease"
+            echo "make_latest=$make_latest"
+            echo "dry_run=$dry_run"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Release parameters"
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **channel** | \`$channel\` |"
+            echo "| **version** | \`$version\` |"
+            echo "| **tag** | \`$tag\` |"
+            echo "| **prerelease** | \`$is_prerelease\` |"
+            echo "| **make_latest** | \`$make_latest\` |"
+            echo "| **dry_run** | \`$dry_run\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  signing_gate:
+    needs: release_meta
+    if: ${{ !failure() && !cancelled() && needs.release_meta.result == 'success' }}
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate macOS signing secrets
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm exec tsx scripts/release/check-macos-release-signing.ts
+
+  build:
+    needs: [release_meta, signing_gate]
+    if: ${{ !failure() && !cancelled() && needs.release_meta.result == 'success' && needs.signing_gate.result == 'success' }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.platform != 'mac' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            arch: arm64
+          - os: macos-latest
+            platform: mac
+            arch: x64
+          - os: windows-latest
+            platform: win
+            arch: x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Align package versions to release version
+        run: pnpm exec tsx scripts/release/update-release-package-versions.ts "${{ needs.release_meta.outputs.version }}"
+
+      - name: Generate electron-builder release config
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="${{ github.workspace }}/apps/desktop/electron-builder.generated.yml"
+          pnpm exec tsx scripts/build/release-config.ts \
+            --version "${{ needs.release_meta.outputs.version }}" \
+            --channel "${{ needs.release_meta.outputs.channel }}" \
+            --repository "${{ github.repository }}" \
+            --out "$out"
+          echo "ELECTRON_BUILDER_CONFIG=$out" >> "$GITHUB_ENV"
+
+      - name: Build desktop app
+        run: pnpm --dir apps/desktop run build
+
+      - name: Build macOS (signed + notarized)
+        if: matrix.platform == 'mac'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/desktop exec electron-builder \
+            --config "$ELECTRON_BUILDER_CONFIG" \
+            --publish never \
+            --mac dmg zip \
+            --${{ matrix.arch }}
+
+      - name: Build Linux (unsigned, best-effort)
+        if: matrix.platform == 'linux'
+        run: |
+          set -euo pipefail
+          pnpm --dir apps/desktop exec electron-builder \
+            --config "$ELECTRON_BUILDER_CONFIG" \
+            --publish never \
+            --linux AppImage deb \
+            --${{ matrix.arch }}
+
+      - name: Build Windows (unsigned, best-effort)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          pnpm --dir apps/desktop exec electron-builder `
+            --config $env:ELECTRON_BUILDER_CONFIG `
+            --publish never `
+            --win nsis `
+            --x64
+
+      - name: Suffix x64 macOS updater manifest
+        if: matrix.platform == 'mac' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for manifest in apps/desktop/release/*-mac.yml; do
+            mv "$manifest" "${manifest%.yml}-x64.yml"
+          done
+
+      - name: Collect release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          if-no-files-found: warn
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/*.yml
+
+  release:
+    needs: [release_meta, build]
+    if: ${{ !failure() && !cancelled() && needs.release_meta.result == 'success' && needs.build.result == 'success' && needs.release_meta.outputs.dry_run != 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download built assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+
+      - name: Merge macOS updater manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for x64_manifest in dist/*-mac-x64.yml; do
+            arm64_manifest="${x64_manifest%-x64.yml}.yml"
+            if [[ -f "$arm64_manifest" ]]; then
+              pnpm exec tsx scripts/release/merge-update-manifests.ts --platform mac "$arm64_manifest" "$x64_manifest"
+              rm -f "$x64_manifest"
+            fi
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release_meta.outputs.tag }}
+          name: ${{ needs.release_meta.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ needs.release_meta.outputs.is_prerelease }}
+          make_latest: ${{ needs.release_meta.outputs.make_latest }}
+          generate_release_notes: true
+          files: dist/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  finalize:
+    needs: [release_meta, release]
+    if: ${{ !failure() && !cancelled() && needs.release_meta.result == 'success' && needs.release.result == 'success' && needs.release_meta.outputs.channel == 'stable' && needs.release_meta.outputs.dry_run != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - id: app_token
+        name: Mint release app token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Resolve GitHub App bot identity
+        id: app_bot
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          APP_SLUG: ${{ steps.app_token.outputs.app-slug }}
+        run: |
+          user_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+          echo "name=${APP_SLUG}[bot]" >> "$GITHUB_OUTPUT"
+          echo "email=${user_id}+${APP_SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app_token.outputs.token }}
+          persist-credentials: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Update version strings
+        id: update_versions
+        run: pnpm exec tsx scripts/release/update-release-package-versions.ts "${{ needs.release_meta.outputs.version }}" --github-output
+
+      - name: Commit and push version bump
+        if: steps.update_versions.outputs.changed == 'true'
+        env:
+          RELEASE_TAG: ${{ needs.release_meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- apps/desktop/package.json; then
+            echo "No version changes to commit."
+            exit 0
+          fi
+
+          git config user.name "${{ steps.app_bot.outputs.name }}"
+          git config user.email "${{ steps.app_bot.outputs.email }}"
+
+          git add apps/desktop/package.json
+          git commit -m "chore(release): prepare $RELEASE_TAG"
+          git push origin HEAD:main
+
+  publish_cli:
+    needs: [release_meta, release]
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Publish CLI to npm
+        run: echo "CLI npm publish is disabled for Skiller."
