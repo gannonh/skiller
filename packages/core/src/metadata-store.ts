@@ -8,7 +8,7 @@ import {
   skillsInSet,
   type SaveSkillSetInput
 } from "./skill-sets.js";
-import type { LibraryState, SkillMetadata, SkillSetMetadata, SkillSource, TargetConfig } from "./types.js";
+import type { LibraryState, SkillMetadata, SkillSetMetadata, SkillSource, SkillTargetScope, TargetConfig } from "./types.js";
 
 const MANIFEST_FILE = "skiller.manifest.json";
 const LEGACY_METADATA_FILE = "skiller.metadata.json";
@@ -121,6 +121,10 @@ function normalizeTag(value: unknown): string | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
+function normalizeSkillTargetScope(value: unknown): SkillTargetScope {
+  return value === "projects" || value === "global" || value === "both" ? value : "both";
+}
+
 function normalizeTags(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const tags: string[] = [];
@@ -210,6 +214,7 @@ function normalizeMetadata(metadata: SkillMetadata): SkillMetadata {
     ...metadataWithoutSkillSetId,
     source: normalizeSource(metadata),
     enabled: typeof metadata.enabled === "boolean" ? metadata.enabled : true,
+    targetScope: normalizeSkillTargetScope((metadata as SkillMetadata & { targetScope?: unknown }).targetScope),
     tags
   };
 }
@@ -395,12 +400,13 @@ export class MetadataStore {
 
     await this.withWriteLock(async () => {
       const currentState = await this.readManifest();
+      const normalized = normalizeMetadata(metadata);
       const currentSkills = currentState.skills;
-      const existingIndex = currentSkills.findIndex((skill) => skill.id === metadata.id);
+      const existingIndex = currentSkills.findIndex((skill) => skill.id === normalized.id);
       const nextSkills =
         existingIndex === -1
-          ? [...currentSkills, metadata]
-          : currentSkills.map((skill, index) => (index === existingIndex ? metadata : skill));
+          ? [...currentSkills, normalized]
+          : currentSkills.map((skill, index) => (index === existingIndex ? normalized : skill));
 
       await this.writeManifest(nextSkills, currentState.skillSets);
     });
@@ -417,6 +423,25 @@ export class MetadataStore {
       }
 
       const updated = { ...currentSkills[existingIndex], enabled };
+      await this.writeManifest(
+        currentSkills.map((skill, index) => (index === existingIndex ? updated : skill)),
+        currentState.skillSets
+      );
+      return updated;
+    });
+  }
+
+  async setTargetScope(skillId: string, targetScope: SkillTargetScope): Promise<SkillMetadata> {
+    return this.withWriteLock(async () => {
+      const currentState = await this.readManifest();
+      const currentSkills = currentState.skills;
+      const existingIndex = currentSkills.findIndex((skill) => skill.id === skillId);
+
+      if (existingIndex === -1) {
+        throw new Error(`Skill not found: ${skillId}`);
+      }
+
+      const updated = { ...currentSkills[existingIndex], targetScope };
       await this.writeManifest(
         currentSkills.map((skill, index) => (index === existingIndex ? updated : skill)),
         currentState.skillSets

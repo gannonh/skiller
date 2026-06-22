@@ -37,6 +37,8 @@ export type SkillSource =
       discoveredFrom?: string;
     };
 
+export type SkillTargetScope = "projects" | "global" | "both";
+
 export interface SkillMetadata {
   id: string;
   name: string;
@@ -49,6 +51,7 @@ export interface SkillMetadata {
   contentHash?: string;
   keepUpdated: boolean;
   enabled: boolean;
+  targetScope?: SkillTargetScope;
   tags: string[];
   validation: ValidationResult;
 }
@@ -62,6 +65,8 @@ export interface SkillSetMetadata {
   updatedAt: string;
 }
 
+export type TargetScope = "global" | "project";
+
 export interface LibraryState {
   skills: SkillMetadata[];
   skillSets: SkillSetMetadata[];
@@ -71,11 +76,16 @@ export interface LibraryState {
 export interface TargetConfig {
   path: string;
   enabled: boolean;
+  scope?: TargetScope;
 }
+
+export type TargetInstallMode = "symlink" | "copy";
 
 export interface SkillerConfig {
   libraryPath: string;
   targets: TargetConfig[];
+  globalTargetInstallMode: TargetInstallMode;
+  projectTargetInstallMode: TargetInstallMode;
   updateSchedule: {
     intervalHours: number;
   };

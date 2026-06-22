@@ -2,7 +2,7 @@ import fs from "fs-extra";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { copySkillToLibrary, hashDirectory, replaceWithSymlink } from "./file-ops.js";
+import { copySkillToLibrary, hashDirectory, replaceWithCopy, replaceWithSymlink } from "./file-ops.js";
 
 let tmp: string;
 
@@ -145,5 +145,20 @@ describe("file operations", () => {
       message: "replaceWithSymlink failed and rollback failed",
       errors: [expect.objectContaining({ message: "symlink failed" }), expect.objectContaining({ message: "rollback failed" })]
     });
+  });
+
+  it("replaces a target folder with a copy", async () => {
+    const source = path.join(tmp, "master");
+    const target = path.join(tmp, "target");
+    await fs.ensureDir(source);
+    await fs.ensureDir(target);
+    await fs.writeFile(path.join(source, "SKILL.md"), "hello");
+    await fs.writeFile(path.join(target, "SKILL.md"), "stale");
+
+    await replaceWithCopy(target, source);
+    const stat = await fs.lstat(target);
+    expect(stat.isDirectory()).toBe(true);
+    expect(stat.isSymbolicLink()).toBe(false);
+    await expect(fs.readFile(path.join(target, "SKILL.md"), "utf8")).resolves.toBe("hello");
   });
 });

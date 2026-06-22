@@ -20,15 +20,21 @@ export function SkillSetEditorDialog({
   skillSet,
   skills,
   disabled = false,
+  globalTargets = [],
   onOpenChange,
-  onSave
+  onSave,
+  onManageGlobalTargets,
+  onBrowseTarget
 }: {
   open: boolean;
   skillSet: SkillSetMetadata | null;
   skills: SkillMetadata[];
   disabled?: boolean;
+  globalTargets?: TargetConfig[];
   onOpenChange: (open: boolean) => void;
   onSave: (input: SaveSkillSetInput) => Promise<void>;
+  onManageGlobalTargets?: () => void;
+  onBrowseTarget?: () => Promise<string | null>;
 }) {
   const [name, setName] = useState("");
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set());
@@ -37,10 +43,23 @@ export function SkillSetEditorDialog({
 
   useEffect(() => {
     if (!open) return;
+    const savedTargets = skillSet?.targets.map((target) => ({ ...target })) ?? [];
+    const savedGlobalTargets = savedTargets.filter((target) => target.scope === "global");
+    const projectTargets = savedTargets.filter((target) => target.scope !== "global");
+    const hasExplicitTargets = savedTargets.length > 0;
+    const initialGlobalTargets = globalTargets.map((globalTarget) => {
+      const saved = savedGlobalTargets.find((target) => target.path === globalTarget.path);
+      return {
+        path: globalTarget.path,
+        enabled: saved?.enabled ?? (!hasExplicitTargets && globalTarget.enabled),
+        scope: "global" as const
+      };
+    });
+
     setName(skillSet?.name ?? "");
     setSelectedSkillIds(new Set(skillSet?.skillIds ?? []));
-    setTargets(skillSet?.targets.map((target) => ({ ...target })) ?? []);
-  }, [open, skillSet]);
+    setTargets([...projectTargets, ...initialGlobalTargets]);
+  }, [open, skillSet, globalTargets]);
 
   async function handleSave() {
     if (name.trim() === "" || isSaving || disabled) return;
@@ -90,7 +109,14 @@ export function SkillSetEditorDialog({
           </div>
           <div className="grid gap-2">
             <Label>Targets</Label>
-            <TargetListEditor targets={targets} disabled={disabled || isSaving} onChange={setTargets} />
+            <TargetListEditor
+              targets={targets}
+              globalTargets={globalTargets}
+              disabled={disabled || isSaving}
+              onChange={setTargets}
+              onManageGlobalTargets={onManageGlobalTargets}
+              onBrowseTarget={onBrowseTarget}
+            />
           </div>
         </div>
         <DialogFooter>

@@ -42,6 +42,25 @@ describe("config", () => {
     expect(defaultConfig().targets).toEqual(defaultTargetDirectories().map((targetPath) => ({ path: targetPath, enabled: true })));
   });
 
+  it("defaults target install modes to symlinks", () => {
+    expect(defaultConfig()).toMatchObject({
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink"
+    });
+  });
+
+  it("normalizes target install modes", () => {
+    expect(
+      normalizeConfig({
+        globalTargetInstallMode: "copy",
+        projectTargetInstallMode: "invalid" as never
+      })
+    ).toMatchObject({
+      globalTargetInstallMode: "copy",
+      projectTargetInstallMode: "symlink"
+    });
+  });
+
   it("normalizes empty config values", () => {
     expect(normalizeConfig({}).updateSchedule).toEqual({ intervalHours: 24 });
   });
@@ -147,6 +166,22 @@ describe("config", () => {
       libraryPath: "/skills",
       keepAllSkillsUpdated: true,
       updateSchedule: { intervalHours: 24 }
+    });
+  });
+
+  it("persists target install modes across partial saves", async () => {
+    const configPath = path.join(tmp, "skiller", "config.json");
+
+    await saveConfig({ libraryPath: "/skills" }, { configPath });
+    await saveConfig({ projectTargetInstallMode: "copy" }, { configPath });
+
+    await expect(loadConfig({ configPath })).resolves.toMatchObject({
+      libraryPath: "/skills",
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "copy"
+    });
+    await expect(fs.readJson(configPath)).resolves.toMatchObject({
+      projectTargetInstallMode: "copy"
     });
   });
 

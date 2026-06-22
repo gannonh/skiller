@@ -291,9 +291,9 @@ test("sorts library columns with name as the default", async ({ page }) => {
 
 test("shows configured target directories and refreshes scans", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Targets" }).click();
+  await page.getByRole("button", { name: "Global Targets" }).click();
 
-  await expect(page.getByText("Default and custom agent skill directories")).toBeVisible();
+  await expect(page.getByText("Default agent skill directories shared across skill sets")).toBeVisible();
   await expect(page.getByText("~/.agents/skills")).toBeVisible();
   await expect(page.getByText("~/.claude/skills")).toBeVisible();
 
@@ -306,7 +306,7 @@ test("validates settings paths in browser preview mode", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Settings" }).click();
 
-  await expect(page.getByText("Library, scan, startup, and tray behavior")).toBeVisible();
+  await expect(page.getByText("Library, target install behavior, startup, and tray settings")).toBeVisible();
   const input = page.getByLabel("Master library path");
   await expect(input).toHaveValue("~/skiller");
 
@@ -720,6 +720,8 @@ test("shows update check errors without marking rows current", async ({ page }) 
       saveTargets: async (targets) => ({
         libraryPath: "~/skiller",
         targets,
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -728,6 +730,8 @@ test("shows update check errors without marking rows current", async ({ page }) 
       getConfig: async () => ({
         libraryPath: "~/skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -736,6 +740,8 @@ test("shows update check errors without marking rows current", async ({ page }) 
       saveConfig: async () => ({
         libraryPath: "~/skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -808,6 +814,8 @@ test("shows update all failures in the error list", async ({ page }) => {
       saveTargets: async (targets) => ({
         libraryPath: "~/skiller",
         targets,
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -816,6 +824,8 @@ test("shows update all failures in the error list", async ({ page }) => {
       getConfig: async () => ({
         libraryPath: "~/skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -824,6 +834,8 @@ test("shows update all failures in the error list", async ({ page }) => {
       saveConfig: async () => ({
         libraryPath: "~/skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,

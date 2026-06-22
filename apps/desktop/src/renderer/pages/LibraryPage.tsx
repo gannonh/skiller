@@ -29,7 +29,7 @@ import { Switch } from "@workspace/ui/components/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import { skillerApi, type LibraryState, type SaveSkillSetInput, type SetSkillSetEnabledResult, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
 import { sourceDetail, sourceLabel, sourceUrl } from "../lib/skill-source.js";
-import type { DiscoveredGithubSkill } from "@skiller/core";
+import type { DiscoveredGithubSkill, SkillTargetScope, TargetConfig } from "@skiller/core";
 import { SkillMembershipDialog } from "../components/library/SkillMembershipDialog.js";
 import { SkillSetEditorDialog } from "../components/library/SkillSetEditorDialog.js";
 import {
@@ -338,7 +338,13 @@ function TagTokenInput({
   );
 }
 
-export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => void }) {
+export function LibraryPage({
+  onBrowseRegistry,
+  onManageGlobalTargets
+}: {
+  onBrowseRegistry?: () => void;
+  onManageGlobalTargets?: () => void;
+}) {
   const [libraryState, setLibraryState] = useState<LibraryState>(emptyLibraryState);
   const skills = libraryState.skills;
   const [error, setError] = useState<string | null>(null);
@@ -353,6 +359,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [setFilter, setSetFilter] = useState<SetFilter>({ type: "all" });
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [globalTargets, setGlobalTargets] = useState<TargetConfig[]>([]);
   const [skillSetEditorOpen, setSkillSetEditorOpen] = useState(false);
   const [editingSkillSet, setEditingSkillSet] = useState<SkillSetMetadata | null>(null);
   const [membershipDialogSkillId, setMembershipDialogSkillId] = useState<string | null>(null);
@@ -367,7 +374,10 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   useEffect(() => {
     isMountedRef.current = true;
 
-    void refreshLibrary()
+    void Promise.all([refreshLibrary(), skillerApi.getConfig()])
+      .then(([, config]) => {
+        if (isMountedRef.current) setGlobalTargets(config.targets);
+      })
       .catch((caught: unknown) => {
         if (isMountedRef.current) setError(caught instanceof Error ? caught.message : String(caught));
       })
@@ -568,6 +578,25 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
     }
   }
 
+  async function setSkillTargetScope(skillId: string, targetScope: SkillTargetScope) {
+    if (!beginOrganizationMutation()) return;
+    setPendingSkillIds((current) => new Set(current).add(skillId));
+    setError(null);
+    try {
+      const updatedState = await skillerApi.setSkillTargetScope(skillId, targetScope);
+      setLibraryState(updatedState);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPendingSkillIds((current) => {
+        const next = new Set(current);
+        next.delete(skillId);
+        return next;
+      });
+      finishOrganizationMutation();
+    }
+  }
+
   async function deleteSkill(skillId: string) {
     if (!beginOrganizationMutation()) return;
     setPendingSkillIds((current) => new Set(current).add(skillId));
@@ -597,6 +626,15 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
   function finishOrganizationMutation() {
     isOrganizingRef.current = false;
     setIsOrganizing(false);
+  }
+
+  async function browseTargetDirectory(): Promise<string | null> {
+    try {
+      return await skillerApi.chooseTargetDirectory();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+      return null;
+    }
   }
 
   async function saveSkillSet(input: SaveSkillSetInput) {
@@ -844,6 +882,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                   <TableHead>Tags</TableHead>
                   <SortableTableHead column="status">Status</SortableTableHead>
                   <SortableTableHead column="enabled">Enabled</SortableTableHead>
+                  <TableHead>Target Scope</TableHead>
                   <SortableTableHead column="actions">Actions</SortableTableHead>
                 </TableRow>
               </TableHeader>
@@ -950,6 +989,19 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                       />
                     </TableCell>
                     <TableCell>
+                      <select
+                        aria-label={`Target scope for ${skill.name || skill.id}`}
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                        value={skill.targetScope ?? "both"}
+                        disabled={isOrganizing || pendingSkillIds.has(skill.id)}
+                        onChange={(event) => void setSkillTargetScope(skill.id, event.target.value as SkillTargetScope)}
+                      >
+                        <option value="both">Both</option>
+                        <option value="global">Global</option>
+                        <option value="projects">Projects</option>
+                      </select>
+                    </TableCell>
+                    <TableCell>
                       <Button
                         variant="outline"
                         size="icon"
@@ -964,7 +1016,7 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
                 ))}
                 {filteredSkills.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-muted-foreground">
+                    <TableCell colSpan={8} className="text-muted-foreground">
                       {skills.length > 0 ? "No skills match the current filters." : "No skills installed."}
                     </TableCell>
                   </TableRow>
@@ -1053,8 +1105,11 @@ export function LibraryPage({ onBrowseRegistry }: { onBrowseRegistry?: () => voi
         skillSet={editingSkillSet}
         skills={skills}
         disabled={isOrganizing}
+        globalTargets={globalTargets}
         onOpenChange={setSkillSetEditorOpen}
         onSave={saveSkillSet}
+        onManageGlobalTargets={onManageGlobalTargets}
+        onBrowseTarget={browseTargetDirectory}
       />
       <SkillMembershipDialog
         open={membershipDialogSkillId !== null}

@@ -13,11 +13,13 @@ import {
   scanTargets,
   updateInstalledSkill
 } from "@skiller/core";
-import type { DuplicateSkillNameHandler, ScanTargetsResult, SkillerConfig, TargetConfig } from "@skiller/core";
+import type { DuplicateSkillNameHandler, ScanTargetsResult, SkillSetMetadata, SkillTargetScope, SkillerConfig, TargetConfig } from "@skiller/core";
 import type { AppUpdateService } from "./app-update.js";
 import { checkDesktopUpdates } from "./update-check.js";
 
-type ConfigUpdate = Partial<Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets">>;
+type ConfigUpdate = Partial<
+  Pick<SkillerConfig, "libraryPath" | "keepAllSkillsUpdated" | "targets" | "globalTargetInstallMode" | "projectTargetInstallMode">
+>;
 type InstallGithubInput = { githubUrl: string; githubPath?: string; ref?: string; replaceExisting?: boolean };
 type InstallRegistryInput =
   | string
@@ -34,6 +36,10 @@ const skillsShClient = new SkillsShClient();
 
 function expandTargets(targets: TargetConfig[]): TargetConfig[] {
   return targets.map((target) => ({ ...target, path: expandHome(target.path) }));
+}
+
+function expandSkillSets(skillSets: SkillSetMetadata[]): SkillSetMetadata[] {
+  return skillSets.map((skillSet) => ({ ...skillSet, targets: expandTargets(skillSet.targets) }));
 }
 
 function changedTargets(currentTargets: TargetConfig[], nextTargets: TargetConfig[]): TargetConfig[] {
@@ -65,7 +71,9 @@ async function scanConfig(config: SkillerConfig, extraTargets: TargetConfig[] = 
   return scanTargets({
     libraryPath,
     targets: [...expandTargets(config.targets), ...extraTargets],
-    skillSets
+    skillSets: expandSkillSets(skillSets),
+    globalTargetInstallMode: config.globalTargetInstallMode,
+    projectTargetInstallMode: config.projectTargetInstallMode
   });
 }
 
@@ -79,7 +87,9 @@ async function scanTargetsForConfig(config: SkillerConfig, targets: TargetConfig
   await scanTargets({
     libraryPath,
     targets: expandTargets(targets),
-    skillSets
+    skillSets: expandSkillSets(skillSets),
+    globalTargetInstallMode: config.globalTargetInstallMode,
+    projectTargetInstallMode: config.projectTargetInstallMode
   });
 }
 
@@ -147,6 +157,19 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     await store.setEnabled(skillId, enabled);
     await scanConfig(config);
     return store.libraryState();
+  });
+
+  ipcMain.handle("library:set-target-scope", async (_event, skillId: string, targetScope: SkillTargetScope) => {
+    const config = await loadConfig();
+    const libraryPath = expandHome(config.libraryPath);
+    const store = new MetadataStore(libraryPath);
+
+    await store.setTargetScope(skillId, targetScope);
+    const state = await store.libraryState();
+    void scanConfig(config).catch((error) => {
+      console.error("Target scope scan failed", error);
+    });
+    return state;
   });
 
   ipcMain.handle("library:save-skill-set", async (_event, input: import("@skiller/core").SaveSkillSetInput) => {
@@ -281,16 +304,20 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     return config;
   });
 
+  ipcMain.handle("targets:choose-directory", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Choose Target Directory",
+      properties: ["openDirectory", "createDirectory"]
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
   ipcMain.handle("config:get", async () => {
     return loadConfig();
   });
 
   ipcMain.handle("config:save", async (_event, config: ConfigUpdate) => {
-    return saveConfig({
-      libraryPath: config.libraryPath,
-      keepAllSkillsUpdated: config.keepAllSkillsUpdated,
-      targets: config.targets
-    });
+    return saveConfig(config);
   });
 
   ipcMain.handle("updates:check", async () => {

@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MetadataStore } from "./metadata-store.js";
+import * as fileOps from "./file-ops.js";
+import { hashDirectory } from "./file-ops.js";
 import { scanTargets } from "./scanner.js";
 
 const fileOpsMock = vi.hoisted(() => ({
@@ -63,6 +65,623 @@ describe("scanTargets", () => {
     expect((await fs.lstat(skill)).isSymbolicLink()).toBe(true);
   });
 
+  it("installs copies when globalTargetInstallMode is copy", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(library, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: skill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    const installed = path.join(target, "example");
+    expect(result.enabled).toEqual([{ skillId: "example", targetPath: target }]);
+    expect((await fs.lstat(installed)).isDirectory()).toBe(true);
+    expect((await fs.lstat(installed)).isSymbolicLink()).toBe(false);
+    await expect(fs.readFile(path.join(installed, "SKILL.md"), "utf8")).resolves.toContain("name: example");
+  });
+
+  it("replaces symlinks with copies when globalTargetInstallMode is copy", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(library, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: skill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+    await fs.symlink(skill, path.join(target, "example"), "dir");
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    const installed = path.join(target, "example");
+    expect((await fs.lstat(installed)).isDirectory()).toBe(true);
+    expect((await fs.lstat(installed)).isSymbolicLink()).toBe(false);
+  });
+
+  it("uses projectTargetInstallMode for project target paths", async () => {
+    const globalTarget = path.join(tmp, "global-target");
+    const projectTarget = path.join(tmp, "project-target");
+    const library = path.join(tmp, "library");
+    const skillPath = path.join(library, "grouped-skill");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "---\nname: grouped-skill\ndescription: Grouped.\n---\n");
+    await store.save({
+      id: "grouped-skill",
+      name: "grouped-skill",
+      libraryPath: skillPath,
+      source: { type: "local", path: skillPath },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      targetScope: "projects",
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+    await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["grouped-skill"],
+      targets: [{ path: projectTarget, enabled: true, scope: "project" }]
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(globalTarget)],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "copy",
+      skillSets: (await store.libraryState()).skillSets
+    });
+
+    const globalInstalled = path.join(globalTarget, "grouped-skill");
+    const projectInstalled = path.join(projectTarget, "grouped-skill");
+    expect(await fs.pathExists(globalInstalled)).toBe(false);
+    expect((await fs.lstat(projectInstalled)).isDirectory()).toBe(true);
+    expect((await fs.lstat(projectInstalled)).isSymbolicLink()).toBe(false);
+  });
+
+  it("uses projectTargetInstallMode for home-relative project target paths", async () => {
+    vi.stubEnv("HOME", tmp);
+    const globalTarget = path.join(tmp, "global-target");
+    const projectTarget = path.join(tmp, "project-target");
+    const library = path.join(tmp, "library");
+    const skillPath = path.join(library, "grouped-skill");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "---\nname: grouped-skill\ndescription: Grouped.\n---\n");
+    await store.save({
+      id: "grouped-skill",
+      name: "grouped-skill",
+      libraryPath: skillPath,
+      source: { type: "local", path: skillPath },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+    await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["grouped-skill"],
+      targets: [{ path: "~/project-target", enabled: true, scope: "project" }]
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(globalTarget)],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "copy",
+      skillSets: (await store.libraryState()).skillSets
+    });
+
+    const projectInstalled = path.join(projectTarget, "grouped-skill");
+    expect((await fs.lstat(projectInstalled)).isDirectory()).toBe(true);
+    expect((await fs.lstat(projectInstalled)).isSymbolicLink()).toBe(false);
+  });
+
+  it("discovers target skill folders as copies when globalTargetInstallMode is copy", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(target, "example");
+
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect(result.imported).toHaveLength(1);
+    expect((await fs.lstat(skill)).isDirectory()).toBe(true);
+    expect((await fs.lstat(skill)).isSymbolicLink()).toBe(false);
+  });
+
+  it("reuses an up-to-date managed copy without rewriting it", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const contentHash = await hashDirectory(librarySkill);
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash,
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    const before = await fs.readFile(path.join(targetSkill, "SKILL.md"), "utf8");
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect(await fs.readFile(path.join(targetSkill, "SKILL.md"), "utf8")).toBe(before);
+    expect((await fs.lstat(targetSkill)).isSymbolicLink()).toBe(false);
+  });
+
+  it("refreshes stale managed copies during copy-mode scans", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const contentHash = await hashDirectory(librarySkill);
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash,
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+    await fs.writeFile(path.join(targetSkill, "SKILL.md"), "---\nname: example\ndescription: Stale.\n---\n");
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    await expect(fs.readFile(path.join(targetSkill, "SKILL.md"), "utf8")).resolves.toContain("description: Example.");
+  });
+
+  it("removes stale managed copies before rewriting them", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+    const { hashDirectory: originalHashDirectory } = await vi.importActual<typeof import("./file-ops.js")>(
+      "./file-ops.js"
+    );
+    const hashSpy = vi.spyOn(fileOps, "hashDirectory");
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const contentHash = await hashDirectory(librarySkill);
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash,
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    hashSpy.mockImplementation(async (candidate) => {
+      if (candidate === targetSkill) return "stale-hash";
+      return originalHashDirectory(candidate);
+    });
+
+    try {
+      await scanTargets({
+        libraryPath: library,
+        targets: [enabledTarget(target)],
+        globalTargetInstallMode: "copy"
+      });
+
+      await expect(fs.readFile(path.join(targetSkill, "SKILL.md"), "utf8")).resolves.toContain("description: Example.");
+    } finally {
+      hashSpy.mockRestore();
+    }
+  });
+
+  it("replaces unmanaged symlinks with copies when deploying in copy mode", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const foreign = path.join(tmp, "foreign");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(foreign);
+    await fs.writeFile(path.join(foreign, "SKILL.md"), "---\nname: example\ndescription: Foreign.\n---\n");
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await fs.ensureDir(target);
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+    await fs.symlink(foreign, targetSkill, "dir");
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect((await fs.lstat(targetSkill)).isSymbolicLink()).toBe(false);
+    await expect(fs.readFile(path.join(targetSkill, "SKILL.md"), "utf8")).resolves.toContain("description: Example.");
+  });
+
+  it("removes managed copies when switching to symlink mode", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+    expect((await fs.lstat(targetSkill)).isSymbolicLink()).toBe(false);
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "symlink"
+    });
+
+    expect((await fs.lstat(targetSkill)).isSymbolicLink()).toBe(true);
+    expect(await fs.realpath(targetSkill)).toBe(await fs.realpath(librarySkill));
+  });
+
+  it("removes managed copies for disabled library skills", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const contentHash = await hashDirectory(librarySkill);
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash,
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash,
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: false,
+      tags: []
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect(result.disabled).toEqual([{ skillId: "example", targetPath: target }]);
+    expect(await fs.pathExists(targetSkill)).toBe(false);
+  });
+
+  it("skips managed copies removed during disabled-target cleanup", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+    const originalLstat = fs.lstat;
+    let targetSkillStats = 0;
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const contentHash = await hashDirectory(librarySkill);
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash,
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    const lstat = vi.spyOn(fs, "lstat").mockImplementation(async (candidate, options) => {
+      if (candidate === targetSkill) {
+        targetSkillStats += 1;
+        if (targetSkillStats === 2) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      }
+
+      return originalLstat(candidate as never, options as never) as never;
+    });
+
+    try {
+      const result = await scanTargets({
+        libraryPath: library,
+        targets: [disabledTarget(target)],
+        globalTargetInstallMode: "copy"
+      });
+
+      expect(result.disabled).toEqual([]);
+    } finally {
+      lstat.mockRestore();
+    }
+  });
+
+  it("reports lstat failures while removing managed copies", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+    const originalLstat = fs.lstat;
+    let targetSkillStats = 0;
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const contentHash = await hashDirectory(librarySkill);
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash,
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    const lstat = vi.spyOn(fs, "lstat").mockImplementation(async (candidate, options) => {
+      if (candidate === targetSkill) {
+        targetSkillStats += 1;
+        if (targetSkillStats === 2) throw Object.assign(new Error("lstat failed"), { code: "EACCES" });
+      }
+
+      return originalLstat(candidate as never, options as never) as never;
+    });
+
+    try {
+      const result = await scanTargets({
+        libraryPath: library,
+        targets: [disabledTarget(target)],
+        globalTargetInstallMode: "copy"
+      });
+
+      expect(result.errors).toEqual([{ path: targetSkill, message: "lstat failed" }]);
+    } finally {
+      lstat.mockRestore();
+    }
+  });
+
+  it("ignores managed copies when content hashing fails during cleanup", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+    const { hashDirectory: originalHashDirectory } = await vi.importActual<typeof import("./file-ops.js")>(
+      "./file-ops.js"
+    );
+    const hashSpy = vi.spyOn(fileOps, "hashDirectory");
+    let targetHashCalls = 0;
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const contentHash = await hashDirectory(librarySkill);
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash,
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    hashSpy.mockImplementation(async (candidate) => {
+      if (candidate === targetSkill) {
+        targetHashCalls += 1;
+        if (targetHashCalls === 1) throw new Error("hash failed");
+      }
+      return originalHashDirectory(candidate);
+    });
+
+    try {
+      const result = await scanTargets({
+        libraryPath: library,
+        targets: [enabledTarget(target)],
+        globalTargetInstallMode: "copy"
+      });
+
+      expect(result.errors).toEqual([]);
+      expect(await fs.pathExists(targetSkill)).toBe(true);
+    } finally {
+      hashSpy.mockRestore();
+    }
+  });
+
+  it("skips plain files blocking copy-mode installs", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetFile = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await fs.writeFile(targetFile, "plain file");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect(result.enabled).toEqual([]);
+    await expect(fs.readFile(targetFile, "utf8")).resolves.toBe("plain file");
+  });
+
   it("syncs enabled library skills to enabled targets and removes them from disabled targets", async () => {
     const enabled = path.join(tmp, "enabled-target");
     const disabled = path.join(tmp, "disabled-target");
@@ -121,6 +740,164 @@ describe("scanTargets", () => {
 
     expect(result.enabled).toEqual([{ skillId: "example", targetPath: target }]);
     expect(await fs.realpath(path.join(target, "example"))).toBe(await fs.realpath(skill));
+  });
+
+  it("creates nested missing enabled target directories before syncing library skills", async () => {
+    const target = path.join(tmp, "deep", "nested", "missing-target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(library, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: skill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+
+    expect(result.enabled).toEqual([{ skillId: "example", targetPath: target }]);
+    expect(await fs.pathExists(path.join(target, "example"))).toBe(true);
+  });
+
+  it("does not treat folders as managed copies when metadata has no content hash", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: false,
+      tags: []
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect(result.disabled).toEqual([]);
+    expect(await fs.pathExists(targetSkill)).toBe(true);
+  });
+
+  it("replaces invalid managed copy directories during copy-mode ensure", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(targetSkill);
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect(result.enabled).toEqual([]);
+    expect(await fs.pathExists(path.join(targetSkill, "SKILL.md"))).toBe(false);
+  });
+
+  it("reports lstat failures while ensuring managed copies", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+    const originalLstat = fs.lstat;
+    let targetSkillStats = 0;
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    const lstat = vi.spyOn(fs, "lstat").mockImplementation(async (candidate, options) => {
+      if (candidate === targetSkill) {
+        targetSkillStats += 1;
+        if (targetSkillStats === 2) throw Object.assign(new Error("lstat failed"), { code: "EACCES" });
+      }
+
+      return originalLstat(candidate as never, options as never) as never;
+    });
+
+    try {
+      const result = await scanTargets({
+        libraryPath: library,
+        targets: [enabledTarget(target)],
+        globalTargetInstallMode: "copy"
+      });
+
+      expect(result.errors).toEqual([{ path: targetSkill, message: "lstat failed" }]);
+    } finally {
+      lstat.mockRestore();
+    }
   });
 
   it("uses the last duplicate target entry when syncing", async () => {
@@ -283,6 +1060,35 @@ describe("scanTargets", () => {
     expect(saved[0]?.enabled).toBe(true);
     expect(await fs.pathExists(path.join(library, "kata-health-2"))).toBe(false);
     expect(await fs.realpath(secondSkill)).toBe(await fs.realpath(path.join(library, "kata-health")));
+  });
+
+  it("installs existing discovered skills as copies when importing from another target", async () => {
+    const firstTarget = path.join(tmp, "first-target");
+    const secondTarget = path.join(tmp, "second-target");
+    const library = path.join(tmp, "library");
+    const firstSkill = path.join(firstTarget, "kata-health");
+    const secondSkill = path.join(secondTarget, "kata-health");
+    const content = "---\nname: kata-health\ndescription: Kata health.\n---\n";
+
+    await fs.ensureDir(firstSkill);
+    await fs.ensureDir(secondSkill);
+    await fs.writeFile(path.join(firstSkill, "SKILL.md"), content);
+    await fs.writeFile(path.join(secondSkill, "SKILL.md"), content);
+
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(firstTarget)],
+      globalTargetInstallMode: "copy"
+    });
+    const secondResult = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(secondTarget)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect(secondResult.enabled).toEqual([{ skillId: "kata-health", targetPath: secondTarget }]);
+    expect((await fs.lstat(secondSkill)).isDirectory()).toBe(true);
+    expect((await fs.lstat(secondSkill)).isSymbolicLink()).toBe(false);
   });
 
   it("leaves real target folders in place when matching metadata points to a missing library path", async () => {
@@ -1316,6 +2122,7 @@ describe("scanTargets", () => {
       installedAt: "2026-05-12T00:00:00.000Z",
       keepUpdated: false,
       enabled: true,
+      targetScope: "projects",
       tags: [],
       validation: { valid: true, issues: [] }
     });
@@ -1336,6 +2143,40 @@ describe("scanTargets", () => {
     expect(await fs.pathExists(path.join(globalTarget, "grouped-skill"))).toBe(false);
   });
 
+  it("allows enabled project targets to use a path that is disabled globally", async () => {
+    const sharedTarget = path.join(tmp, "shared-target");
+    const library = path.join(tmp, "library");
+    const skillPath = path.join(library, "grouped-skill");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "---\nname: grouped-skill\ndescription: Grouped.\n---\n");
+    await store.save({
+      id: "grouped-skill",
+      name: "grouped-skill",
+      libraryPath: skillPath,
+      source: { type: "local", path: skillPath },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+    await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["grouped-skill"],
+      targets: [{ path: sharedTarget, enabled: true, scope: "project" }]
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [disabledTarget(sharedTarget)],
+      skillSets: (await store.libraryState()).skillSets
+    });
+
+    expect(result.enabled).toEqual([{ skillId: "grouped-skill", targetPath: sharedTarget }]);
+  });
+
   it("removes grouped skill symlinks from disallowed global targets", async () => {
     const globalTarget = path.join(tmp, "global-target");
     const setTarget = path.join(tmp, "set-target");
@@ -1354,6 +2195,7 @@ describe("scanTargets", () => {
       installedAt: "2026-05-12T00:00:00.000Z",
       keepUpdated: false,
       enabled: true,
+      targetScope: "projects",
       tags: [],
       validation: { valid: true, issues: [] }
     });
@@ -1406,5 +2248,294 @@ describe("scanTargets", () => {
     });
 
     expect(result.enabled).toEqual([{ skillId: "grouped-skill", targetPath: globalTarget }]);
+  });
+
+  it("does not fall back to global targets when every explicit skill set target is disabled", async () => {
+    const globalTarget = path.join(tmp, "global-target");
+    const library = path.join(tmp, "library");
+    const skillPath = path.join(library, "grouped-skill");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "---\nname: grouped-skill\ndescription: Grouped.\n---\n");
+    await store.save({
+      id: "grouped-skill",
+      name: "grouped-skill",
+      libraryPath: skillPath,
+      source: { type: "local", path: skillPath },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      targetScope: "projects",
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+    await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["grouped-skill"],
+      targets: [{ path: globalTarget, enabled: false, scope: "global" }]
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(globalTarget)],
+      skillSets: (await store.libraryState()).skillSets
+    });
+
+    expect(result.enabled).toEqual([]);
+    expect(await fs.pathExists(path.join(globalTarget, "grouped-skill"))).toBe(false);
+  });
+
+  it("does not scan removed global targets that remain in skill set selections", async () => {
+    const removedGlobalTarget = path.join(tmp, "removed-global-target");
+    const library = path.join(tmp, "library");
+    const skillPath = path.join(library, "grouped-skill");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "---\nname: grouped-skill\ndescription: Grouped.\n---\n");
+    await store.save({
+      id: "grouped-skill",
+      name: "grouped-skill",
+      libraryPath: skillPath,
+      source: { type: "local", path: skillPath },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+    await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["grouped-skill"],
+      targets: [{ path: removedGlobalTarget, enabled: true, scope: "global" }]
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [],
+      skillSets: (await store.libraryState()).skillSets
+    });
+
+    expect(result.enabled).toEqual([]);
+    expect(await fs.pathExists(removedGlobalTarget)).toBe(false);
+  });
+
+  it("honors explicit skill set inputs without reloading library state", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(library, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: skill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+    await store.saveSkillSet({
+      name: "Stored Only",
+      skillIds: ["example"],
+      targets: [{ path: target, enabled: true, scope: "project" }]
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      skillSets: []
+    });
+
+    expect(result.enabled).toEqual([{ skillId: "example", targetPath: target }]);
+  });
+
+  it("rethrows unexpected realpath failures while resolving effective target paths", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(library, "example");
+    const store = new MetadataStore(library);
+    const originalRealpath = fs.realpath;
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: skill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    const realpath = vi.spyOn(fs, "realpath").mockImplementation(async (candidate, options) => {
+      if (candidate === target) throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      return originalRealpath(candidate as never, options as never) as never;
+    });
+
+    try {
+      await expect(scanTargets({ libraryPath: library, targets: [enabledTarget(target)] })).rejects.toThrow(
+        "permission denied"
+      );
+    } finally {
+      realpath.mockRestore();
+    }
+  });
+
+  it("ignores missing entries while scanning disabled targets", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+    const originalLstat = fs.lstat;
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+    await fs.ensureDir(targetSkill);
+
+    const lstat = vi.spyOn(fs, "lstat").mockImplementation(async (candidate, options) => {
+      if (candidate === targetSkill) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      return originalLstat(candidate as never, options as never) as never;
+    });
+
+    try {
+      const result = await scanTargets({ libraryPath: library, targets: [disabledTarget(target)] });
+      expect(result.errors).toEqual([]);
+    } finally {
+      lstat.mockRestore();
+    }
+  });
+
+  it("ignores EINVAL while resolving effective target paths", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const skill = path.join(library, "example");
+    const store = new MetadataStore(library);
+    const originalRealpath = fs.realpath;
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: skill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    const realpath = vi.spyOn(fs, "realpath").mockImplementation(async (candidate, options) => {
+      if (candidate === target) throw Object.assign(new Error("invalid"), { code: "EINVAL" });
+      return originalRealpath(candidate as never, options as never) as never;
+    });
+
+    try {
+      const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+      expect(result.errors).toEqual([]);
+    } finally {
+      realpath.mockRestore();
+    }
+  });
+
+  it("records unexpected realpath failures while resolving symlinked library paths", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+    const originalRealpath = fs.realpath;
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+    await fs.symlink(librarySkill, targetSkill, "dir");
+
+    const realpath = vi.spyOn(fs, "realpath").mockImplementation(async (candidate, options) => {
+      if (candidate === targetSkill) throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      return originalRealpath(candidate as never, options as never) as never;
+    });
+
+    try {
+      const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+      expect(result.errors).toContainEqual({ path: targetSkill, message: "permission denied" });
+    } finally {
+      realpath.mockRestore();
+    }
+  });
+
+  it("ignores EINVAL while resolving symlinked library paths during reconciliation", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+    const originalRealpath = fs.realpath;
+
+    await fs.ensureDir(target);
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: "hash",
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+    await fs.symlink(librarySkill, targetSkill, "dir");
+
+    const realpath = vi.spyOn(fs, "realpath").mockImplementation(async (candidate, options) => {
+      if (candidate === targetSkill) throw Object.assign(new Error("invalid"), { code: "EINVAL" });
+      return originalRealpath(candidate as never, options as never) as never;
+    });
+
+    try {
+      const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+      expect(result.errors).toEqual([]);
+    } finally {
+      realpath.mockRestore();
+    }
   });
 });

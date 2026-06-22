@@ -87,6 +87,17 @@ export function TargetsPage() {
     setNewTarget("");
   }
 
+  async function browseTarget() {
+    setError(null);
+    try {
+      const targetPath = await skillerApi.chooseTargetDirectory();
+      if (targetPath) setNewTarget(normalizeTargetPath(targetPath));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+      setStatus("Browse failed");
+    }
+  }
+
   async function setTargetEnabled(targetPath: string, enabled: boolean) {
     await saveTargets(
       targets.map((target) => (target.path === targetPath ? { ...target, enabled } : target)),
@@ -123,8 +134,8 @@ export function TargetsPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Targets</CardTitle>
-        <CardDescription>Default and custom agent skill directories</CardDescription>
+        <CardTitle>Global Targets</CardTitle>
+        <CardDescription>Default agent skill directories shared across skill sets</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
@@ -163,12 +174,15 @@ export function TargetsPage() {
             placeholder="~/path/to/skills"
             disabled={pendingTargets.has(normalizeTargetPath(newTarget))}
           />
+          <Button type="button" variant="outline" onClick={() => void browseTarget()}>
+            Browse…
+          </Button>
           <Button
             onClick={() => void addTarget()}
             disabled={normalizeTargetPath(newTarget) === "" || pendingTargets.has(normalizeTargetPath(newTarget))}
           >
             <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
-            Add Target
+            Add Global Target
           </Button>
         </div>
         {error ? (

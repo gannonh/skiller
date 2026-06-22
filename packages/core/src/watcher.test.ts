@@ -31,7 +31,8 @@ describe("watchTargetDirectories", () => {
 
     expect(mocks.watch).toHaveBeenCalledWith(["/skills"], {
       ignoreInitial: true,
-      depth: 2,
+      depth: 1,
+      followSymlinks: false,
       awaitWriteFinish: true
     });
     expect(mocks.watcher.on).toHaveBeenCalledTimes(6);

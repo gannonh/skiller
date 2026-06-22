@@ -17,6 +17,7 @@ describe("desktop preload", () => {
     expect(preloadSource).toContain("deleteSkill");
     expect(preloadSource).toContain("saveSkillSet");
     expect(preloadSource).toContain("setSkillMembership");
+    expect(preloadSource).toContain("setSkillTargetScope");
     expect(preloadSource).toContain("deleteSkillSet");
     expect(preloadSource).toContain("replaceSkillTags");
     expect(preloadSource).toContain("setSkillSetEnabled");

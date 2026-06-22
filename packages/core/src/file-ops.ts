@@ -87,6 +87,15 @@ export async function copySkillToLibrary(sourcePath: string, libraryPath: string
   return destination;
 }
 
+export async function replaceWithCopy(targetPath: string, masterPath: string): Promise<void> {
+  await validateSkillSymlinks(masterPath);
+  if (await fs.pathExists(targetPath)) {
+    await fs.remove(targetPath);
+  }
+
+  await fs.copy(masterPath, targetPath, { dereference: true });
+}
+
 export async function replaceWithSymlink(targetPath: string, masterPath: string): Promise<void> {
   const backup = `${targetPath}.skiller-backup-${Date.now()}`;
   let symlinkCreated = false;

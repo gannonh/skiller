@@ -1,3 +1,4 @@
+import type { SkillerConfig } from "@skiller/core";
 import { describe, expect, it, vi } from "vitest";
 import { createProgram, runCli } from "./index.js";
 import { printResult } from "./output.js";
@@ -74,6 +75,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [{ path: "~/.agents/skills", enabled: true }],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -86,7 +89,9 @@ describe("cli", () => {
 
     expect(scanTargets).toHaveBeenCalledWith({
       libraryPath: "/home/test/persisted-skiller",
-      targets: [{ path: "/home/test/.agents/skills", enabled: true }]
+      targets: [{ path: "/home/test/.agents/skills", enabled: true }],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink"
     });
     expect(printResult).toHaveBeenCalledWith("imported 0 skills", false);
   });
@@ -104,6 +109,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -130,6 +137,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -152,6 +161,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -178,6 +189,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -200,6 +213,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -237,6 +252,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -260,6 +277,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -286,6 +305,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,
@@ -308,9 +329,11 @@ describe("cli", () => {
       updated: [],
       errors: []
     }));
-    const config = {
+    const config: SkillerConfig = {
       libraryPath: "~/persisted-skiller",
       targets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink",
       updateSchedule: { intervalHours: 24 },
       keepAllSkillsUpdated: false,
       launchAtLogin: false,
@@ -345,9 +368,11 @@ describe("cli", () => {
       updated: [],
       errors: []
     };
-    const config = {
+    const config: SkillerConfig = {
       libraryPath: "~/persisted-skiller",
       targets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink",
       updateSchedule: { intervalHours: 24 },
       keepAllSkillsUpdated: false,
       launchAtLogin: false,
@@ -376,6 +401,8 @@ describe("cli", () => {
       loadConfig: async () => ({
         libraryPath: "~/persisted-skiller",
         targets: [{ path: "~/.agents/skills", enabled: true }],
+        globalTargetInstallMode: "symlink",
+        projectTargetInstallMode: "symlink",
         updateSchedule: { intervalHours: 24 },
         keepAllSkillsUpdated: false,
         launchAtLogin: false,

@@ -5,6 +5,8 @@ import type { SkillerConfig } from "@skiller/core";
 const config: SkillerConfig = {
   libraryPath: "~/persisted-skiller",
   targets: [{ path: "~/skills", enabled: true }],
+  globalTargetInstallMode: "symlink",
+  projectTargetInstallMode: "symlink",
   updateSchedule: { intervalHours: 1 },
   keepAllSkillsUpdated: false,
   launchAtLogin: false,
@@ -12,7 +14,7 @@ const config: SkillerConfig = {
 };
 
 function metadataStoreMock() {
-  return vi.fn(() => ({ pruneMissing: vi.fn(async () => []) })) as never;
+  return vi.fn(() => ({ pruneMissing: vi.fn(async () => []), libraryState: vi.fn(async () => ({ skills: [], skillSets: [], tags: [] })) })) as never;
 }
 
 describe("background jobs", () => {
@@ -56,12 +58,17 @@ describe("background jobs", () => {
   });
 
   it("reloads persisted config for watcher-triggered scans", async () => {
+    vi.useFakeTimers();
     const updatedConfig: SkillerConfig = {
       ...config,
       libraryPath: "~/updated-skiller",
       targets: [{ path: "~/updated-skills", enabled: true }]
     };
-    const loadConfig = vi.fn().mockResolvedValueOnce(config).mockResolvedValueOnce(config).mockResolvedValueOnce(updatedConfig);
+    const loadConfig = vi
+      .fn()
+      .mockResolvedValueOnce(config)
+      .mockResolvedValueOnce(config)
+      .mockResolvedValueOnce(updatedConfig);
     const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
     const close = vi.fn();
     let onChange: (() => void) | undefined;
@@ -81,21 +88,30 @@ describe("background jobs", () => {
       checkDesktopUpdates: vi.fn()
     });
 
+    await vi.advanceTimersByTimeAsync(250);
     onChange?.();
+    await vi.advanceTimersByTimeAsync(250);
     for (let index = 0; index < 5; index += 1) {
       await Promise.resolve();
     }
 
     expect(scanTargets).toHaveBeenNthCalledWith(1, {
       libraryPath: "/home/test/persisted-skiller",
-      targets: [{ path: "/home/test/skills", enabled: true }]
+      targets: [{ path: "/home/test/skills", enabled: true }],
+      skillSets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink"
     });
     expect(scanTargets).toHaveBeenNthCalledWith(2, {
       libraryPath: "/home/test/updated-skiller",
-      targets: [{ path: "/home/test/updated-skills", enabled: true }]
+      targets: [{ path: "/home/test/updated-skills", enabled: true }],
+      skillSets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink"
     });
 
     jobs.forEach((job) => job.stop());
+    vi.useRealTimers();
   });
 
   it("prunes missing library records before startup scans", async () => {
@@ -108,7 +124,7 @@ describe("background jobs", () => {
     const jobs = await startBackgroundJobs(window, {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
-      metadataStore: vi.fn(() => ({ pruneMissing })) as never,
+      metadataStore: vi.fn(() => ({ pruneMissing, libraryState: vi.fn(async () => ({ skills: [], skillSets: [], tags: [] })) })) as never,
       scanTargets,
       watchTargetDirectories: vi.fn(() => ({ close }) as never),
       createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
@@ -159,6 +175,197 @@ describe("background jobs", () => {
     });
 
     jobs.forEach((job) => job.stop());
+  });
+
+  it("ignores transient watcher EINVAL errors", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const close = vi.fn();
+    let onWatcherError: ((error: unknown) => void) | undefined;
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
+      watchTargetDirectories: vi.fn((_config, _onChange, onError) => {
+        onWatcherError = onError;
+        return { close } as never;
+      }),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    onWatcherError?.(Object.assign(new Error("EINVAL: invalid argument, watch"), { code: "EINVAL" }));
+
+    expect(window.webContents.send).not.toHaveBeenCalledWith("background:scan-error", expect.anything());
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("ignores watcher EINVAL errors reported only in the message", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const close = vi.fn();
+    let onWatcherError: ((error: unknown) => void) | undefined;
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
+      watchTargetDirectories: vi.fn((_config, _onChange, onError) => {
+        onWatcherError = onError;
+        return { close } as never;
+      }),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    onWatcherError?.(new Error("EINVAL: invalid argument, watch '/home/test/skills/example/references'"));
+
+    expect(window.webContents.send).not.toHaveBeenCalledWith("background:scan-error", expect.anything());
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("ignores transient watcher errors identified only by errno code", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const close = vi.fn();
+    let onWatcherError: ((error: unknown) => void) | undefined;
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
+      watchTargetDirectories: vi.fn((_config, _onChange, onError) => {
+        onWatcherError = onError;
+        return { close } as never;
+      }),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    onWatcherError?.(Object.assign(new Error("invalid argument, watch"), { code: "EINVAL" }));
+
+    expect(window.webContents.send).not.toHaveBeenCalledWith("background:scan-error", expect.anything());
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("ignores transient watcher ENOENT errors identified only by errno code", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const close = vi.fn();
+    let onWatcherError: ((error: unknown) => void) | undefined;
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
+      watchTargetDirectories: vi.fn((_config, _onChange, onError) => {
+        onWatcherError = onError;
+        return { close } as never;
+      }),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    onWatcherError?.(Object.assign(new Error("path missing"), { code: "ENOENT" }));
+
+    expect(window.webContents.send).not.toHaveBeenCalledWith("background:scan-error", expect.anything());
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("coalesces rapid watcher events into one debounced scan", async () => {
+    vi.useFakeTimers();
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+    const close = vi.fn();
+    let onChange: (() => void) | undefined;
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      scanTargets,
+      watchTargetDirectories: vi.fn((_config, callback) => {
+        onChange = callback;
+        return { close } as never;
+      }),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    await vi.advanceTimersByTimeAsync(250);
+    onChange?.();
+    onChange?.();
+    await vi.advanceTimersByTimeAsync(250);
+    for (let index = 0; index < 5; index += 1) {
+      await Promise.resolve();
+    }
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    expect(scanTargets).toHaveBeenCalledTimes(2);
+
+    jobs.forEach((job) => job.stop());
+    clearTimeoutSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("queues watcher-triggered scans while a scan is already running", async () => {
+    vi.useFakeTimers();
+    let releaseScan: (() => void) | undefined;
+    const scanTargets = vi.fn(
+      () =>
+        new Promise<{ imported: never[]; enabled: never[]; disabled: never[]; errors: never[] }>((resolve) => {
+          releaseScan = () => resolve({ imported: [], enabled: [], disabled: [], errors: [] });
+        })
+    );
+    const close = vi.fn();
+    let onChange: (() => void) | undefined;
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      scanTargets,
+      watchTargetDirectories: vi.fn((_config, callback) => {
+        onChange = callback;
+        return { close } as never;
+      }),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(scanTargets).toHaveBeenCalledTimes(1);
+
+    onChange?.();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(scanTargets).toHaveBeenCalledTimes(1);
+
+    releaseScan?.();
+    for (let index = 0; index < 5; index += 1) {
+      await Promise.resolve();
+    }
+
+    expect(scanTargets).toHaveBeenCalledTimes(2);
+
+    jobs.forEach((job) => job.stop());
+    vi.useRealTimers();
   });
 
   it("normalizes alternate scan and update error types", async () => {
