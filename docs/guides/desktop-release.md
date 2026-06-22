@@ -10,7 +10,7 @@ timestamp: 2026-06-22T00:00:00Z
 
 Related: [App auto update design](/specs/app-auto-update-design.md), [App auto update plan](/specs/app-auto-update.md)
 
-Skiller Desktop uses `electron-builder` and [`.github/workflows/release.yml`](https://github.com/gannonh/skiller/blob/main/.github/workflows/release.yml) to build signed, notarized macOS artifacts and Linux packages, then publish GitHub Releases.
+Skiller Desktop uses `electron-builder` and [`.github/workflows/release.yml`](https://github.com/gannonh/skiller/blob/main/.github/workflows/release.yml) to build signed, notarized macOS artifacts and Linux packages, then publish GitHub Releases. Windows desktop builds are not supported or published.
 
 ## Workflow triggers
 

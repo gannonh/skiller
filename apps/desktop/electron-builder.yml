@@ -32,19 +32,6 @@ mac:
 dmg:
   artifactName: Skiller-Desktop-${arch}.${ext}
 
-win:
-  icon: assets/app-icon.png
-  target:
-    - target: nsis
-      arch:
-        - x64
-
-nsis:
-  oneClick: false
-  perMachine: false
-  allowToChangeInstallationDirectory: true
-  artifactName: Skiller-Desktop-${arch}-Setup.${ext}
-
 linux:
   category: Development
   icon: assets/app-icon.png

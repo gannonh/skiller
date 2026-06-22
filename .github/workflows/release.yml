@@ -248,9 +248,6 @@ jobs:
           - os: macos-latest
             platform: mac
             arch: x64
-          - os: windows-latest
-            platform: win
-            arch: x64
           - os: ubuntu-latest
             platform: linux
             arch: x64
@@ -319,16 +316,6 @@ jobs:
             --linux AppImage deb \
             --${{ matrix.arch }}
 
-      - name: Build Windows (unsigned, best-effort)
-        if: matrix.platform == 'win'
-        shell: pwsh
-        run: |
-          pnpm --dir apps/desktop exec electron-builder `
-            --config $env:ELECTRON_BUILDER_CONFIG `
-            --publish never `
-            --win nsis `
-            --x64
-
       - name: Suffix x64 macOS updater manifest
         if: matrix.platform == 'mac' && matrix.arch == 'x64'
         shell: bash
@@ -347,7 +334,6 @@ jobs:
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
-            apps/desktop/release/*.exe
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
             apps/desktop/release/*.blockmap

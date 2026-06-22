@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse, stringify } from "yaml";
 
-type Platform = "mac" | "win";
+type Platform = "mac";
 
 interface UpdateFile {
   url: string;
@@ -33,8 +33,8 @@ function parseArgs(argv: string[]): CliArgs {
     const flag = argv[i];
     const value = argv[i + 1];
     if (flag === "--platform") {
-      if (value !== "mac" && value !== "win") {
-        throw new Error(`--platform must be mac or win, got ${value}`);
+      if (value !== "mac") {
+        throw new Error(`--platform must be mac, got ${value}`);
       }
       args.platform = value;
       i += 1;
@@ -47,8 +47,8 @@ function parseArgs(argv: string[]): CliArgs {
   return args;
 }
 
-function platformLabel(platform: Platform): string {
-  return platform === "mac" ? "macOS" : "Windows";
+function platformLabel(_platform: Platform): string {
+  return "macOS";
 }
 
 export function parseManifest(raw: string, sourcePath: string, label: string): UpdateManifest {
