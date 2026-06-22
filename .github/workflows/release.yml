@@ -19,7 +19,7 @@ on:
           - nightly
         default: stable
       version:
-        description: "Release version (for example 0.3.3 or v0.3.3). Required for stable."
+        description: "Release version (e.g. 0.3.3 or v0.3.3). Optional: stable defaults to the latest nightly's version; nightly ignores this."
         type: string
         required: false
       dry_run:
@@ -86,6 +86,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history + tags so a stable dispatch without a version input can
+          # derive it from the most recent nightly tag.
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -148,10 +152,21 @@ jobs:
               name="$(printf '%s\n' "$meta" | grep '^name=' | cut -d= -f2-)"
               is_prerelease="true"; make_latest="false"
             else
+              # Stable dispatch: the version input is the source of truth when
+              # given. When omitted, derive it from the most recent nightly tag
+              # (its stable core) — a stable release always ships the version
+              # that was last validated on nightly.
               raw="${INPUT_VERSION:-}"
               if [ -z "$raw" ]; then
-                echo "workflow_dispatch stable releases require the 'version' input." >&2
-                exit 1
+                latest_nightly="$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -n 1)"
+                if [ -z "$latest_nightly" ]; then
+                  echo "No 'version' input and no nightly tag to derive the stable version from. Cut a nightly first or pass version." >&2
+                  exit 1
+                fi
+                # vX.Y.Z-nightly.YYYYMMDD.N -> X.Y.Z
+                raw="${latest_nightly#v}"
+                raw="${raw%%-nightly.*}"
+                echo "No version input; derived stable version '$raw' from latest nightly '$latest_nightly'."
               fi
               version="${raw#v}"
               if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
