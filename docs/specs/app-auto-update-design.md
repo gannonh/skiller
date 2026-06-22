@@ -1,4 +1,14 @@
+---
+type: Spec
+title: App Auto Update Design
+description: Background app update checks, download, and left-panel install button for packaged desktop builds.
+tags: [desktop, updates, electron]
+timestamp: 2026-05-12T00:00:00Z
+---
+
 # App Auto Update Design
+
+Related: [App auto update plan](/specs/app-auto-update.md)
 
 ## Goal
 

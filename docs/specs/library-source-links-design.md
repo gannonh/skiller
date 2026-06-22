@@ -1,4 +1,14 @@
+---
+type: Spec
+title: Library Source Links Design
+description: Clickable GitHub-backed Source column URLs that open SKILL.md in the default browser.
+tags: [library, desktop, github]
+timestamp: 2026-05-16T00:00:00Z
+---
+
 # Library Source Links Design
+
+Related: [Library source links plan](/specs/library-source-links.md)
 
 ## Goal
 

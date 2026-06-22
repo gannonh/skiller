@@ -1,4 +1,14 @@
+---
+type: Spec
+title: Skiller Desktop Design
+description: Cross-platform desktop app for managing local agent skills, library sync, and skills.sh discovery.
+tags: [desktop, architecture, core]
+timestamp: 2026-05-09T00:00:00Z
+---
+
 # Skiller Desktop Design
+
+Related: [Skiller Desktop implementation plan](/specs/skiller-desktop.md), [Monorepo architecture](/architecture/monorepo.md)
 
 ## Summary
 

@@ -1,4 +1,14 @@
+---
+type: Plan
+title: Library Source Links Implementation Plan
+description: Make GitHub-backed Library Source column URLs clickable via renderer helpers and Electron IPC.
+tags: [library, desktop, github]
+timestamp: 2026-05-16T00:00:00Z
+---
+
 # Library Source Links Implementation Plan
+
+Related: [Library source links design](/specs/library-source-links-design.md)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

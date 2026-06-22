@@ -1,6 +1,16 @@
+---
+type: Plan
+title: Library Skill Sets Many-to-Many
+description: Migrate skill-to-set membership to many-to-many, add per-set targets, and replace inline controls with modals.
+tags: [library, skill-sets, desktop]
+timestamp: 2026-06-21T00:00:00Z
+---
+
 # Library Skill Sets: Many-to-Many + Modal UI
 
 **Status:** Implemented (2026-06-21)
+
+Related: [Skill sets and tags design](/specs/library-skill-sets-and-tags-design.md), [Skill sets and tags plan](/specs/library-skill-sets-and-tags.md)
 
 **Goal:** Migrate skill-to-set membership from one-to-many (`skillSetId` on skills) to many-to-many (`skillIds` on sets), add per-set targets, and replace inline skill set controls with create/edit and per-skill membership modals on the Library page.
 

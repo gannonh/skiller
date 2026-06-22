@@ -1,4 +1,14 @@
+---
+type: Spec
+title: Skill Provenance and Installs
+description: Provenance model and install flows for local, GitHub, skills.sh, and imported skills.
+tags: [library, installs, provenance]
+timestamp: 2026-05-11T00:00:00Z
+---
+
 # Skill Provenance and Installs
+
+Related: [Skill provenance implementation plan](/specs/skill-provenance-and-installs.md)
 
 ## Goal
 

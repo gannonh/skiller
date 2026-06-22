@@ -1,4 +1,14 @@
+---
+type: Plan
+title: Skill Provenance and Installs Implementation Plan
+description: Add provenance-aware install, display, and update behavior across core, CLI, and desktop.
+tags: [library, installs, provenance]
+timestamp: 2026-05-11T00:00:00Z
+---
+
 # Skill Provenance and Installs Implementation Plan
+
+Related: [Skill provenance design](/specs/skill-provenance-and-installs-design.md)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

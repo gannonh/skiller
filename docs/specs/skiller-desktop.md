@@ -1,4 +1,14 @@
+---
+type: Plan
+title: Skiller Desktop Implementation Plan
+description: Build the Skiller monorepo, core library, CLI, and Electron desktop app.
+tags: [desktop, implementation, core]
+timestamp: 2026-05-09T00:00:00Z
+---
+
 # Skiller Desktop Implementation Plan
+
+Related: [Skiller Desktop design](/specs/skiller-desktop-design.md)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -18,7 +28,7 @@
 - Create `packages/core`: shared library for all business logic.
 - Create `packages/cli`: `skiller` command backed by `@skiller/core`.
 - Create `apps/desktop`: Electron main process and Vite React renderer.
-- Create `docs/superpowers/plans/2026-05-09-skiller-desktop.md`: this plan.
+- Create `docs/specs/skiller-desktop.md`: this plan.
 
 Core files:
 

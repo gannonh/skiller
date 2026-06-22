@@ -1,4 +1,14 @@
+---
+type: Spec
+title: Library Skill Sets and Tags
+description: Desktop Library organization with skill sets, batch enablement, and tag filtering.
+tags: [library, skill-sets, tags]
+timestamp: 2026-05-12T00:00:00Z
+---
+
 # Library Skill Sets and Tags
+
+Related: [Skill sets and tags plan](/specs/library-skill-sets-and-tags.md), superseded in part by [many-to-many skill sets](/specs/library-skill-sets-many-to-many.md)
 
 ## Goal
 

@@ -1,4 +1,14 @@
+---
+type: Plan
+title: Library Skill Sets and Tags Implementation Plan
+description: Add desktop Library organization with user-managed skill sets, batch set enablement, and tag filtering.
+tags: [library, skill-sets, tags]
+timestamp: 2026-05-12T00:00:00Z
+---
+
 # Library Skill Sets and Tags Implementation Plan
+
+Related: [Skill sets and tags design](/specs/library-skill-sets-and-tags-design.md)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

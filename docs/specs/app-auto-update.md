@@ -1,4 +1,14 @@
+---
+type: Plan
+title: App Auto Update Implementation Plan
+description: Add electron-updater service, IPC bridge, and release workflow metadata for desktop app updates.
+tags: [desktop, updates, electron]
+timestamp: 2026-05-12T00:00:00Z
+---
+
 # App Auto Update Implementation Plan
+
+Related: [App auto update design](/specs/app-auto-update-design.md)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
