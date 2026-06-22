@@ -93,13 +93,13 @@ Tag normalization trims whitespace, collapses internal whitespace to single spac
 
 - loading a Library state object containing skills, skill sets, and known tags
 - creating, renaming, deleting, and listing skill sets
-- assigning a skill to a set or clearing its set
+- assigning a skill to one or more sets or clearing all memberships
 - replacing a skill's tags
 - listing known tags
 - filtering skills by set and tags
 - setting all skills in a set enabled or disabled
 
-Install, scan, update, and save flows preserve `skillSetId` and `tags` when rewriting a skill record.
+Install, scan, update, and save flows preserve `targetScope`, skill set memberships, and `tags` when rewriting a skill record.
 
 Batch set enablement should use one manifest write. Desktop should run one target scan after that write.
 
@@ -144,7 +144,7 @@ Core tests should cover:
 
 - manifest migration for missing organization fields
 - set create, rename, delete, and ordering
-- one-set-per-skill enforcement
+- many-to-many membership via `setSkillMembership`
 - clearing memberships when deleting a set
 - tag normalization
 - all-selected-tags filtering
@@ -165,7 +165,7 @@ Desktop tests should cover:
 ## Acceptance Criteria
 
 - Users can create, rename, and delete skill sets in Library.
-- Users can assign each skill to one set or no set.
+- Users can assign each skill to zero or more skill sets.
 - Users can toggle a set to update all member skill enabled states.
 - Users can still toggle individual skills after set batch actions.
 - Mixed set state appears when member skill enabled states differ.

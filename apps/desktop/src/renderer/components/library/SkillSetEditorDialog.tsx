@@ -64,6 +64,7 @@ export function SkillSetEditorDialog({
         targets
       });
       if (saved) onOpenChange(false);
+      else setError("Failed to save skill set.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {

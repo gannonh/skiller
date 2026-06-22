@@ -29,6 +29,21 @@ export function installLibrarySkillSetsMock() {
   const refreshTags = () => {
     state.tags = Array.from(new Set(state.skills.flatMap((candidate) => candidate.tags))).sort();
   };
+  const createSkillSetId = (name: string) => {
+    const base =
+      name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, "-")
+        .replace(/^[.-]+|[.-]+$/g, "") || "skill-set";
+    let id = base;
+    let suffix = 2;
+    while (state.skillSets.some((candidate) => candidate.id === id)) {
+      id = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    return id;
+  };
 
   window.skiller = {
     listLibrary: async () => state,
@@ -41,20 +56,16 @@ export function installLibrarySkillSetsMock() {
       const now = "2026-05-12T00:00:00.000Z";
       if (input.id) {
         const skillSet = state.skillSets.find((candidate) => candidate.id === input.id);
-        if (skillSet) {
-          skillSet.name = input.name.trim();
-          skillSet.skillIds = [...input.skillIds];
-          skillSet.targets = input.targets.map((target) => ({ ...target }));
-          skillSet.updatedAt = now;
+        if (!skillSet) {
+          throw new Error(`Skill set not found: ${input.id}`);
         }
+        skillSet.name = input.name.trim();
+        skillSet.skillIds = [...input.skillIds];
+        skillSet.targets = input.targets.map((target) => ({ ...target }));
+        skillSet.updatedAt = now;
       } else {
         state.skillSets.push({
-          id:
-            input.name
-              .trim()
-              .toLowerCase()
-              .replace(/[^a-z0-9._-]+/g, "-")
-              .replace(/^[.-]+|[.-]+$/g, "") || "skill-set",
+          id: createSkillSetId(input.name),
           name: input.name.trim(),
           skillIds: [...input.skillIds],
           targets: input.targets.map((target) => ({ ...target })),

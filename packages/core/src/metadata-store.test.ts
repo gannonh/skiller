@@ -811,12 +811,14 @@ describe("MetadataStore", () => {
     const libraryPath = await makeTempDir();
     const existingPath = path.join(libraryPath, "existing-skill");
     const missingPath = path.join(libraryPath, "missing-skill");
+    const otherPath = path.join(libraryPath, "other-skill");
     const existingMetadata = { ...metadataFor(existingPath), id: "existing-skill", name: "Existing Skill" };
     const missingMetadata = { ...metadataFor(missingPath), id: "missing-skill", name: "Missing Skill" };
+    const otherMetadata = { ...metadataFor(otherPath), id: "other-skill", name: "Other Skill" };
     const store = new MetadataStore(libraryPath);
 
     await fs.ensureDir(existingPath);
-    await store.saveSkillSet({ name: "Automation", skillIds: ["existing-skill", "missing-skill"], targets: [] });
+    await fs.ensureDir(otherPath);
     await fs.writeJson(path.join(libraryPath, "skiller.manifest.json"), {
       version: 1,
       skillSets: [
@@ -827,15 +829,40 @@ describe("MetadataStore", () => {
           targets: [],
           createdAt: "2026-05-12T00:00:00.000Z",
           updatedAt: "2026-05-12T00:00:00.000Z"
+        },
+        {
+          id: "stable",
+          name: "Stable",
+          skillIds: ["other-skill"],
+          targets: [],
+          createdAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:00:00.000Z"
         }
       ],
-      skills: [existingMetadata, missingMetadata]
+      skills: [existingMetadata, missingMetadata, otherMetadata]
     });
 
     await expect(store.pruneMissing()).resolves.toEqual([missingMetadata]);
-    await expect(store.libraryState()).resolves.toMatchObject({
-      skillSets: [{ id: "automation", skillIds: ["existing-skill"] }]
-    });
+    const state = await store.libraryState();
+    expect(state.skillSets).toEqual([
+      {
+        id: "automation",
+        name: "Automation",
+        skillIds: ["existing-skill"],
+        targets: [],
+        createdAt: "2026-05-12T00:00:00.000Z",
+        updatedAt: expect.any(String)
+      },
+      {
+        id: "stable",
+        name: "Stable",
+        skillIds: ["other-skill"],
+        targets: [],
+        createdAt: "2026-05-12T00:00:00.000Z",
+        updatedAt: "2026-05-12T00:00:00.000Z"
+      }
+    ]);
+    expect(state.skillSets[0]?.updatedAt).not.toBe("2026-05-12T00:00:00.000Z");
   });
 
   it("removes deleted skills from skill set membership", async () => {

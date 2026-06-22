@@ -172,7 +172,8 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     const config = await loadConfig();
     const store = new MetadataStore(expandHome(config.libraryPath));
 
-    await store.deleteSkillSet(skillSetId);
+    const deleted = await store.deleteSkillSet(skillSetId);
+    await scanConfig(config, deleted.targets);
     return store.libraryState();
   });
 

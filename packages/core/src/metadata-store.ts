@@ -601,11 +601,13 @@ export class MetadataStore {
       }
 
       if (missingSkills.length > 0) {
+        const now = new Date().toISOString();
         const remainingSkillIds = new Set(existingSkills.map((skill) => skill.id));
-        const nextSkillSets = currentState.skillSets.map((skillSet) => ({
-          ...skillSet,
-          skillIds: skillSet.skillIds.filter((id) => remainingSkillIds.has(id))
-        }));
+        const nextSkillSets = currentState.skillSets.map((skillSet) => {
+          const nextSkillIds = skillSet.skillIds.filter((id) => remainingSkillIds.has(id));
+          if (nextSkillIds.length === skillSet.skillIds.length) return skillSet;
+          return { ...skillSet, skillIds: nextSkillIds, updatedAt: now };
+        });
         await this.writeManifest(existingSkills, nextSkillSets);
       }
 

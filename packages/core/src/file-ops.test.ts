@@ -197,4 +197,24 @@ describe("file operations", () => {
 
     await expect(replaceWithCopy(target, source)).rejects.toThrow("copy failed");
   });
+
+  it("removes a partial target folder when copy replacement fails mid-write", async () => {
+    const source = path.join(tmp, "master");
+    const target = path.join(tmp, "target");
+    await fs.ensureDir(source);
+    await fs.ensureDir(target);
+    await fs.writeFile(path.join(source, "SKILL.md"), "hello");
+    await fs.writeFile(path.join(target, "SKILL.md"), "stale");
+
+    const originalCopy = fs.copy.bind(fs);
+    vi.spyOn(fs, "copy").mockImplementationOnce(async (_src, dest) => {
+      await fs.ensureDir(dest);
+      await fs.writeFile(path.join(dest, "SKILL.md"), "partial");
+      throw new Error("copy failed");
+    });
+
+    await expect(replaceWithCopy(target, source)).rejects.toThrow("copy failed");
+    await expect(fs.readFile(path.join(target, "SKILL.md"), "utf8")).resolves.toBe("stale");
+    vi.mocked(fs.copy).mockImplementation(originalCopy);
+  });
 });

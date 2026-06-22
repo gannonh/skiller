@@ -313,15 +313,21 @@ export function LibraryPage({
   useEffect(() => {
     isMountedRef.current = true;
 
-    void Promise.all([refreshLibrary(), skillerApi.getConfig()])
-      .then(([, config]) => {
-        if (isMountedRef.current) setGlobalTargets(config.targets);
-      })
+    void refreshLibrary()
       .catch((caught: unknown) => {
         if (isMountedRef.current) setError(caught instanceof Error ? caught.message : String(caught));
       })
       .finally(() => {
         if (isMountedRef.current) setIsLoading(false);
+      });
+
+    void skillerApi
+      .getConfig()
+      .then((config) => {
+        if (isMountedRef.current) setGlobalTargets(config.targets);
+      })
+      .catch((caught: unknown) => {
+        console.error("Failed to load global targets", caught);
       });
 
     return () => {
@@ -553,6 +559,7 @@ export function LibraryPage({
   }
 
   async function saveSkillSet(input: SaveSkillSetInput): Promise<boolean> {
+    setError(null);
     return runOrganizationAction(
       beginOrganizationMutation,
       finishOrganizationMutation,
@@ -565,6 +572,7 @@ export function LibraryPage({
   }
 
   async function saveSkillMembership(skillId: string, skillSetIds: string[]): Promise<boolean> {
+    setError(null);
     return runOrganizationAction(
       beginOrganizationMutation,
       finishOrganizationMutation,

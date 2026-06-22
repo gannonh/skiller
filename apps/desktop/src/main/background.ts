@@ -122,7 +122,15 @@ export async function startBackgroundJobs(
   const updateInterval = deps.createUpdateInterval(config.updateSchedule, runUpdateCheck);
 
   return [
-    { stop: () => void watcher.close() },
+    {
+      stop: () => {
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+          debounceTimer = undefined;
+        }
+        void watcher.close();
+      }
+    },
     { stop: () => clearInterval(updateInterval) }
   ];
 }

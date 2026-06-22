@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isUngrouped, normalizeSkillSetTargets, skillSetIdsForSkill, skillsInSet } from "./skill-sets.js";
+import {
+  isUngrouped,
+  normalizeSkillSetSkillIds,
+  normalizeSkillSetTargets,
+  skillSetIdsForSkill,
+  skillsInSet
+} from "./skill-sets.js";
 import type { SkillMetadata, SkillSetMetadata } from "./types.js";
 
 function skill(id: string): SkillMetadata {
@@ -45,6 +51,10 @@ describe("skill-sets helpers", () => {
   it("detects ungrouped skills", () => {
     expect(isUngrouped("gamma", skillSets)).toBe(true);
     expect(isUngrouped("alpha", skillSets)).toBe(false);
+  });
+
+  it("normalizes skill set skill ids", () => {
+    expect(normalizeSkillSetSkillIds(["alpha", "alpha", "missing", 1], new Set(["alpha", "beta"]))).toEqual(["alpha"]);
   });
 
   it("normalizes skill set targets", () => {

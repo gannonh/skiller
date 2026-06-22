@@ -166,10 +166,6 @@ function changeKey(skillId: string, targetPath: string): string {
   return `${skillId}\0${targetPath}`;
 }
 
-function enabledTargetPaths(targets: TargetConfig[]): Set<string> {
-  return new Set(targets.filter((target) => target.enabled).map((target) => target.path));
-}
-
 function resolveTargetsForSkill(
   metadata: SkillMetadata,
   skillSets: SkillSetMetadata[],
@@ -177,21 +173,28 @@ function resolveTargetsForSkill(
 ): Set<string> {
   const targetScope = metadata.targetScope ?? "both";
   const targets = new Set<string>();
+  const memberSets = skillSets.filter((skillSet) => skillSet.skillIds.includes(metadata.id));
 
   if (targetScope === "global" || targetScope === "both") {
-    for (const target of enabledTargetPaths(globalTargets)) {
-      targets.add(target);
+    const scopedGlobals = memberSets.flatMap((skillSet) => skillSet.targets.filter(isGlobalSkillSetTarget));
+    const effectiveGlobals =
+      memberSets.length > 0 && scopedGlobals.length > 0 ? scopedGlobals : globalTargets.filter((target) => target.enabled);
+    for (const target of effectiveGlobals) {
+      if (target.enabled) targets.add(expandHome(target.path));
     }
   }
 
   if (targetScope === "projects" || targetScope === "both") {
-    const memberSets = skillSets.filter((skillSet) => skillSet.skillIds.includes(metadata.id));
     for (const target of memberSets.flatMap((skillSet) => skillSet.targets.filter(isProjectSkillSetTarget))) {
       if (target.enabled) targets.add(target.path);
     }
   }
 
   return targets;
+}
+
+function isGlobalSkillSetTarget(target: TargetConfig): boolean {
+  return target.scope === "global";
 }
 
 function isProjectSkillSetTarget(target: TargetConfig): boolean {
@@ -243,7 +246,7 @@ function installModeForTargetDir(
   projectPaths: Set<string>,
   installModes: { global: TargetInstallMode; project: TargetInstallMode }
 ): TargetInstallMode {
-  return projectPaths.has(expandHome(targetDir)) ? installModes.project : installModes.global;
+  return projectPaths.has(targetDir) ? installModes.project : installModes.global;
 }
 
 export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsResult> {
@@ -383,8 +386,6 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
       if (stat.isSymbolicLink()) {
         await fs.remove(targetSkillPath);
       } else if (stat.isDirectory()) {
-        /* v8 ignore next */
-        if (path.basename(targetSkillPath) !== metadata.id) return;
         if (!(await isSkillDirectory(targetSkillPath))) return;
 
         const declaredId = await skillIdFromSkillPath(targetSkillPath);

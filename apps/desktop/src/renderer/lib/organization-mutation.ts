@@ -4,7 +4,10 @@ export async function runOrganizationAction(
   onError: (message: string) => void,
   action: () => Promise<void>
 ): Promise<boolean> {
-  if (!begin()) return false;
+  if (!begin()) {
+    onError("Another library change is already in progress. Please wait and try again.");
+    return false;
+  }
   try {
     await action();
     return true;

@@ -42,13 +42,17 @@ function parseArgs(argv: string[]): CliArgs {
     const value = argv[i + 1];
     switch (flag) {
       case "--root":
+        if (!value || value.startsWith("--")) {
+          throw new Error("Missing value for --root");
+        }
         args.root = value;
         i += 1;
         break;
       case "--file":
-        if (value) {
-          args.files.push(value);
+        if (!value || value.startsWith("--")) {
+          throw new Error("Missing value for --file");
         }
+        args.files.push(value);
         i += 1;
         break;
       case "--github-output":

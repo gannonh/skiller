@@ -175,6 +175,41 @@ describe("scanTargets skill sets", () => {
     expect(result.enabled).toEqual([{ skillId: "grouped-skill", targetPath: globalTarget }]);
   });
 
+  it("honors per-skill-set global target toggles over config defaults", async () => {
+    const globalTarget = path.join(tmp, "global-target");
+    const library = path.join(tmp, "library");
+    const skillPath = path.join(library, "grouped-skill");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "---\nname: grouped-skill\ndescription: Grouped.\n---\n");
+    await store.save({
+      id: "grouped-skill",
+      name: "grouped-skill",
+      libraryPath: skillPath,
+      source: { type: "local", path: skillPath },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+    await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["grouped-skill"],
+      targets: [{ path: globalTarget, enabled: false, scope: "global" }]
+    });
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(globalTarget)],
+      skillSets: (await store.libraryState()).skillSets
+    });
+
+    expect(result.enabled).toEqual([]);
+    expect(await fs.pathExists(path.join(globalTarget, "grouped-skill"))).toBe(false);
+  });
+
   it("does not fall back to global targets when every explicit skill set target is disabled", async () => {
     const globalTarget = path.join(tmp, "global-target");
     const library = path.join(tmp, "library");
@@ -247,7 +282,8 @@ describe("scanTargets skill sets", () => {
   });
 
   it("honors explicit skill set inputs without reloading library state", async () => {
-    const target = path.join(tmp, "target");
+    const storedTarget = path.join(tmp, "stored-target");
+    const explicitTarget = path.join(tmp, "explicit-target");
     const library = path.join(tmp, "library");
     const skill = path.join(library, "example");
     const store = new MetadataStore(library);
@@ -268,16 +304,17 @@ describe("scanTargets skill sets", () => {
     await store.saveSkillSet({
       name: "Stored Only",
       skillIds: ["example"],
-      targets: [{ path: target, enabled: true, scope: "project" }]
+      targets: [{ path: storedTarget, enabled: true, scope: "project" }]
     });
 
     const result = await scanTargets({
       libraryPath: library,
-      targets: [enabledTarget(target)],
+      targets: [enabledTarget(explicitTarget)],
       skillSets: []
     });
 
-    expect(result.enabled).toEqual([{ skillId: "example", targetPath: target }]);
+    expect(result.enabled).toEqual([{ skillId: "example", targetPath: explicitTarget }]);
+    expect(await fs.pathExists(path.join(storedTarget, "example"))).toBe(false);
   });
 
   it("rethrows unexpected realpath failures while resolving effective target paths", async () => {

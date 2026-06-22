@@ -359,6 +359,9 @@ function createBrowserPreviewApi(): SkillerApi {
     deleteSkill: async (skillId) => {
       const index = fallbackSkills.findIndex((candidate) => candidate.id === skillId);
       if (index !== -1) fallbackSkills.splice(index, 1);
+      for (const skillSet of fallbackSkillSets) {
+        skillSet.skillIds = skillSet.skillIds.filter((id) => id !== skillId);
+      }
       return fallbackLibraryState();
     },
     saveSkillSet: async (input) => {

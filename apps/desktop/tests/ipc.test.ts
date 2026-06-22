@@ -39,6 +39,14 @@ const mocks = vi.hoisted(() => {
     installLocalSkill: vi.fn(),
     setSkillSetEnabled: vi.fn(async () => []),
     saveSkillSet: vi.fn(async () => undefined),
+    deleteSkillSet: vi.fn(async () => ({
+      id: "automation",
+      name: "Automation",
+      skillIds: ["example-skill"],
+      targets: [{ path: "~/project-skills", enabled: true, scope: "project" as const }],
+      createdAt: "2026-05-12T00:00:00.000Z",
+      updatedAt: "2026-05-12T00:00:00.000Z"
+    })),
     setSkillMembership: vi.fn(async () => mocks.libraryState),
     setTargetScope: vi.fn(async () => ({
       id: "example-skill",
@@ -75,6 +83,7 @@ vi.mock("@skiller/core", () => ({
   MetadataStore: vi.fn(() => ({
     setSkillSetEnabled: mocks.setSkillSetEnabled,
     saveSkillSet: mocks.saveSkillSet,
+    deleteSkillSet: mocks.deleteSkillSet,
     setSkillMembership: mocks.setSkillMembership,
     setTargetScope: mocks.setTargetScope,
     libraryState: vi.fn(async () => mocks.libraryState)
@@ -160,6 +169,27 @@ describe("ipc handlers", () => {
     expect(mocks.scanTargets).toHaveBeenCalledWith({
       libraryPath: "/home/test/skiller",
       targets: [{ path: "~/skills", enabled: true }],
+      skillSets: [],
+      globalTargetInstallMode: "symlink",
+      projectTargetInstallMode: "symlink"
+    });
+    expect(result).toEqual(mocks.libraryState);
+  });
+
+  it("deletes skill sets and rescans deleted project targets", async () => {
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    registerIpcHandlers();
+
+    const handler = mocks.handlers.get("library:delete-skill-set");
+    const result = await handler?.({}, "automation");
+
+    expect(mocks.deleteSkillSet).toHaveBeenCalledWith("automation");
+    expect(mocks.scanTargets).toHaveBeenCalledWith({
+      libraryPath: "/home/test/skiller",
+      targets: [
+        { path: "~/skills", enabled: true },
+        { path: "~/project-skills", enabled: true, scope: "project" }
+      ],
       skillSets: [],
       globalTargetInstallMode: "symlink",
       projectTargetInstallMode: "symlink"

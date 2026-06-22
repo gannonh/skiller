@@ -55,6 +55,7 @@ export function SkillMembershipDialog({
     try {
       const saved = await onSave(skillId, [...selectedSetIds]);
       if (saved) onOpenChange(false);
+      else setError("Failed to save skill set membership.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {

@@ -10,7 +10,7 @@ export async function setupScannerTest(clearSymlinkMock?: () => void) {
 }
 
 export async function teardownScannerTest() {
-  await fs.remove(tmp);
+  if (tmp) await fs.remove(tmp);
 }
 
 export const enabledTarget = (targetPath: string) => ({ path: targetPath, enabled: true });

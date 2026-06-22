@@ -72,6 +72,7 @@ jobs:
   release_meta:
     needs: [check_changes]
     if: |
+      always() &&
       !failure() && !cancelled() &&
       (github.event_name != 'schedule' || needs.check_changes.outputs.has_changes == 'true')
     runs-on: ubuntu-latest
@@ -169,7 +170,7 @@ jobs:
                 echo "No version input; derived stable version '$raw' from latest nightly '$latest_nightly'."
               fi
               version="${raw#v}"
-              if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+              if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
                 echo "Invalid release version: $raw" >&2
                 exit 1
               fi
@@ -422,6 +423,7 @@ jobs:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
 
       - name: Resolve GitHub App bot identity
         id: app_bot
