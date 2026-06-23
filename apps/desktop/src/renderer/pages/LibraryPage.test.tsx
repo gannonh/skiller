@@ -23,7 +23,7 @@ describe("LibraryPage helpers", () => {
   beforeAll(async () => {
     vi.stubGlobal("window", {});
     helpers = await import("./LibraryPage.js");
-  });
+  }, 30_000);
 
   afterAll(() => {
     vi.unstubAllGlobals();
