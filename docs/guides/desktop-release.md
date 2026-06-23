@@ -48,7 +48,7 @@ If using the Kata local secrets as a guide, `.secrets/signing-cert.p12.base64` i
 
 ## Release behavior
 
-The workflow resolves release metadata, validates macOS signing secrets, builds per-platform artifacts, merges macOS updater manifests with `scripts/release/merge-update-manifests.ts`, renames installers for clearer GitHub Release assets with `scripts/release/prepare-github-release.ts`, and publishes a GitHub Release with a platform-organized download table. Stable releases can run a finalize job that commits the released version back to `apps/desktop/package.json` on `main`.
+The workflow resolves release metadata, validates macOS signing secrets, builds per-platform artifacts, merges macOS updater manifests with `scripts/release/merge-update-manifests.ts`, renames installers for clearer GitHub Release assets with `scripts/release/prepare-github-release.ts`, and publishes a GitHub Release with a platform-organized download table. Stable releases can run a finalize job that commits the released version back to `apps/desktop/package.json` on `main`. The finalize push sets `HUSKY=0` to skip the pre-push hook since the build job already validated everything and the ubuntu CI runner can't install Electron for smoke tests.
 
 Release notes should come from the changelog entry for that version. Do not write separate ad hoc release notes during tagging.
 
