@@ -47,4 +47,4 @@ Shared shadcn/ui primitives imported as `@workspace/ui/components/...`. Desktop 
 
 - Unit tests: Vitest in `packages/core` and `apps/desktop`
 - Renderer e2e: Playwright against `pnpm dev:renderer` preview API
-- Pre-push hook runs `pnpm check:pre-push` (typecheck, coverage, release scripts, build). CI runs the same steps plus e2e.
+- Pre-push hook runs `pnpm check:pre-push` (typecheck, coverage, release scripts, build). CI runs the same steps plus e2e. The hook skips when `CI=true` (e.g., the release finalize job pushes from an ubuntu runner where Electron can't install).

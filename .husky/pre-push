@@ -1,1 +1,2 @@
+[ "$CI" = "true" ] && exit 0
 pnpm check:pre-push
