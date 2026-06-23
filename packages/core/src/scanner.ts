@@ -13,6 +13,14 @@ export interface ScanTargetsInput {
   skillSets?: SkillSetMetadata[];
   globalTargetInstallMode?: TargetInstallMode;
   projectTargetInstallMode?: TargetInstallMode;
+  /**
+   * When true, only run the import/discovery phase (first loop) that detects
+   * new skill directories in targets. Skip the sync/reconcile phase (second
+   * loop) that creates and removes managed symlinks/copies. Used by
+   * watcher-triggered scans to avoid a feedback loop with the filesystem
+   * watcher.
+   */
+  importOnly?: boolean;
 }
 
 export interface TargetSkillChange {
@@ -514,6 +522,10 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
         errors.push({ path: targetSkillPath, message: error instanceof Error ? error.message : String(error) });
       }
     }
+  }
+
+  if (input.importOnly) {
+    return { imported, enabled, disabled, errors };
   }
 
   for (const { path: targetDir, enabled: targetEnabled } of targets) {

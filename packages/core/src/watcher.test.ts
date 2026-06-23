@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
     on: vi.fn()
   };
   watcher.on.mockReturnValue(watcher);
-  const watch = vi.fn(() => watcher);
+  const watch = vi.fn((_dirs: string[], _opts?: unknown) => watcher);
 
   return { watch, watcher };
 });
@@ -33,7 +33,8 @@ describe("watchTargetDirectories", () => {
       ignoreInitial: true,
       depth: 1,
       followSymlinks: false,
-      awaitWriteFinish: true
+      awaitWriteFinish: true,
+      ignored: expect.any(Function)
     });
     expect(mocks.watcher.on).toHaveBeenCalledTimes(6);
     expect(mocks.watcher.on).toHaveBeenNthCalledWith(1, "addDir", onChange);
@@ -47,6 +48,20 @@ describe("watchTargetDirectories", () => {
     const error = new Error("watch failed");
     errorHandler(error);
     expect(onError).toHaveBeenCalledWith(error);
+  });
+
+  it("ignores scanner backup files in the ignored function", () => {
+    const onChange = vi.fn();
+    const onError = vi.fn();
+
+    watchTargetDirectories(["/skills"], onChange, onError);
+
+    const call = mocks.watch.mock.calls[0];
+    expect(call).toBeDefined();
+    const options = call![1] as { ignored: (p: string) => boolean };
+    expect(options.ignored("/skills/my-skill.skiller-backup-1234567890")).toBe(true);
+    expect(options.ignored("/skills/my-skill")).toBe(false);
+    expect(options.ignored("/skills/my-skill/SKILL.md")).toBe(false);
   });
 });
 

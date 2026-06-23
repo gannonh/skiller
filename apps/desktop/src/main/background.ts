@@ -33,6 +33,7 @@ const defaultDependencies: BackgroundJobDependencies = {
 type BackgroundWindow = Pick<BrowserWindow, "webContents">;
 
 const SCAN_DEBOUNCE_MS = 250;
+const WATCHER_GRACE_PERIOD_MS = 500;
 
 export function isTransientWatcherError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -53,22 +54,31 @@ export async function startBackgroundJobs(
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let scanInFlight = false;
-  let scanQueued = false;
+  // Suppress watcher-triggered scans during a scan and for a grace period
+  // afterward so the scanner's own filesystem operations don't re-trigger
+  // the watcher in a feedback loop.
+  let suppressWatcher = false;
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const executeScan = async () => {
-    if (scanInFlight) {
-      scanQueued = true;
-      return;
-    }
+  const executeScan = async (options?: { importOnly?: boolean; fullScan?: boolean }) => {
+    /* v8 ignore next -- safety guard: suppressWatcher prevents concurrent executeScan calls */
+    if (scanInFlight) return;
 
     scanInFlight = true;
+    suppressWatcher = true;
     try {
       const scanConfig = await deps.loadConfig();
       const libraryPath = deps.expandHome(scanConfig.libraryPath);
       const store = new deps.metadataStore(libraryPath);
-      await store.pruneMissing();
+      // PruneMissing only on full scans (startup, IPC-triggered), not on
+      // watcher-triggered import-only scans, to avoid metadata churn.
+      if (!options?.importOnly) {
+        await store.pruneMissing();
+      }
       const { skillSets } = await store.libraryState();
-      await deps.scanTargets(buildScanTargetsInput(scanConfig, skillSets, scanConfig.targets, deps.expandHome));
+      await deps.scanTargets(
+        buildScanTargetsInput(scanConfig, skillSets, scanConfig.targets, deps.expandHome, options)
+      );
     } catch (error: unknown) {
       console.error("Background scan failed", error);
       window.webContents.send("background:scan-error", {
@@ -76,23 +86,30 @@ export async function startBackgroundJobs(
       });
     } finally {
       scanInFlight = false;
-      // Queue-of-one: a new event while in-flight sets scanQueued; the finally block drains it once.
-      if (scanQueued) {
-        scanQueued = false;
-        void executeScan();
-      }
+      // Keep suppressing for a grace period to let filesystem events from the
+      // scan's own operations settle before re-enabling the watcher.
+      /* v8 ignore next -- safety guard: clears a stale grace timer from a prior scan */
+      if (graceTimer) clearTimeout(graceTimer);
+      graceTimer = setTimeout(() => {
+        suppressWatcher = false;
+        graceTimer = undefined;
+      }, WATCHER_GRACE_PERIOD_MS);
     }
   };
 
   const runScan = () => {
+    if (suppressWatcher) return;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
-      void executeScan();
+      // Watcher-triggered scans are import-only to avoid the feedback loop
+      // where the scanner's symlink/copy operations re-trigger the watcher.
+      void executeScan({ importOnly: true });
     }, SCAN_DEBOUNCE_MS);
   };
 
-  runScan();
+  // Initial scan on startup is a full scan (sync all targets + prune).
+  void executeScan({ fullScan: true });
 
   // Target directory watchers are created from startup config; each scan reloads current config.
   const watcher = deps.watchTargetDirectories(expandedTargetPaths, runScan, (error) => {
@@ -127,6 +144,10 @@ export async function startBackgroundJobs(
         if (debounceTimer) {
           clearTimeout(debounceTimer);
           debounceTimer = undefined;
+        }
+        if (graceTimer) {
+          clearTimeout(graceTimer);
+          graceTimer = undefined;
         }
         void watcher.close();
       }

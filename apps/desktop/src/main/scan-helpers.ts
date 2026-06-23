@@ -10,24 +10,26 @@ export function buildScanTargetsInput(
   config: SkillerConfig,
   skillSets: SkillSetMetadata[],
   targets: TargetConfig[],
-  expandPath: (value: string) => string = expandHome
+  expandPath: (value: string) => string = expandHome,
+  options?: { importOnly?: boolean }
 ) {
   return {
     libraryPath: expandPath(config.libraryPath),
     targets,
     skillSets,
     globalTargetInstallMode: config.globalTargetInstallMode,
-    projectTargetInstallMode: config.projectTargetInstallMode
+    projectTargetInstallMode: config.projectTargetInstallMode,
+    ...(options?.importOnly ? { importOnly: true } : {})
   };
 }
 
 export async function runLibraryScan(
   config: SkillerConfig,
-  options: { targets?: TargetConfig[]; extraTargets?: TargetConfig[] } = {}
+  options: { targets?: TargetConfig[]; extraTargets?: TargetConfig[]; importOnly?: boolean } = {}
 ): Promise<ScanTargetsResult> {
   const libraryPath = expandHome(config.libraryPath);
   const skillSets = await loadLibrarySkillSets(libraryPath);
   const targets = options.targets ?? [...config.targets, ...(options.extraTargets ?? [])];
 
-  return scanTargets(buildScanTargetsInput(config, skillSets, targets));
+  return scanTargets(buildScanTargetsInput(config, skillSets, targets, expandHome, options));
 }

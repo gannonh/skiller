@@ -944,4 +944,64 @@ describe("scanTargets reconciliation", () => {
     expect((await fs.lstat(skill)).isSymbolicLink()).toBe(false);
   });
 
+  it("importOnly skips the sync/reconcile phase (no symlink creation or removal)", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(target);
+    await fs.ensureDir(library);
+
+    // Create a skill in the library
+    const skillId = "my-skill";
+    const librarySkill = path.join(library, skillId);
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: my-skill\ndescription: Test.\n---\n");
+
+    const store = new MetadataStore(library);
+    await store.save({
+      id: skillId,
+      name: skillId,
+      libraryPath: librarySkill,
+      source: { type: "local", path: librarySkill },
+      installedAt: new Date().toISOString(),
+      contentHash: await hashDirectory(librarySkill),
+      keepUpdated: false,
+      enabled: true,
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+
+    // importOnly should NOT create the symlink in the target
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      importOnly: true
+    });
+
+    expect(result.imported).toHaveLength(0);
+    expect(result.enabled).toHaveLength(0);
+    expect(result.disabled).toHaveLength(0);
+    expect(await fs.pathExists(path.join(target, skillId))).toBe(false);
+  });
+
+  it("importOnly still imports new skills discovered in target directories", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    await fs.ensureDir(target);
+    await fs.ensureDir(library);
+
+    // Create an unmanaged skill in the target directory
+    const skillDir = path.join(target, "new-skill");
+    await fs.ensureDir(skillDir);
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), "---\nname: new-skill\ndescription: New.\n---\n");
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      importOnly: true
+    });
+
+    expect(result.imported).toHaveLength(1);
+    expect(result.imported[0]!.id).toBe("new-skill");
+  });
+
 });

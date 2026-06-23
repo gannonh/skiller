@@ -83,7 +83,7 @@ describe("background jobs", () => {
       .mockResolvedValueOnce(updatedConfig);
     const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
     const close = vi.fn();
-    let onChange: (() => void) | undefined;
+    let onChange: ((filePath: string) => void) | undefined;
     const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
     const { startBackgroundJobs } = await import("../src/main/background.js");
 
@@ -100,8 +100,9 @@ describe("background jobs", () => {
       checkDesktopUpdates: vi.fn()
     });
 
-    await vi.advanceTimersByTimeAsync(250);
-    onChange?.();
+    // Let the initial full scan complete and the watcher grace period expire.
+    await vi.advanceTimersByTimeAsync(800);
+    onChange?.("/home/test/skills/some-skill");
     await vi.advanceTimersByTimeAsync(250);
     for (let index = 0; index < 5; index += 1) {
       await Promise.resolve();
@@ -114,12 +115,14 @@ describe("background jobs", () => {
       globalTargetInstallMode: "symlink",
       projectTargetInstallMode: "symlink"
     });
+    // Watcher-triggered scans are import-only to avoid the feedback loop.
     expect(scanTargets).toHaveBeenNthCalledWith(2, {
       libraryPath: "/home/test/updated-skiller",
       targets: [{ path: "~/updated-skills", enabled: true }],
       skillSets: [],
       globalTargetInstallMode: "symlink",
-      projectTargetInstallMode: "symlink"
+      projectTargetInstallMode: "symlink",
+      importOnly: true
     });
 
     jobs.forEach((job) => job.stop());
@@ -302,7 +305,7 @@ describe("background jobs", () => {
     const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
     const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
     const close = vi.fn();
-    let onChange: (() => void) | undefined;
+    let onChange: ((filePath: string) => void) | undefined;
     const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
     const { startBackgroundJobs } = await import("../src/main/background.js");
 
@@ -319,9 +322,10 @@ describe("background jobs", () => {
       checkDesktopUpdates: vi.fn()
     });
 
-    await vi.advanceTimersByTimeAsync(250);
-    onChange?.();
-    onChange?.();
+    // Let the initial scan complete and the watcher grace period expire.
+    await vi.advanceTimersByTimeAsync(800);
+    onChange?.("/home/test/skills/some-skill");
+    onChange?.("/home/test/skills/another-skill");
     await vi.advanceTimersByTimeAsync(250);
     for (let index = 0; index < 5; index += 1) {
       await Promise.resolve();
@@ -335,7 +339,7 @@ describe("background jobs", () => {
     vi.useRealTimers();
   });
 
-  it("queues watcher-triggered scans while a scan is already running", async () => {
+  it("suppresses watcher-triggered scans while a scan is already running", async () => {
     vi.useFakeTimers();
     let releaseScan: (() => void) | undefined;
     const scanTargets = vi.fn(
@@ -345,7 +349,7 @@ describe("background jobs", () => {
         })
     );
     const close = vi.fn();
-    let onChange: (() => void) | undefined;
+    let onChange: ((filePath: string) => void) | undefined;
     const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
     const { startBackgroundJobs } = await import("../src/main/background.js");
 
@@ -365,7 +369,9 @@ describe("background jobs", () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(scanTargets).toHaveBeenCalledTimes(1);
 
-    onChange?.();
+    // Watcher event during the scan is suppressed (not queued) to break the
+    // feedback loop where scanner filesystem operations re-trigger the watcher.
+    onChange?.("/home/test/skills/some-skill");
     await vi.advanceTimersByTimeAsync(250);
     expect(scanTargets).toHaveBeenCalledTimes(1);
 
@@ -374,10 +380,69 @@ describe("background jobs", () => {
       await Promise.resolve();
     }
 
-    expect(scanTargets).toHaveBeenCalledTimes(2);
+    // The scan completed but the watcher event was suppressed, so no queued
+    // scan runs. Only the grace period timer fires.
+    expect(scanTargets).toHaveBeenCalledTimes(1);
 
     jobs.forEach((job) => job.stop());
     vi.useRealTimers();
+  });
+
+  it("cleans up grace timer on stop", async () => {
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const close = vi.fn();
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      scanTargets,
+      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    // Wait for the scan to complete and the finally block to set the grace timer.
+    await vi.waitFor(() => expect(scanTargets).toHaveBeenCalledTimes(1));
+    // Give microtasks time to flush so the finally block runs (sets grace timer).
+    // 100ms is well within the 500ms grace period, so the timer is still active.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Stop while the 500ms grace timer is still active.
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("cleans up debounce timer on stop", async () => {
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const close = vi.fn();
+    let onChange: ((filePath: string) => void) | undefined;
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      scanTargets,
+      watchTargetDirectories: vi.fn((_config, callback) => {
+        onChange = callback;
+        return { close } as never;
+      }),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    // Wait for the scan to complete and the 500ms grace period to expire.
+    await vi.waitFor(() => expect(scanTargets).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    // Trigger a watcher event (sets the 250ms debounce timer).
+    onChange?.("/home/test/skills/some-skill");
+
+    // Stop immediately while the debounce timer is still active.
+    jobs.forEach((job) => job.stop());
   });
 
   it("normalizes alternate scan and update error types", async () => {

@@ -1,10 +1,11 @@
 import chokidar from "chokidar";
 import type { FSWatcher } from "chokidar";
+import path from "node:path";
 import type { SkillerConfig } from "./types.js";
 
 export function watchTargetDirectories(
   targetDirectories: string[],
-  onChange: () => void,
+  onChange: (filePath: string) => void,
   onError?: (error: unknown) => void
 ): FSWatcher {
   return chokidar
@@ -12,7 +13,8 @@ export function watchTargetDirectories(
       ignoreInitial: true,
       depth: 1,
       followSymlinks: false,
-      awaitWriteFinish: true
+      awaitWriteFinish: true,
+      ignored: (testPath: string) => path.basename(testPath).includes("skiller-backup-")
     })
     .on("addDir", onChange)
     .on("unlinkDir", onChange)
