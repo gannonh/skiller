@@ -143,6 +143,60 @@ describe("scanTargets skill sets", () => {
     expect(await fs.pathExists(path.join(setTarget, "grouped-skill"))).toBe(true);
   });
 
+  it("removes a disabled skill set's members from all of its targets", async () => {
+    const firstSetTarget = path.join(tmp, "first-set-target");
+    const secondSetTarget = path.join(tmp, "second-set-target");
+    const disabledSetTarget = path.join(tmp, "disabled-set-target");
+    const library = path.join(tmp, "library");
+    const skillPath = path.join(library, "grouped-skill");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(firstSetTarget);
+    await fs.ensureDir(secondSetTarget);
+    await fs.ensureDir(disabledSetTarget);
+    await fs.ensureDir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), "---\nname: grouped-skill\ndescription: Grouped.\n---\n");
+    await store.save({
+      id: "grouped-skill",
+      name: "grouped-skill",
+      libraryPath: skillPath,
+      source: { type: "local", path: skillPath },
+      installedAt: "2026-05-12T00:00:00.000Z",
+      keepUpdated: false,
+      enabled: true,
+      tags: [],
+      validation: { valid: true, issues: [] }
+    });
+    await fs.symlink(skillPath, path.join(firstSetTarget, "grouped-skill"), "dir");
+    await fs.symlink(skillPath, path.join(secondSetTarget, "grouped-skill"), "dir");
+    await fs.symlink(skillPath, path.join(disabledSetTarget, "grouped-skill"), "dir");
+    await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["grouped-skill"],
+      targets: [
+        enabledTarget(firstSetTarget),
+        enabledTarget(secondSetTarget),
+        disabledTarget(disabledSetTarget)
+      ]
+    });
+
+    const created = await store.libraryState();
+    await store.setSkillSetEnabled(created.skillSets[0]!.id, false);
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [],
+      skillSets: (await store.libraryState()).skillSets
+    });
+
+    expect(result.disabled).toContainEqual({ skillId: "grouped-skill", targetPath: firstSetTarget });
+    expect(result.disabled).toContainEqual({ skillId: "grouped-skill", targetPath: secondSetTarget });
+    expect(result.enabled).not.toContainEqual({ skillId: "grouped-skill", targetPath: disabledSetTarget });
+    expect(await fs.pathExists(path.join(firstSetTarget, "grouped-skill"))).toBe(false);
+    expect(await fs.pathExists(path.join(secondSetTarget, "grouped-skill"))).toBe(false);
+    expect(await fs.pathExists(path.join(disabledSetTarget, "grouped-skill"))).toBe(false);
+  });
+
   it("falls back to global targets for grouped skills in sets without targets", async () => {
     const globalTarget = path.join(tmp, "global-target");
     const library = path.join(tmp, "library");

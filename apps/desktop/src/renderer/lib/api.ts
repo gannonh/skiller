@@ -368,6 +368,7 @@ function createBrowserPreviewApi(): SkillerApi {
           name: input.name.trim(),
           skillIds: [...input.skillIds],
           targets: input.targets.map((target) => ({ ...target })),
+          enabled: true,
           createdAt: now,
           updatedAt: now
         });
@@ -400,9 +401,8 @@ function createBrowserPreviewApi(): SkillerApi {
     setSkillSetEnabled: async (skillSetId, enabled) => {
       const skillSet = fallbackSkillSets.find((candidate) => candidate.id === skillSetId);
       if (skillSet) {
-        for (const skill of fallbackSkills) {
-          if (skillSet.skillIds.includes(skill.id)) skill.enabled = enabled;
-        }
+        skillSet.enabled = enabled;
+        skillSet.updatedAt = new Date().toISOString();
       }
       return { state: fallbackLibraryState(), scanErrors: [] };
     },

@@ -155,6 +155,7 @@ function normalizeSkillSets(value: unknown, validSkillIds: Set<string> = new Set
       name,
       skillIds: normalizeSkillSetSkillIds(record.skillIds, validSkillIds),
       targets: normalizeSkillSetTargets(record.targets),
+      enabled: record.enabled === false ? false : true,
       createdAt,
       updatedAt
     });
@@ -450,6 +451,7 @@ export class MetadataStore {
         name: normalizedName,
         skillIds,
         targets,
+        enabled: true,
         createdAt: now,
         updatedAt: now
       };
@@ -523,13 +525,17 @@ export class MetadataStore {
       throw new Error(`Skill set not found: ${skillSetId}`);
     }
 
+    if (!skillSet.enabled) {
+      return "off";
+    }
+
     const members = skillsInSet(skillSet, state.skills);
     if (members.length === 0 || members.every((skill) => !skill.enabled)) return "off";
     if (members.every((skill) => skill.enabled)) return "on";
     return "mixed";
   }
 
-  async setSkillSetEnabled(skillSetId: string, enabled: boolean): Promise<SkillMetadata[]> {
+  async setSkillSetEnabled(skillSetId: string, enabled: boolean): Promise<SkillSetMetadata> {
     return this.withWriteLock(async () => {
       const currentState = await this.readManifest();
       const skillSet = currentState.skillSets.find((candidate) => candidate.id === skillSetId);
@@ -537,12 +543,15 @@ export class MetadataStore {
         throw new Error(`Skill set not found: ${skillSetId}`);
       }
 
-      const memberIds = new Set(skillSet.skillIds);
-      const updatedSkills = currentState.skills.map((skill) =>
-        memberIds.has(skill.id) ? { ...skill, enabled } : skill
+      if (skillSet.enabled === enabled) return skillSet;
+
+      const now = new Date().toISOString();
+      const updated: SkillSetMetadata = { ...skillSet, enabled, updatedAt: now };
+      await this.writeManifest(
+        currentState.skills,
+        currentState.skillSets.map((candidate) => (candidate.id === skillSetId ? updated : candidate))
       );
-      await this.writeManifest(updatedSkills, currentState.skillSets);
-      return updatedSkills.filter((skill) => memberIds.has(skill.id));
+      return updated;
     });
   }
 

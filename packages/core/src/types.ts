@@ -58,6 +58,7 @@ export interface SkillSetMetadata {
   name: string;
   skillIds: string[];
   targets: TargetConfig[];
+  enabled: boolean;
   createdAt: string;
   updatedAt: string;
 }

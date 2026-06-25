@@ -24,6 +24,7 @@ function skillSet(id: string, name: string, skillIds: string[] = []): SkillSetMe
     name,
     skillIds,
     targets: [],
+    enabled: true,
     createdAt: "2026-05-12T00:00:00.000Z",
     updatedAt: "2026-05-12T00:00:00.000Z"
   };
@@ -77,6 +78,14 @@ describe("library helpers", () => {
         "set"
       )
     ).toBe("mixed");
+  });
+
+  it("reports a disabled skill set as off regardless of member enablement", () => {
+    const skillSets: SkillSetMetadata[] = [{ ...skillSet("set", "Set", ["one", "two"]), enabled: false }];
+
+    expect(
+      helpers.skillSetStateForId([skill({ id: "one", enabled: true }), skill({ id: "two", enabled: true })], skillSets, "set")
+    ).toBe("off");
   });
 
   it("sorts by name for library table", () => {

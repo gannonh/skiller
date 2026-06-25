@@ -118,6 +118,7 @@ describe("MetadataStore", () => {
           name: "Automation",
           skillIds: ["example-skill"],
           targets: [],
+          enabled: true,
           createdAt: "2026-05-12T00:00:00.000Z",
           updatedAt: "2026-05-12T00:00:00.000Z"
         }
@@ -211,6 +212,7 @@ describe("MetadataStore", () => {
           name: "Automation",
           skillIds: [],
           targets: [],
+          enabled: true,
           createdAt: "2026-05-12T00:00:00.000Z",
           updatedAt: "2026-05-12T00:00:00.000Z"
         }
@@ -442,7 +444,7 @@ describe("MetadataStore", () => {
     await expect(store.replaceSkillTags("missing", ["browser"])).rejects.toThrow("Skill not found: missing");
   });
 
-  it("derives mixed set state and toggles a whole set", async () => {
+  it("derives mixed set state and toggles a whole set via the set flag", async () => {
     const libraryPath = await makeTempDir();
     const firstPath = path.join(libraryPath, "example-skill");
     const secondPath = path.join(libraryPath, "other-skill");
@@ -459,12 +461,79 @@ describe("MetadataStore", () => {
     });
 
     expect(await store.skillSetEnablement(skillSet.id)).toBe("mixed");
-    await store.setSkillSetEnabled(skillSet.id, false);
-    expect((await store.filterSkills({ skillSetId: skillSet.id })).map((skill) => skill.enabled)).toEqual([false, false]);
+
+    const disabledSet = await store.setSkillSetEnabled(skillSet.id, false);
+    expect(disabledSet.enabled).toBe(false);
+    expect((await store.filterSkills({ skillSetId: skillSet.id })).map((skill) => skill.enabled)).toEqual([
+      true,
+      false
+    ]);
     expect(await store.skillSetEnablement(skillSet.id)).toBe("off");
-    await store.setSkillSetEnabled(skillSet.id, true);
-    expect((await store.filterSkills({ skillSetId: skillSet.id })).map((skill) => skill.enabled)).toEqual([true, true]);
+
+    const enabledSet = await store.setSkillSetEnabled(skillSet.id, true);
+    expect(enabledSet.enabled).toBe(true);
+    expect((await store.filterSkills({ skillSetId: skillSet.id })).map((skill) => skill.enabled)).toEqual([
+      true,
+      false
+    ]);
+    expect(await store.skillSetEnablement(skillSet.id)).toBe("mixed");
+  });
+
+  it("reports an explicitly disabled set as off via skillSetEnablement", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(skillPath));
+    const skillSet = await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["example-skill"],
+      targets: []
+    });
+
     expect(await store.skillSetEnablement(skillSet.id)).toBe("on");
+    const disabled = await store.setSkillSetEnabled(skillSet.id, false);
+    expect(disabled.enabled).toBe(false);
+    expect((await store.libraryState()).skillSets[0]?.enabled).toBe(false);
+    expect(await store.skillSetEnablement(skillSet.id)).toBe("off");
+  });
+
+  it("updates only the targeted set when toggling enablement among many sets", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const otherSkillPath = path.join(libraryPath, "other-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(skillPath));
+    await store.save({ ...metadataFor(otherSkillPath), id: "other-skill", name: "Other Skill" });
+    const automation = await store.saveSkillSet({ name: "Automation", skillIds: ["example-skill"], targets: [] });
+    const stable = await store.saveSkillSet({ name: "Stable", skillIds: ["other-skill"], targets: [] });
+
+    const updated = await store.setSkillSetEnabled(automation.id, false);
+    expect(updated.enabled).toBe(false);
+
+    const state = await store.libraryState();
+    const automationSet = state.skillSets.find((candidate) => candidate.id === automation.id);
+    const stableSet = state.skillSets.find((candidate) => candidate.id === stable.id);
+    expect(automationSet?.enabled).toBe(false);
+    expect(stableSet?.enabled).toBe(true);
+  });
+
+  it("toggling a set to its current enabled state is a no-op", async () => {
+    const libraryPath = await makeTempDir();
+    const skillPath = path.join(libraryPath, "example-skill");
+    const store = new MetadataStore(libraryPath);
+
+    await store.save(metadataFor(skillPath));
+    const skillSet = await store.saveSkillSet({
+      name: "Automation",
+      skillIds: ["example-skill"],
+      targets: []
+    });
+
+    const toggled = await store.setSkillSetEnabled(skillSet.id, true);
+    expect(toggled).toEqual(skillSet);
+    expect((await store.libraryState()).skillSets[0]?.enabled).toBe(true);
   });
 
   it("rejects enablement reads for unknown skill sets", async () => {
@@ -813,6 +882,7 @@ describe("MetadataStore", () => {
         name: "Automation",
         skillIds: ["existing-skill"],
         targets: [],
+        enabled: true,
         createdAt: "2026-05-12T00:00:00.000Z",
         updatedAt: expect.any(String)
       },
@@ -821,6 +891,7 @@ describe("MetadataStore", () => {
         name: "Stable",
         skillIds: ["other-skill"],
         targets: [],
+        enabled: true,
         createdAt: "2026-05-12T00:00:00.000Z",
         updatedAt: "2026-05-12T00:00:00.000Z"
       }

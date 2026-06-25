@@ -21,6 +21,7 @@ export function installLibrarySkillSetsMock() {
       name: string;
       skillIds: string[];
       targets: Array<{ path: string; enabled: boolean; scope?: string }>;
+      enabled: boolean;
       createdAt: string;
       updatedAt: string;
     }>,
@@ -69,6 +70,7 @@ export function installLibrarySkillSetsMock() {
           name: input.name.trim(),
           skillIds: [...input.skillIds],
           targets: input.targets.map((target) => ({ ...target })),
+          enabled: true,
           createdAt: now,
           updatedAt: now
         });
@@ -100,9 +102,8 @@ export function installLibrarySkillSetsMock() {
     setSkillSetEnabled: async (skillSetId: string, enabled: boolean) => {
       const skillSet = state.skillSets.find((candidate) => candidate.id === skillSetId);
       if (skillSet) {
-        for (const candidate of state.skills) {
-          if (skillSet.skillIds.includes(candidate.id)) candidate.enabled = enabled;
-        }
+        skillSet.enabled = enabled;
+        skillSet.updatedAt = "2026-05-12T00:00:00.000Z";
       }
       return { state, scanErrors: [] };
     }

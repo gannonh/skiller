@@ -187,7 +187,7 @@ function resolveTargetsForSkill(
     }
   }
 
-  const memberSets = skillSets.filter((skillSet) => skillSet.skillIds.includes(metadata.id));
+  const memberSets = skillSets.filter((skillSet) => skillSet.enabled && skillSet.skillIds.includes(metadata.id));
   for (const target of memberSets.flatMap((skillSet) => skillSet.targets)) {
     if (target.enabled) targets.add(target.path);
   }

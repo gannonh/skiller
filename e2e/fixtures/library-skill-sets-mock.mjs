@@ -57,6 +57,7 @@ export function installLibrarySkillSetsMock() {
           name: input.name.trim(),
           skillIds: [...input.skillIds],
           targets: input.targets.map((target) => ({ ...target })),
+          enabled: true,
           createdAt: now,
           updatedAt: now
         });
@@ -88,9 +89,8 @@ export function installLibrarySkillSetsMock() {
     setSkillSetEnabled: async (skillSetId, enabled) => {
       const skillSet = state.skillSets.find((candidate) => candidate.id === skillSetId);
       if (skillSet) {
-        for (const candidate of state.skills) {
-          if (skillSet.skillIds.includes(candidate.id)) candidate.enabled = enabled;
-        }
+        skillSet.enabled = enabled;
+        skillSet.updatedAt = "2026-05-12T00:00:00.000Z";
       }
       return { state, scanErrors: [] };
     },

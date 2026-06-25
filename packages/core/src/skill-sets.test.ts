@@ -28,6 +28,7 @@ function set(id: string, skillIds: string[]): SkillSetMetadata {
     name: id,
     skillIds,
     targets: [],
+    enabled: true,
     createdAt: "2026-05-12T00:00:00.000Z",
     updatedAt: "2026-05-12T00:00:00.000Z"
   };
