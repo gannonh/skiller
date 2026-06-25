@@ -142,14 +142,13 @@ describe("scanTargets core", () => {
       installedAt: "2026-05-12T00:00:00.000Z",
       keepUpdated: false,
       enabled: true,
-      targetScope: "projects",
       tags: [],
       validation: { valid: true, issues: [] }
     });
     await store.saveSkillSet({
       name: "Automation",
       skillIds: ["grouped-skill"],
-      targets: [{ path: projectTarget, enabled: true, scope: "project" }]
+      targets: [{ path: projectTarget, enabled: true }]
     });
 
     await scanTargets({
@@ -162,7 +161,7 @@ describe("scanTargets core", () => {
 
     const globalInstalled = path.join(globalTarget, "grouped-skill");
     const projectInstalled = path.join(projectTarget, "grouped-skill");
-    expect(await fs.pathExists(globalInstalled)).toBe(false);
+    expect((await fs.lstat(globalInstalled)).isSymbolicLink()).toBe(true);
     expect((await fs.lstat(projectInstalled)).isDirectory()).toBe(true);
     expect((await fs.lstat(projectInstalled)).isSymbolicLink()).toBe(false);
   });
@@ -191,7 +190,7 @@ describe("scanTargets core", () => {
     await store.saveSkillSet({
       name: "Automation",
       skillIds: ["grouped-skill"],
-      targets: [{ path: "~/project-target", enabled: true, scope: "project" }]
+      targets: [{ path: "~/project-target", enabled: true }]
     });
 
     await scanTargets({

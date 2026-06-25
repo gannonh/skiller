@@ -17,7 +17,6 @@ function metadataFor(libraryPath: string): SkillMetadata {
     keepUpdated: false,
     validation: { valid: true, issues: [] },
     enabled: true,
-    targetScope: "both",
     tags: []
   };
 }
@@ -236,13 +235,13 @@ describe("MetadataStore", () => {
       id: created.id,
       name: "Browser Automation",
       skillIds: ["example-skill"],
-      targets: [{ path: "~/custom-target", enabled: true, scope: "project" }]
+      targets: [{ path: "~/custom-target", enabled: true }]
     });
     expect(updated).toEqual({
       ...created,
       name: "Browser Automation",
       skillIds: ["example-skill"],
-      targets: [{ path: "~/custom-target", enabled: true, scope: "project" }],
+      targets: [{ path: "~/custom-target", enabled: true }],
       updatedAt: updated.updatedAt
     });
 
@@ -746,42 +745,6 @@ describe("MetadataStore", () => {
     await store.setEnabled("example-skill", false);
 
     expect(await store.list()).toEqual([{ ...metadata, enabled: false }, otherMetadata]);
-  });
-
-  it("updates target scope without replacing unrelated metadata fields", async () => {
-    const libraryPath = await makeTempDir();
-    const skillPath = path.join(libraryPath, "example-skill");
-    const store = new MetadataStore(libraryPath);
-    const metadata = { ...metadataFor(skillPath), lastCheckedAt: "2026-05-10T00:00:00.000Z" };
-
-    await store.save(metadata);
-    await expect(store.setTargetScope("example-skill", "projects")).resolves.toEqual({
-      ...metadata,
-      targetScope: "projects"
-    });
-    expect(await store.list()).toEqual([{ ...metadata, targetScope: "projects" }]);
-  });
-
-  it("updates target scope for one skill while preserving others", async () => {
-    const libraryPath = await makeTempDir();
-    const skillPath = path.join(libraryPath, "example-skill");
-    const otherSkillPath = path.join(libraryPath, "other-skill");
-    const store = new MetadataStore(libraryPath);
-    const metadata = { ...metadataFor(skillPath), lastCheckedAt: "2026-05-10T00:00:00.000Z" };
-    const otherMetadata = { ...metadataFor(otherSkillPath), id: "other-skill", name: "Other Skill" };
-
-    await store.save(metadata);
-    await store.save(otherMetadata);
-    await store.setTargetScope("example-skill", "global");
-
-    expect(await store.list()).toEqual([{ ...metadata, targetScope: "global" }, otherMetadata]);
-  });
-
-  it("rejects target scope updates for unknown skills", async () => {
-    const libraryPath = await makeTempDir();
-    const store = new MetadataStore(libraryPath);
-
-    await expect(store.setTargetScope("missing", "projects")).rejects.toThrow("Skill not found: missing");
   });
 
   it("prunes manifest records whose library path is missing", async () => {

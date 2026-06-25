@@ -62,16 +62,14 @@ describe("skill-sets helpers", () => {
       normalizeSkillSetTargets([
         { path: "~/skills", enabled: true },
         { path: "~/skills", enabled: false },
-        { path: "~/skills", enabled: false, scope: "global" },
         null,
         { path: " ", enabled: true },
         { path: 123, enabled: true },
         { path: "~/other", enabled: "yes" }
       ])
     ).toEqual([
-      { path: "~/skills", enabled: true, scope: "project" },
-      { path: "~/skills", enabled: false, scope: "global" },
-      { path: "~/other", enabled: true, scope: "project" }
+      { path: "~/skills", enabled: true },
+      { path: "~/other", enabled: true }
     ]);
   });
 });

@@ -179,34 +179,20 @@ function resolveTargetsForSkill(
   skillSets: SkillSetMetadata[],
   globalTargets: TargetConfig[]
 ): Set<string> {
-  const targetScope = metadata.targetScope ?? "both";
   const targets = new Set<string>();
-  const memberSets = skillSets.filter((skillSet) => skillSet.skillIds.includes(metadata.id));
 
-  if (targetScope === "global" || targetScope === "both") {
-    const scopedGlobals = memberSets.flatMap((skillSet) => skillSet.targets.filter(isGlobalSkillSetTarget));
-    const effectiveGlobals =
-      memberSets.length > 0 && scopedGlobals.length > 0 ? scopedGlobals : globalTargets.filter((target) => target.enabled);
-    for (const target of effectiveGlobals) {
+  if (metadata.enabled) {
+    for (const target of globalTargets) {
       if (target.enabled) targets.add(expandHome(target.path));
     }
   }
 
-  if (targetScope === "projects" || targetScope === "both") {
-    for (const target of memberSets.flatMap((skillSet) => skillSet.targets.filter(isProjectSkillSetTarget))) {
-      if (target.enabled) targets.add(target.path);
-    }
+  const memberSets = skillSets.filter((skillSet) => skillSet.skillIds.includes(metadata.id));
+  for (const target of memberSets.flatMap((skillSet) => skillSet.targets)) {
+    if (target.enabled) targets.add(target.path);
   }
 
   return targets;
-}
-
-function isGlobalSkillSetTarget(target: TargetConfig): boolean {
-  return target.scope === "global";
-}
-
-function isProjectSkillSetTarget(target: TargetConfig): boolean {
-  return target.scope === "project";
 }
 
 function upsertScanTarget(targetsByPath: Map<string, TargetConfig>, target: TargetConfig): void {
@@ -222,7 +208,7 @@ function allScanTargets(globalTargets: TargetConfig[], skillSets: SkillSetMetada
   }
 
   for (const skillSet of skillSets) {
-    for (const target of skillSet.targets.filter(isProjectSkillSetTarget)) {
+    for (const target of skillSet.targets) {
       upsertScanTarget(byPath, target);
     }
   }
@@ -243,9 +229,7 @@ function expandSkillSets(skillSets: SkillSetMetadata[]): SkillSetMetadata[] {
 
 function projectTargetPaths(skillSets: SkillSetMetadata[]): Set<string> {
   return new Set(
-    skillSets
-      .flatMap((skillSet) => skillSet.targets.filter(isProjectSkillSetTarget))
-      .map((target) => expandHome(target.path))
+    skillSets.flatMap((skillSet) => skillSet.targets).map((target) => expandHome(target.path))
   );
 }
 
@@ -478,8 +462,9 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
         const existingMetadata = findMetadataById(records, declaredId);
 
         if (existingMetadata) {
-          if (!existingMetadata.enabled) continue;
           if (!(await fs.pathExists(existingMetadata.libraryPath))) continue;
+          const importAllowedTargets = resolveTargetsForSkill(existingMetadata, skillSets, globalTargets);
+          if (!importAllowedTargets.has(targetDir)) continue;
           await installToTarget(targetSkillPath, existingMetadata.libraryPath, installMode);
           markEnabled(existingMetadata, targetDir);
           continue;
@@ -553,8 +538,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
           if (!metadata) continue;
 
           const allowedTargets = resolveTargetsForSkill(metadata, skillSets, globalTargets);
-          const shouldRemove =
-            !targetEnabled || !metadata.enabled || !allowedTargets.has(targetDir) || installMode === "copy";
+          const shouldRemove = !targetEnabled || !allowedTargets.has(targetDir) || installMode === "copy";
 
           if (shouldRemove) {
             await removeManagedSymlink(targetSkillPath, targetDir, metadata);
@@ -572,8 +556,7 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
         const allowedTargets = resolveTargetsForSkill(metadata, skillSets, globalTargets);
         const managedCopy = await isManagedCopy(targetSkillPath, metadata);
         const shouldRemove =
-          managedCopy &&
-          (!targetEnabled || !metadata.enabled || !allowedTargets.has(targetDir) || installMode === "symlink");
+          managedCopy && (!targetEnabled || !allowedTargets.has(targetDir) || installMode === "symlink");
 
         if (shouldRemove) {
           await removeManagedCopy(targetSkillPath, targetDir, metadata);
@@ -587,7 +570,6 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
     if (!targetEnabled) continue;
 
     for (const record of records) {
-      if (!record.enabled) continue;
       if (!(await fs.pathExists(record.libraryPath))) continue;
 
       const allowedTargets = resolveTargetsForSkill(record, skillSets, globalTargets);

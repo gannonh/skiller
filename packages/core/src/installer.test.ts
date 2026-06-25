@@ -128,7 +128,7 @@ describe("installLocalSkill", () => {
     await expect(fs.pathExists(path.join(library, "local-2"))).resolves.toBe(false);
   });
 
-  it("preserves target scope when replacing an existing skill", async () => {
+  it("preserves enabled state when replacing an existing skill", async () => {
     const firstSource = path.join(tmp, "first-source");
     const secondSource = path.join(tmp, "second-source");
     const library = path.join(tmp, "library");
@@ -140,11 +140,11 @@ describe("installLocalSkill", () => {
 
     await installLocalSkill({ sourcePath: firstSource, libraryPath: library });
     const store = new MetadataStore(library);
-    await store.setTargetScope("local", "projects");
+    await store.setEnabled("local", false);
 
     const second = await installLocalSkill({ sourcePath: secondSource, libraryPath: library, replaceExisting: true });
 
-    expect(second.targetScope).toBe("projects");
+    expect(second.enabled).toBe(false);
   });
 
   it("parses CRLF frontmatter names", async () => {

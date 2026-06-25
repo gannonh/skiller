@@ -1,4 +1,4 @@
-import type { SkillMetadata, SkillSetMetadata, TargetConfig, TargetScope } from "./types.js";
+import type { SkillMetadata, SkillSetMetadata, TargetConfig } from "./types.js";
 
 export function skillSetIdsForSkill(skillId: string, skillSets: SkillSetMetadata[]): string[] {
   return skillSets.filter((skillSet) => skillSet.skillIds.includes(skillId)).map((skillSet) => skillSet.id);
@@ -13,12 +13,8 @@ export function isUngrouped(skillId: string, skillSets: SkillSetMetadata[]): boo
   return !skillSets.some((skillSet) => skillSet.skillIds.includes(skillId));
 }
 
-function normalizeTargetScope(value: unknown): TargetScope {
-  return value === "global" ? "global" : "project";
-}
-
-function targetKey(path: string, scope: TargetScope): string {
-  return `${scope}\0${path}`;
+function normalizeTargetPath(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 export function normalizeSkillSetTargets(value: unknown): TargetConfig[] {
@@ -29,12 +25,11 @@ export function normalizeSkillSetTargets(value: unknown): TargetConfig[] {
   for (const item of value) {
     if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
     const record = item as Record<string, unknown>;
-    const targetPath = typeof record.path === "string" ? record.path.trim() : "";
-    const scope = normalizeTargetScope(record.scope);
-    const key = targetKey(targetPath, scope);
+    const targetPath = normalizeTargetPath(record.path);
+    const key = targetPath;
     if (!targetPath || seen.has(key)) continue;
     seen.add(key);
-    targets.push({ path: targetPath, enabled: typeof record.enabled === "boolean" ? record.enabled : true, scope });
+    targets.push({ path: targetPath, enabled: typeof record.enabled === "boolean" ? record.enabled : true });
   }
 
   return targets;

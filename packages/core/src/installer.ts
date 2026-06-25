@@ -150,7 +150,6 @@ async function installSkillFromDirectory(input: InstallSkillFromDirectoryInput):
     keepUpdated: input.keepUpdated,
     enabled: existingMetadata?.enabled ?? true,
     tags: existingMetadata?.tags ?? [],
-    ...(existingMetadata?.targetScope ? { targetScope: existingMetadata.targetScope } : {}),
     validation
   };
 
