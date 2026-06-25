@@ -255,6 +255,47 @@ function dedupe(values: string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))];
 }
 
+function pathHasSkillMarkdown(entries: GithubTreeEntry[], githubPath: string): boolean {
+  if (!githubPath) return entries.some((entry) => entry.type === "blob" && entry.path === "SKILL.md");
+  return hasSkillMarkdown(entries, githubPath);
+}
+
+async function resolveGithubPathByFrontmatterName(input: {
+  entries: GithubTreeEntry[];
+  requestedName: string;
+  fetchImpl: FetchImpl;
+  owner: string;
+  repo: string;
+  commit: string;
+}): Promise<string | undefined> {
+  if (!input.requestedName) return undefined;
+
+  const skillMarkdownPaths = input.entries
+    .filter((entry) => entry.type === "blob" && typeof entry.path === "string" && entry.path.endsWith("/SKILL.md"))
+    .map((entry) => entry.path as string);
+
+  for (const markdownPath of skillMarkdownPaths) {
+    let markdown: string;
+    try {
+      markdown = await readRawGithubBlob({
+        fetchImpl: input.fetchImpl,
+        owner: input.owner,
+        repo: input.repo,
+        commit: input.commit,
+        entryPath: markdownPath
+      });
+    } catch {
+      continue;
+    }
+    const skillInfo = parseSkillInfo(markdown, "");
+    if (skillInfo.name === input.requestedName) {
+      return markdownPath.slice(0, -"/SKILL.md".length);
+    }
+  }
+
+  return undefined;
+}
+
 function resolveGithubPath(entries: GithubTreeEntry[], githubPath: string): string {
   if (!githubPath || hasSkillMarkdown(entries, githubPath)) return githubPath;
 
@@ -482,7 +523,18 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
   const repository = { owner: source.owner, repo: source.repo };
   const ref = input.ref ?? source.ref ?? "HEAD";
   const githubPath = normalizeGithubPath(input.githubPath ?? source.githubPath);
-  const resolvedGithubPath = resolveGithubPath(entries, githubPath);
+  let resolvedGithubPath = resolveGithubPath(entries, githubPath);
+  if (githubPath && !pathHasSkillMarkdown(entries, resolvedGithubPath)) {
+    const byName = await resolveGithubPathByFrontmatterName({
+      entries,
+      requestedName: basenameForGithubPath(githubPath),
+      fetchImpl,
+      owner: source.owner,
+      repo: source.repo,
+      commit
+    });
+    if (byName) resolvedGithubPath = byName;
+  }
   const blobs: GithubBlob[] = [];
 
   for (const entry of entries) {

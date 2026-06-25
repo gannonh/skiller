@@ -936,6 +936,55 @@ describe("fetchGithubSkillSource", () => {
     expect(fetched.resolved.githubPath).toBe("skills/agent-browser");
   });
 
+  it("resolves a skill whose registry slug differs from its folder via SKILL.md frontmatter name", async () => {
+    // skills.sh exposes the SKILL.md frontmatter `name` as the slug, which can differ from the
+    // repository folder name (e.g. slug "vercel-react-best-practices" lives in skills/react-best-practices).
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(
+          JSON.stringify({
+            tree: [
+              { path: "skills/react-best-practices/SKILL.md", type: "blob" },
+              { path: "skills/react-best-practices/rules/perf.md", type: "blob" },
+              { path: "skills/other/SKILL.md", type: "blob" }
+            ]
+          })
+        );
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/react-best-practices/SKILL.md") {
+        return new Response("---\nname: vercel-react-best-practices\n---\n# React");
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/other/SKILL.md") {
+        return new Response("---\nname: other\n---\n# Other");
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/react-best-practices/rules/perf.md") {
+        return new Response("perf");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const fetched = await fetchGithubSkillSource({
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "vercel-react-best-practices",
+      fetchImpl
+    });
+    tempRoots.push(fetched.rootPath);
+
+    await expect(fs.readFile(path.join(fetched.sourcePath, "SKILL.md"), "utf8")).resolves.toContain(
+      "name: vercel-react-best-practices"
+    );
+    await expect(fs.readFile(path.join(fetched.sourcePath, "rules", "perf.md"), "utf8")).resolves.toBe("perf");
+    expect(fetched.resolved.githubPath).toBe("skills/react-best-practices");
+  });
+
   it("preserves executable mode for github source files", async () => {
     const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/main") {
