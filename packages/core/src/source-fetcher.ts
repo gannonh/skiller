@@ -255,10 +255,6 @@ function dedupe(values: string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))];
 }
 
-function pathHasSkillMarkdown(entries: GithubTreeEntry[], githubPath: string): boolean {
-  if (!githubPath) return entries.some((entry) => entry.type === "blob" && entry.path === "SKILL.md");
-  return hasSkillMarkdown(entries, githubPath);
-}
 
 // Mirrors the official skills CLI's slug normalization so registry slugs match
 // frontmatter names regardless of case, separators, or punctuation.
@@ -292,7 +288,6 @@ async function resolveGithubPathByFrontmatterName(input: {
   repo: string;
   commit: string;
 }): Promise<string | undefined> {
-  if (!input.requestedSlug) return undefined;
   const targetSlug = toSkillSlug(input.requestedSlug);
   if (!targetSlug) return undefined;
 
@@ -546,7 +541,7 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
   const ref = input.ref ?? source.ref ?? "HEAD";
   const githubPath = normalizeGithubPath(input.githubPath ?? source.githubPath);
   let resolvedGithubPath = resolveGithubPath(entries, githubPath);
-  if (githubPath && !pathHasSkillMarkdown(entries, resolvedGithubPath)) {
+  if (githubPath && !hasSkillMarkdown(entries, resolvedGithubPath)) {
     const byName = await resolveGithubPathByFrontmatterName({
       entries,
       requestedSlug: basenameForGithubPath(githubPath),

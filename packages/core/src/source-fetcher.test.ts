@@ -208,6 +208,31 @@ describe("extractRegistrySkillSource", () => {
       "skills.sh payload is missing a GitHub URL"
     );
   });
+
+  it("derives githubPath from the source-scoped id when no explicit path field is present", () => {
+    expect(
+      extractRegistrySkillSource({
+        id: "example/skills/agent-browser",
+        source: "example/skills"
+      })
+    ).toEqual({
+      skillsShId: "example/skills/agent-browser",
+      githubUrl: "https://github.com/example/skills",
+      githubPath: "agent-browser"
+    });
+  });
+
+  it("leaves githubPath undefined when neither a path field nor a source is present", () => {
+    expect(
+      extractRegistrySkillSource({
+        id: "agent-browser",
+        githubUrl: "https://github.com/example/skills"
+      })
+    ).toEqual({
+      skillsShId: "agent-browser",
+      githubUrl: "https://github.com/example/skills"
+    });
+  });
 });
 
 describe("discoverGithubSkills", () => {
@@ -1036,6 +1061,74 @@ describe("fetchGithubSkillSource", () => {
     );
     await expect(fs.readFile(path.join(fetched.sourcePath, "README.md"), "utf8")).resolves.toBe("readme");
     expect(fetched.resolved.githubPath).toBeUndefined();
+  });
+
+  it("returns undefined from frontmatter resolution when the requested slug is empty", async () => {
+    // A githubPath of only separators has no basename, so requestedSlug is empty and
+    // resolveGithubPathByFrontmatterName bails out before fetching any SKILL.md.
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(
+          JSON.stringify({
+            tree: [{ path: "skills/whatever/SKILL.md", type: "blob" }]
+          })
+        );
+      }
+
+      if (url === "https://raw.githubusercontent.com/example/skills/commit123/skills/whatever/SKILL.md") {
+        return new Response("---\nname: Whatever\n---\n# Whatever");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await expect(
+      fetchGithubSkillSource({
+        githubUrl: "https://github.com/example/skills",
+        githubPath: "///",
+        fetchImpl
+      })
+    ).rejects.toThrow("GitHub source does not contain SKILL.md");
+    expect(fetchImpl).not.toHaveBeenCalledWith(
+      "https://raw.githubusercontent.com/example/skills/commit123/skills/whatever/SKILL.md",
+      expect.anything()
+    );
+  });
+
+  it("returns undefined from frontmatter resolution when the requested slug is unslugifiable", async () => {
+    // githubPath "!!!" is truthy but slugifies to an empty string, so targetSlug is empty
+    // and resolveGithubPathByFrontmatterName bails out before fetching any SKILL.md.
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/example/skills/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (url === "https://api.github.com/repos/example/skills/git/trees/commit123?recursive=1") {
+        return new Response(
+          JSON.stringify({
+            tree: [{ path: "skills/whatever/SKILL.md", type: "blob" }]
+          })
+        );
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    await expect(
+      fetchGithubSkillSource({
+        githubUrl: "https://github.com/example/skills",
+        githubPath: "!!!",
+        fetchImpl
+      })
+    ).rejects.toThrow("GitHub source does not contain SKILL.md");
+    expect(fetchImpl).not.toHaveBeenCalledWith(
+      "https://raw.githubusercontent.com/example/skills/commit123/skills/whatever/SKILL.md",
+      expect.anything()
+    );
   });
 
   it("preserves executable mode for github source files", async () => {
