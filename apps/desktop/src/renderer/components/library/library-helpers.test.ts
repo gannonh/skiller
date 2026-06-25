@@ -66,18 +66,22 @@ describe("library helpers", () => {
     expect(helpers.filterLibrarySkills(skills, { type: "ungrouped" }, [], skillSets).map((item) => item.id)).toEqual(["two"]);
   });
 
-  it("derives skill set state", () => {
-    const skillSets = [skillSet("set", "Set", ["one", "two"])];
+  it("derives skill set state from the set enablement flag", () => {
+    const enabledSet = skillSet("set", "Set", ["one", "two"]);
+    const disabledSet: SkillSetMetadata = { ...skillSet("set", "Set", ["one", "two"]), enabled: false };
 
-    expect(helpers.skillSetStateForId([skill({ id: "one", enabled: true })], skillSets, "set")).toBe("on");
-    expect(helpers.skillSetStateForId([skill({ id: "one", enabled: false })], skillSets, "set")).toBe("off");
+    expect(helpers.skillSetStateForId([skill({ id: "one", enabled: true })], [enabledSet], "set")).toBe("on");
     expect(
       helpers.skillSetStateForId(
         [skill({ id: "one", enabled: true }), skill({ id: "two", enabled: false })],
-        skillSets,
+        [enabledSet],
         "set"
       )
-    ).toBe("mixed");
+    ).toBe("on");
+    expect(
+      helpers.skillSetStateForId([skill({ id: "one", enabled: true }), skill({ id: "two", enabled: true })], [disabledSet], "set")
+    ).toBe("off");
+    expect(helpers.skillSetStateForId([skill({ id: "one", enabled: false })], [disabledSet], "set")).toBe("off");
   });
 
   it("reports a disabled skill set as off regardless of member enablement", () => {

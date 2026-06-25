@@ -5,7 +5,6 @@ import {
   isUngrouped,
   normalizeSkillSetSkillIds,
   normalizeSkillSetTargets,
-  skillsInSet,
   type SaveSkillSetInput
 } from "./skill-sets.js";
 import type { LibraryState, SkillMetadata, SkillSetMetadata, SkillSource, TargetConfig } from "./types.js";
@@ -525,14 +524,7 @@ export class MetadataStore {
       throw new Error(`Skill set not found: ${skillSetId}`);
     }
 
-    if (!skillSet.enabled) {
-      return "off";
-    }
-
-    const members = skillsInSet(skillSet, state.skills);
-    if (members.length === 0 || members.every((skill) => !skill.enabled)) return "off";
-    if (members.every((skill) => skill.enabled)) return "on";
-    return "mixed";
+    return skillSet.enabled ? "on" : "off";
   }
 
   async setSkillSetEnabled(skillSetId: string, enabled: boolean): Promise<SkillSetMetadata> {

@@ -52,21 +52,15 @@ export function isUngroupedSkill(skillId: string, skillSets: SkillSetMetadata[])
   return !groupedSkillIds(skillSets).has(skillId);
 }
 
-export function skillSetState(skills: SkillMetadata[], skillSet: SkillSetMetadata): "on" | "off" | "mixed" {
-  if (!skillSet.enabled) return "off";
-
-  const memberIds = new Set(skillSet.skillIds);
-  const members = skills.filter((skill) => memberIds.has(skill.id));
-  if (members.length === 0 || members.every((skill) => !skill.enabled)) return "off";
-  if (members.every((skill) => skill.enabled)) return "on";
-  return "mixed";
+export function skillSetState(_skills: SkillMetadata[], skillSet: SkillSetMetadata): "on" | "off" {
+  return skillSet.enabled ? "on" : "off";
 }
 
 export function skillSetStateForId(
   skills: SkillMetadata[],
   skillSets: SkillSetMetadata[],
   skillSetId: string
-): "on" | "off" | "mixed" {
+): "on" | "off" {
   const skillSet = skillSets.find((candidate) => candidate.id === skillSetId);
   if (!skillSet) return "off";
   return skillSetState(skills, skillSet);

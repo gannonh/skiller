@@ -444,7 +444,7 @@ describe("MetadataStore", () => {
     await expect(store.replaceSkillTags("missing", ["browser"])).rejects.toThrow("Skill not found: missing");
   });
 
-  it("derives mixed set state and toggles a whole set via the set flag", async () => {
+  it("derives set state and toggles a whole set via the set flag", async () => {
     const libraryPath = await makeTempDir();
     const firstPath = path.join(libraryPath, "example-skill");
     const secondPath = path.join(libraryPath, "other-skill");
@@ -460,10 +460,12 @@ describe("MetadataStore", () => {
       targets: []
     });
 
-    expect(await store.skillSetEnablement(skillSet.id)).toBe("mixed");
+    // Set enablement reflects the set-wide distribution flag, not the per-skill global flag.
+    expect(await store.skillSetEnablement(skillSet.id)).toBe("on");
 
     const disabledSet = await store.setSkillSetEnabled(skillSet.id, false);
     expect(disabledSet.enabled).toBe(false);
+    // Member global enablement is untouched by the set toggle.
     expect((await store.filterSkills({ skillSetId: skillSet.id })).map((skill) => skill.enabled)).toEqual([
       true,
       false
@@ -476,7 +478,7 @@ describe("MetadataStore", () => {
       true,
       false
     ]);
-    expect(await store.skillSetEnablement(skillSet.id)).toBe("mixed");
+    expect(await store.skillSetEnablement(skillSet.id)).toBe("on");
   });
 
   it("reports an explicitly disabled set as off via skillSetEnablement", async () => {

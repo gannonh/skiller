@@ -109,7 +109,7 @@ test("manages skill sets and tag filters from the library", async ({ page }) => 
   await page.getByRole("checkbox", { name: /Agent v1\.0/ }).check();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator('[data-slot="badge"]').filter({ hasText: "2 members" })).toBeVisible();
-  await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^mixed$/ })).toBeVisible();
+  await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^on$/ })).toBeVisible();
 
   await page.getByRole("button", { name: "browser" }).click();
   await page.getByRole("button", { name: "testing" }).click();
@@ -121,6 +121,8 @@ test("manages skill sets and tag filters from the library", async ({ page }) => 
   await page.getByRole("button", { name: "testing" }).click();
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
 
+  await page.getByLabel("Disable Agent v1.0").click();
+  await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^off$/ })).toBeVisible();
   await page.getByLabel("Enable Agent v1.0").click();
   await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^on$/ })).toBeVisible();
 
@@ -197,9 +199,10 @@ test("sorts library columns with name as the default", async ({ page }) => {
   await page.getByRole("button", { name: "Install selected" }).click();
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
 
-  for (const column of ["Name", "Source", "Status", "Global", "Actions"]) {
+  for (const column of ["Name", "Source", "Status", "Global"]) {
     await expect(page.getByRole("button", { name: `Sort by ${column}` })).toBeVisible();
   }
+  await expect(page.getByRole("columnheader", { name: "Actions" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Skill Sets" })).toBeVisible();
 
   const rows = page.locator("tbody tr");
