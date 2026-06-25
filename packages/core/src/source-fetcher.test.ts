@@ -985,6 +985,59 @@ describe("fetchGithubSkillSource", () => {
     expect(fetched.resolved.githubPath).toBe("skills/react-best-practices");
   });
 
+  it("resolves a skill whose SKILL.md lives at the repository root", async () => {
+    // Some repos publish a single skill with SKILL.md at the root while skills.sh still
+    // supplies a slug-shaped githubPath (e.g. "maestro-mobile-testing").
+    const fetchImpl = mockFetch((url) => {
+      if (url === "https://api.github.com/repos/tovimx/maestro-mobile-testing-skill/commits/HEAD") {
+        return new Response(JSON.stringify({ sha: "commit123" }));
+      }
+
+      if (
+        url ===
+        "https://api.github.com/repos/tovimx/maestro-mobile-testing-skill/git/trees/commit123?recursive=1"
+      ) {
+        return new Response(
+          JSON.stringify({
+            tree: [
+              { path: "SKILL.md", type: "blob" },
+              { path: "README.md", type: "blob" }
+            ]
+          })
+        );
+      }
+
+      if (
+        url ===
+        "https://raw.githubusercontent.com/tovimx/maestro-mobile-testing-skill/commit123/SKILL.md"
+      ) {
+        return new Response("---\nname: maestro-mobile-testing\n---\n# Maestro");
+      }
+
+      if (
+        url ===
+        "https://raw.githubusercontent.com/tovimx/maestro-mobile-testing-skill/commit123/README.md"
+      ) {
+        return new Response("readme");
+      }
+
+      return new Response("missing", { status: 404, statusText: "Not Found" });
+    });
+
+    const fetched = await fetchGithubSkillSource({
+      githubUrl: "https://github.com/tovimx/maestro-mobile-testing-skill",
+      githubPath: "maestro-mobile-testing",
+      fetchImpl
+    });
+    tempRoots.push(fetched.rootPath);
+
+    await expect(fs.readFile(path.join(fetched.sourcePath, "SKILL.md"), "utf8")).resolves.toContain(
+      "name: maestro-mobile-testing"
+    );
+    await expect(fs.readFile(path.join(fetched.sourcePath, "README.md"), "utf8")).resolves.toBe("readme");
+    expect(fetched.resolved.githubPath).toBeUndefined();
+  });
+
   it("preserves executable mode for github source files", async () => {
     const fetchImpl = mockFetch((url) => {
       if (url === "https://api.github.com/repos/example/skills/commits/main") {

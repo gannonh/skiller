@@ -260,21 +260,43 @@ function pathHasSkillMarkdown(entries: GithubTreeEntry[], githubPath: string): b
   return hasSkillMarkdown(entries, githubPath);
 }
 
+// Mirrors the official skills CLI's slug normalization so registry slugs match
+// frontmatter names regardless of case, separators, or punctuation.
+function toSkillSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function skillMarkdownPaths(entries: GithubTreeEntry[]): string[] {
+  return entries
+    .filter((entry) => entry.type === "blob" && typeof entry.path === "string" && /(^|\/)SKILL\.md$/i.test(entry.path))
+    .map((entry) => entry.path as string);
+}
+
+function skillFolderFromMarkdownPath(markdownPath: string): string {
+  const slashIndex = markdownPath.lastIndexOf("/");
+  return slashIndex === -1 ? "" : markdownPath.slice(0, slashIndex);
+}
+
+// Resolves the skill folder by matching the registry slug against each SKILL.md's
+// frontmatter name. Returns "" for a repo-root SKILL.md, or undefined when unmatched.
 async function resolveGithubPathByFrontmatterName(input: {
   entries: GithubTreeEntry[];
-  requestedName: string;
+  requestedSlug: string;
   fetchImpl: FetchImpl;
   owner: string;
   repo: string;
   commit: string;
 }): Promise<string | undefined> {
-  if (!input.requestedName) return undefined;
+  if (!input.requestedSlug) return undefined;
+  const targetSlug = toSkillSlug(input.requestedSlug);
+  if (!targetSlug) return undefined;
 
-  const skillMarkdownPaths = input.entries
-    .filter((entry) => entry.type === "blob" && typeof entry.path === "string" && entry.path.endsWith("/SKILL.md"))
-    .map((entry) => entry.path as string);
-
-  for (const markdownPath of skillMarkdownPaths) {
+  for (const markdownPath of skillMarkdownPaths(input.entries)) {
     let markdown: string;
     try {
       markdown = await readRawGithubBlob({
@@ -288,8 +310,8 @@ async function resolveGithubPathByFrontmatterName(input: {
       continue;
     }
     const skillInfo = parseSkillInfo(markdown, "");
-    if (skillInfo.name === input.requestedName) {
-      return markdownPath.slice(0, -"/SKILL.md".length);
+    if (toSkillSlug(skillInfo.name) === targetSlug) {
+      return skillFolderFromMarkdownPath(markdownPath);
     }
   }
 
@@ -527,13 +549,14 @@ export async function fetchGithubSkillSource(input: FetchGithubSkillSourceInput)
   if (githubPath && !pathHasSkillMarkdown(entries, resolvedGithubPath)) {
     const byName = await resolveGithubPathByFrontmatterName({
       entries,
-      requestedName: basenameForGithubPath(githubPath),
+      requestedSlug: basenameForGithubPath(githubPath),
       fetchImpl,
       owner: source.owner,
       repo: source.repo,
       commit
     });
-    if (byName) resolvedGithubPath = byName;
+    // byName may be "" for a repo-root SKILL.md, so check for undefined explicitly.
+    if (byName !== undefined) resolvedGithubPath = byName;
   }
   const blobs: GithubBlob[] = [];
 
