@@ -45,12 +45,12 @@ export function SkillSetEditorDialog({
 
   useEffect(() => {
     if (!open) return;
-    const initial = computeSkillSetEditorState(skillSet, globalTargets);
+    const initial = computeSkillSetEditorState(skillSet);
     setName(initial.name);
     setSelectedSkillIds(initial.selectedSkillIds);
     setTargets(initial.targets);
     setError(null);
-  }, [open, skillSet, globalTargets]);
+  }, [open, skillSet]);
 
   async function handleSave() {
     if (name.trim() === "" || isSaving || disabled) return;

@@ -27,7 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { skillerApi, type LibraryState, type SaveSkillSetInput, type SkillMetadata, type SkillSetMetadata } from "../lib/api.js";
 import { runOrganizationAction } from "../lib/organization-mutation.js";
 import { sourceDetail, sourceLabel, sourceUrl } from "../lib/skill-source.js";
-import type { DiscoveredGithubSkill, SkillTargetScope, TargetConfig } from "@skiller/core";
+import type { DiscoveredGithubSkill, TargetConfig } from "@skiller/core";
 import { SkillMembershipDialog } from "../components/library/SkillMembershipDialog.js";
 import { SkillSetEditorDialog } from "../components/library/SkillSetEditorDialog.js";
 import { SortableTableHead } from "../components/library/SortableTableHead.js";
@@ -499,25 +499,6 @@ export function LibraryPage({
     }
   }
 
-  async function setSkillTargetScope(skillId: string, targetScope: SkillTargetScope) {
-    if (!beginOrganizationMutation()) return;
-    setPendingSkillIds((current) => new Set(current).add(skillId));
-    setError(null);
-    try {
-      const updatedState = await skillerApi.setSkillTargetScope(skillId, targetScope);
-      setLibraryState(updatedState);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setPendingSkillIds((current) => {
-        const next = new Set(current);
-        next.delete(skillId);
-        return next;
-      });
-      finishOrganizationMutation();
-    }
-  }
-
   async function deleteSkill(skillId: string) {
     if (!beginOrganizationMutation()) return;
     setPendingSkillIds((current) => new Set(current).add(skillId));
@@ -807,9 +788,8 @@ export function LibraryPage({
                     Status
                   </SortableTableHead>
                   <SortableTableHead column="enabled" activeColumn={sortColumn} direction={sortDirection} onSort={updateSort}>
-                    Enabled
+                    Global
                   </SortableTableHead>
-                  <TableHead>Target Scope</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -912,21 +892,9 @@ export function LibraryPage({
                         checked={skill.enabled}
                         onCheckedChange={(checked) => void setSkillEnabled(skill.id, checked)}
                         disabled={isOrganizing || pendingSkillIds.has(skill.id)}
-                        aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name || skill.id}`}
+                        aria-label={`${skill.enabled ? "Disable" : "Enable"} global distribution for ${skill.name || skill.id}`}
+                        title={`${skill.enabled ? "Sync to global targets" : "Not synced to global targets"}. Skill set targets are unaffected.`}
                       />
-                    </TableCell>
-                    <TableCell>
-                      <select
-                        aria-label={`Target scope for ${skill.name || skill.id}`}
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
-                        value={skill.targetScope ?? "both"}
-                        disabled={isOrganizing || pendingSkillIds.has(skill.id)}
-                        onChange={(event) => void setSkillTargetScope(skill.id, event.target.value as SkillTargetScope)}
-                      >
-                        <option value="both">Both</option>
-                        <option value="global">Global</option>
-                        <option value="projects">Projects</option>
-                      </select>
                     </TableCell>
                     <TableCell>
                       <Button

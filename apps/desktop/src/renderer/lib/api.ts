@@ -5,7 +5,6 @@ import type {
   ScanTargetsResult,
   SkillSource,
   SkillSetMetadata,
-  SkillTargetScope,
   SkillerConfig,
   TargetConfig
 } from "@skiller/core";
@@ -38,7 +37,6 @@ export interface SkillMetadata {
   contentHash?: string;
   keepUpdated: boolean;
   enabled: boolean;
-  targetScope?: SkillTargetScope;
   tags: string[];
   validation: ValidationResult;
 }
@@ -94,7 +92,6 @@ export type RemoveListener = () => void;
 export interface SkillerApi {
   listLibrary: () => Promise<LibraryState>;
   setSkillEnabled: (skillId: string, enabled: boolean) => Promise<LibraryState>;
-  setSkillTargetScope: (skillId: string, targetScope: SkillTargetScope) => Promise<LibraryState>;
   deleteSkill: (skillId: string) => Promise<LibraryState>;
   saveSkillSet: (input: SaveSkillSetInput) => Promise<LibraryState>;
   setSkillMembership: (skillId: string, skillSetIds: string[]) => Promise<LibraryState>;
@@ -130,7 +127,6 @@ type RendererSkillerApi = Omit<
   SkillerApi,
   | "listLibrary"
   | "setSkillEnabled"
-  | "setSkillTargetScope"
   | "deleteSkill"
   | "saveSkillSet"
   | "setSkillMembership"
@@ -140,7 +136,6 @@ type RendererSkillerApi = Omit<
 > & {
   listLibrary: () => Promise<LegacyLibraryState>;
   setSkillEnabled: (skillId: string, enabled: boolean) => Promise<LegacyLibraryState>;
-  setSkillTargetScope: (skillId: string, targetScope: SkillTargetScope) => Promise<LegacyLibraryState>;
   deleteSkill: (skillId: string) => Promise<LegacyLibraryState>;
   saveSkillSet: (input: SaveSkillSetInput) => Promise<LegacyLibraryState>;
   setSkillMembership: (skillId: string, skillSetIds: string[]) => Promise<LegacyLibraryState>;
@@ -165,7 +160,6 @@ const fallbackSkills: SkillMetadata[] = [
     installedAt: new Date().toISOString(),
     keepUpdated: false,
     enabled: true,
-    targetScope: "both",
     tags: [],
     validation: { valid: true, issues: [] },
   }
@@ -292,7 +286,6 @@ function createBrowserPreviewApi(): SkillerApi {
       contentHash: "preview",
       keepUpdated: input.keepUpdated,
       enabled: true,
-      targetScope: "both",
       tags: [],
       validation: { valid: true, issues: [] }
     };
@@ -349,11 +342,6 @@ function createBrowserPreviewApi(): SkillerApi {
     setSkillEnabled: async (skillId, enabled) => {
       const skill = fallbackSkills.find((candidate) => candidate.id === skillId);
       if (skill) skill.enabled = enabled;
-      return fallbackLibraryState();
-    },
-    setSkillTargetScope: async (skillId, targetScope) => {
-      const skill = fallbackSkills.find((candidate) => candidate.id === skillId);
-      if (skill) skill.targetScope = targetScope;
       return fallbackLibraryState();
     },
     deleteSkill: async (skillId) => {
@@ -606,15 +594,6 @@ function createRendererApi(api: SkillerApi): RendererSkillerApi {
     listLibrary: async () => legacyArrayLibraryState(await api.listLibrary()),
     setSkillEnabled: async (skillId, enabled) =>
       legacyArrayLibraryState(await api.setSkillEnabled(skillId, enabled)),
-    setSkillTargetScope: async (skillId, targetScope) => {
-      if (typeof api.setSkillTargetScope !== "function") {
-        throw new Error(
-          "Target scope updates need a restarted Skiller desktop app. Quit and run `pnpm dev` again to reload the preload bridge."
-        );
-      }
-
-      return legacyArrayLibraryState(await api.setSkillTargetScope(skillId, targetScope));
-    },
     deleteSkill: async (skillId) => legacyArrayLibraryState(await api.deleteSkill(skillId)),
     saveSkillSet: async (input) => legacyArrayLibraryState(await api.saveSkillSet(input)),
     setSkillMembership: async (skillId, skillSetIds) =>

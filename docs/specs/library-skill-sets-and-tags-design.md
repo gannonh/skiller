@@ -99,7 +99,7 @@ Tag normalization trims whitespace, collapses internal whitespace to single spac
 - filtering skills by set and tags
 - setting all skills in a set enabled or disabled
 
-Install, scan, update, and save flows preserve `targetScope`, skill set memberships, and `tags` when rewriting a skill record.
+Install, scan, update, and save flows preserve skill set memberships and `tags` when rewriting a skill record.
 
 Batch set enablement should use one manifest write. Desktop should run one target scan after that write.
 

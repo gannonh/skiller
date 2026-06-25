@@ -15,7 +15,7 @@ test("renders the library from the browser preview API", async ({ page }) => {
   await expect(page.getByText("Installed master skills")).toBeVisible();
   await expect(page.getByText("1 master skills")).toBeVisible();
   await expect(page.getByRole("cell", { name: "example-skill", exact: true })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "Enabled" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Global" })).toBeVisible();
 });
 
 test("focuses the tag input when editing row tags", async ({ page }) => {
@@ -197,7 +197,7 @@ test("sorts library columns with name as the default", async ({ page }) => {
   await page.getByRole("button", { name: "Install selected" }).click();
   await expect(page.getByRole("cell", { name: "beta-skill", exact: true })).toBeVisible();
 
-  for (const column of ["Name", "Source", "Status", "Enabled", "Actions"]) {
+  for (const column of ["Name", "Source", "Status", "Global", "Actions"]) {
     await expect(page.getByRole("button", { name: `Sort by ${column}` })).toBeVisible();
   }
   await expect(page.getByRole("columnheader", { name: "Skill Sets" })).toBeVisible();

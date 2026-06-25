@@ -15,7 +15,6 @@ import {
 import type {
   DuplicateSkillNameHandler,
   SaveSkillSetInput,
-  SkillTargetScope,
   SkillerConfig,
   TargetConfig
 } from "@skiller/core";
@@ -134,20 +133,6 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
     await store.setEnabled(skillId, enabled);
     await scanConfig(config);
     return store.libraryState();
-  });
-
-  ipcMain.handle("library:set-target-scope", async (_event, skillId: string, targetScope: SkillTargetScope) => {
-    const config = await loadConfig();
-    const libraryPath = expandHome(config.libraryPath);
-    const store = new MetadataStore(libraryPath);
-
-    await store.setTargetScope(skillId, targetScope);
-    const state = await store.libraryState();
-    // Return updated state immediately; target sync can run in the background for this toggle.
-    void scanConfig(config).catch((error) => {
-      console.error("Target scope scan failed", error);
-    });
-    return state;
   });
 
   ipcMain.handle("library:save-skill-set", async (_event, input: SaveSkillSetInput) => {

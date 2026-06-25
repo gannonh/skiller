@@ -26,7 +26,7 @@ Related: [Skill sets and tags design](/specs/library-skill-sets-and-tags-design.
 
 - `saveSkillSet({ id?, name, skillIds, targets })` replaces create/rename.
 - `setSkillMembership(skillId, skillSetIds)` replaces assign.
-- Scanner routes enabled skills to per-set targets (union across sets) with global-target fallback.
+- Scanner routes enabled skills to global targets; skill-set membership independently routes a skill (enabled or not) to that set's project targets. Skill sets never suppress global distribution.
 
 ### Desktop UI
 
