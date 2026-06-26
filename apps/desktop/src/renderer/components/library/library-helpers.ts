@@ -2,7 +2,7 @@ import type { SkillMetadata, SkillSetMetadata } from "../../lib/api.js";
 import type { SetSkillSetEnabledResult } from "../../lib/api.js";
 import { sourceDetail, sourceLabel } from "../../lib/skill-source.js";
 
-export type SkillPickerSortColumn = "name" | "source" | "status" | "enabled";
+export type SkillPickerSortColumn = "included" | "name" | "source" | "status" | "enabled";
 export type SortDirection = "asc" | "desc";
 export type SetFilter = { type: "all" } | { type: "ungrouped" } | { type: "set"; skillSetId: string };
 
@@ -10,7 +10,12 @@ export function skillStatusLabel(skill: SkillMetadata): string {
   return skill.validation?.valid ? "valid" : "invalid";
 }
 
-function sortValue(skill: SkillMetadata, column: SkillPickerSortColumn): string {
+function sortValue(
+  skill: SkillMetadata,
+  column: SkillPickerSortColumn,
+  selectedSkillIds: Set<string>
+): string {
+  if (column === "included") return selectedSkillIds.has(skill.id) ? "1included" : "0not-included";
   if (column === "name") return skill.name || skill.id;
   if (column === "source") return `${sourceLabel(skill)} ${sourceDetail(skill)}`;
   if (column === "status") return skillStatusLabel(skill);
@@ -20,13 +25,15 @@ function sortValue(skill: SkillMetadata, column: SkillPickerSortColumn): string 
 export function sortSkills(
   skills: SkillMetadata[],
   column: SkillPickerSortColumn,
-  direction: SortDirection
+  direction: SortDirection,
+  selectedSkillIds: Set<string> = new Set()
 ): SkillMetadata[] {
   return [...skills].sort((left, right) => {
-    const primary = sortValue(left, column).localeCompare(sortValue(right, column), undefined, {
-      numeric: true,
-      sensitivity: "base"
-    });
+    const primary = sortValue(left, column, selectedSkillIds).localeCompare(
+      sortValue(right, column, selectedSkillIds),
+      undefined,
+      { numeric: true, sensitivity: "base" }
+    );
     const fallback = (left.name || left.id).localeCompare(right.name || right.id, undefined, {
       numeric: true,
       sensitivity: "base"
