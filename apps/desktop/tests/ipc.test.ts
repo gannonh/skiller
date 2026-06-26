@@ -47,7 +47,11 @@ const mocks = vi.hoisted(() => {
       createdAt: "2026-05-12T00:00:00.000Z",
       updatedAt: "2026-05-12T00:00:00.000Z"
     })),
-    setSkillMembership: vi.fn(async () => mocks.libraryState)
+    setSkillMembership: vi.fn(async () => mocks.libraryState),
+    discoverImportableSkills: vi.fn(async () => [
+      { id: "fresh", name: "fresh", sourcePath: "/home/test/skills/fresh", targetPath: "/home/test/skills", valid: true }
+    ]),
+    importSkillsFromTargets: vi.fn(async () => [{ id: "fresh" }])
   };
 });
 
@@ -82,6 +86,8 @@ vi.mock("@skiller/core", () => ({
     audit: vi.fn()
   })),
   discoverGithubSkills: vi.fn(),
+  discoverImportableSkills: mocks.discoverImportableSkills,
+  importSkillsFromTargets: mocks.importSkillsFromTargets,
   expandHome: (value: string) => value.replace("~", "/home/test"),
   installGithubSkill: mocks.installGithubSkill,
   installLocalSkill: mocks.installLocalSkill,
@@ -182,6 +188,43 @@ describe("ipc handlers", () => {
       state: mocks.libraryState,
       scanErrors: [{ path: "/home/test/skills", message: "permission denied" }]
     });
+  });
+
+  it("discovers importable skills from global targets", async () => {
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    registerIpcHandlers();
+
+    const handler = mocks.handlers.get("import:discover");
+    expect(handler).toEqual(expect.any(Function));
+
+    const result = await handler?.({});
+
+    expect(mocks.discoverImportableSkills).toHaveBeenCalledWith({
+      libraryPath: "/home/test/skiller",
+      targets: [{ path: "~/skills", enabled: true }]
+    });
+    expect(result).toEqual([
+      { id: "fresh", name: "fresh", sourcePath: "/home/test/skills/fresh", targetPath: "/home/test/skills", valid: true }
+    ]);
+  });
+
+  it("imports selected skills then runs a one-way scan", async () => {
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    registerIpcHandlers();
+
+    const handler = mocks.handlers.get("import:apply");
+    expect(handler).toEqual(expect.any(Function));
+
+    const result = await handler?.({}, ["/home/test/skills/fresh"]);
+
+    expect(mocks.importSkillsFromTargets).toHaveBeenCalledWith({
+      libraryPath: "/home/test/skiller",
+      sourcePaths: ["/home/test/skills/fresh"],
+      globalTargetInstallMode: "symlink"
+    });
+    // Importing distributes via a normal one-way scan (no import flag).
+    expect(mocks.scanTargets).toHaveBeenCalled();
+    expect(result).toEqual([{ id: "fresh" }]);
   });
 
   it("registers app update handlers", async () => {

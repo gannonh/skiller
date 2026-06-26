@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("skiller", {
   replaceSkillTags: (skillId: string, tags: string[]) => ipcRenderer.invoke("library:replace-skill-tags", skillId, tags),
   setSkillSetEnabled: (skillSetId: string, enabled: boolean) => ipcRenderer.invoke("library:set-skill-set-enabled", skillSetId, enabled),
   scanTargets: () => ipcRenderer.invoke("targets:scan"),
+  discoverImportableSkills: () => ipcRenderer.invoke("import:discover"),
+  importSkills: (sourcePaths: string[]) => ipcRenderer.invoke("import:apply", sourcePaths),
   saveTargets: (targets: Array<{ path: string; enabled: boolean }>) => ipcRenderer.invoke("targets:save", targets),
   chooseTargetDirectory: () => ipcRenderer.invoke("targets:choose-directory"),
   getConfig: () => ipcRenderer.invoke("config:get"),

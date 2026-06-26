@@ -4,7 +4,9 @@ import {
   MetadataStore,
   SkillsShClient,
   discoverGithubSkills,
+  discoverImportableSkills,
   expandHome,
+  importSkillsFromTargets,
   installGithubSkill,
   installLocalSkill,
   installSkillsShSkill,
@@ -181,6 +183,28 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
       state: await store.libraryState(),
       scanErrors: scanResult.errors
     } satisfies SetSkillSetEnabledResult;
+  });
+
+  ipcMain.handle("import:discover", async () => {
+    const config = await loadConfig();
+    // Only global targets (config.targets) are scanned for importable skills;
+    // project (skill-set) targets are not surfaced here.
+    return discoverImportableSkills({
+      libraryPath: expandHome(config.libraryPath),
+      targets: config.targets
+    });
+  });
+
+  ipcMain.handle("import:apply", async (_event, sourcePaths: string[]) => {
+    const config = await loadConfig();
+    const imported = await importSkillsFromTargets({
+      libraryPath: expandHome(config.libraryPath),
+      sourcePaths,
+      globalTargetInstallMode: config.globalTargetInstallMode
+    });
+    // Distribute the newly imported skills to their targets via a one-way scan.
+    await scanConfig(config);
+    return imported;
   });
 
   ipcMain.handle("library:delete", async (_event, skillId: string) => {

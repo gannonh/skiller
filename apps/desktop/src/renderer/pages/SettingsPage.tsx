@@ -1,9 +1,11 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@workspace/ui/components/card";
+import { Checkbox } from "@workspace/ui/components/checkbox";
 import { Input } from "@workspace/ui/components/input";
 import { Separator } from "@workspace/ui/components/separator";
-import type { TargetInstallMode } from "@skiller/core";
+import type { ImportableSkill, TargetInstallMode } from "@skiller/core";
 import { skillerApi } from "../lib/api.js";
 
 function InstallModePicker({
@@ -47,6 +49,131 @@ function InstallModePicker({
           Copies
         </Button>
       </div>
+    </div>
+  );
+}
+
+function ImportSection() {
+  const [skills, setSkills] = useState<ImportableSkill[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [status, setStatus] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  async function scan() {
+    setIsScanning(true);
+    setStatus("Scanning global targets");
+    try {
+      const found = await skillerApi.discoverImportableSkills();
+      setSkills(found);
+      setSelected(new Set());
+      setStatus(found.length === 0 ? "No unmanaged skills found in global targets" : `Found ${found.length} unmanaged skill${found.length === 1 ? "" : "s"}`);
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsScanning(false);
+    }
+  }
+
+  useEffect(() => {
+    void scan();
+    // Scan once on mount; further scans are user-triggered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function importSkills(sourcePaths: string[]) {
+    if (sourcePaths.length === 0) return;
+    setIsImporting(true);
+    setStatus(`Importing ${sourcePaths.length} skill${sourcePaths.length === 1 ? "" : "s"}`);
+    try {
+      const imported = await skillerApi.importSkills(sourcePaths);
+      setStatus(`Imported ${imported.length} skill${imported.length === 1 ? "" : "s"}`);
+      await scan();
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  function toggle(sourcePath: string, checked: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (checked) next.add(sourcePath);
+      else next.delete(sourcePath);
+      return next;
+    });
+  }
+
+  const busy = isScanning || isImporting;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-medium">Import</div>
+          <p className="text-xs text-muted-foreground">
+            Skills found in your global targets that Skiller does not manage. Import to bring them into your library.
+          </p>
+        </div>
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void scan()}>
+          {isScanning ? "Scanning" : "Scan"}
+        </Button>
+      </div>
+
+      {skills.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => void importSkills(skills.map((skill) => skill.sourcePath))}
+            >
+              Import all
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy || selected.size === 0}
+              onClick={() => void importSkills([...selected])}
+            >
+              Import selected{selected.size > 0 ? ` (${selected.size})` : ""}
+            </Button>
+          </div>
+          <ul className="flex flex-col gap-1">
+            {skills.map((skill) => (
+              <li
+                key={skill.sourcePath}
+                className="flex items-center gap-2 rounded-md border p-2"
+              >
+                <Checkbox
+                  checked={selected.has(skill.sourcePath)}
+                  disabled={busy}
+                  onCheckedChange={(checked) => toggle(skill.sourcePath, Boolean(checked))}
+                  aria-label={`Select ${skill.name}`}
+                />
+                <span className="min-w-0 flex-1 truncate text-sm">{skill.name}</span>
+                {!skill.valid ? <Badge variant="destructive">invalid</Badge> : null}
+                <span className="truncate text-xs text-muted-foreground">{skill.targetPath}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  aria-label={`Import ${skill.name}`}
+                  onClick={() => void importSkills([skill.sourcePath])}
+                >
+                  Import
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {status ? <span className="text-sm text-muted-foreground">{status}</span> : null}
     </div>
   );
 }
@@ -172,6 +299,8 @@ export function SettingsPage() {
           Install mode changes save immediately. Use copies when a coding agent does not follow symlinks. Changing
           install mode takes effect on the next target sync.
         </p>
+        <Separator />
+        <ImportSection />
       </CardContent>
     </Card>
   );

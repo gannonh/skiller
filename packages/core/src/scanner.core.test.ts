@@ -49,7 +49,7 @@ describe("scanTargets core", () => {
     await fs.ensureDir(skill);
     await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
 
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)], import: true });
 
     expect(result.imported).toHaveLength(1);
     expect(result.imported[0]?.source).toEqual({ type: "unknown", discoveredFrom: skill });
@@ -217,7 +217,8 @@ describe("scanTargets core", () => {
     const result = await scanTargets({
       libraryPath: library,
       targets: [enabledTarget(target)],
-      globalTargetInstallMode: "copy"
+      globalTargetInstallMode: "copy",
+      import: true
     });
 
     expect(result.imported).toHaveLength(1);
@@ -957,7 +958,7 @@ describe("scanTargets core", () => {
     await fs.ensureDir(skill);
     await fs.writeFile(path.join(skill, "SKILL.md"), "Plain markdown");
 
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)], import: true });
 
     expect(result.imported.map((metadata) => metadata.id)).toEqual(["example-skill"]);
     await expect(fs.pathExists(path.join(library, "example-skill", "SKILL.md"))).resolves.toBe(true);
@@ -970,7 +971,7 @@ describe("scanTargets core", () => {
     await fs.ensureDir(skill);
     await fs.writeFile(path.join(skill, "SKILL.md"), "---\n\n---\n");
 
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)], import: true });
 
     expect(result.imported.map((metadata) => metadata.id)).toEqual(["empty-frontmatter"]);
   });
@@ -982,7 +983,7 @@ describe("scanTargets core", () => {
     await fs.ensureDir(skill);
     await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: .\ndescription: Dot.\n---\n");
 
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)], import: true });
 
     expect(result.imported.map((metadata) => metadata.id)).toEqual(["skill"]);
     expect(await fs.pathExists(path.join(library, "skill", "SKILL.md"))).toBe(true);
@@ -1003,7 +1004,7 @@ describe("scanTargets core", () => {
     await fs.writeFile(path.join(firstSkill, "SKILL.md"), firstContent);
     await fs.writeFile(path.join(secondSkill, "SKILL.md"), secondContent);
 
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(firstTarget), enabledTarget(secondTarget)] });
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(firstTarget), enabledTarget(secondTarget)], import: true });
 
     expect(result.imported).toHaveLength(2);
     expect(result.imported.map((metadata) => metadata.id)).toEqual(["first", "second"]);
@@ -1023,7 +1024,7 @@ describe("scanTargets core", () => {
     await fs.writeFile(path.join(existingLibraryFolder, "SKILL.md"), "---\nname: old-example\ndescription: Old.\n---\n");
     await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
 
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)], import: true });
 
     expect(result.imported.map((metadata) => metadata.id)).toEqual(["example-2"]);
     await expect(fs.pathExists(path.join(library, "example-2", "SKILL.md"))).resolves.toBe(true);
@@ -1042,8 +1043,8 @@ describe("scanTargets core", () => {
     await fs.writeFile(path.join(firstSkill, "SKILL.md"), content);
     await fs.writeFile(path.join(secondSkill, "SKILL.md"), content);
 
-    const firstResult = await scanTargets({ libraryPath: library, targets: [enabledTarget(firstTarget)] });
-    const secondResult = await scanTargets({ libraryPath: library, targets: [enabledTarget(secondTarget)] });
+    const firstResult = await scanTargets({ libraryPath: library, targets: [enabledTarget(firstTarget)], import: true });
+    const secondResult = await scanTargets({ libraryPath: library, targets: [enabledTarget(secondTarget)], import: true });
     const saved = await new MetadataStore(library).list();
 
     expect(firstResult.imported.map((metadata) => metadata.id)).toEqual(["kata-health"]);
@@ -1071,7 +1072,8 @@ describe("scanTargets core", () => {
     await scanTargets({
       libraryPath: library,
       targets: [enabledTarget(firstTarget)],
-      globalTargetInstallMode: "copy"
+      globalTargetInstallMode: "copy",
+      import: true
     });
     const secondResult = await scanTargets({
       libraryPath: library,

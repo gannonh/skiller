@@ -161,7 +161,7 @@ describe("scanTargets reconciliation", () => {
     await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
     fileOpsMock.replaceWithSymlink.mockRejectedValueOnce("symlink failed");
 
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)], import: true });
 
     expect(result.errors).toEqual([{ path: skill, message: "symlink failed" }]);
   });
@@ -174,7 +174,7 @@ describe("scanTargets reconciliation", () => {
     await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
     fileOpsMock.replaceWithSymlink.mockRejectedValueOnce(new Error("symlink failed"));
 
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)] });
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target)], import: true });
     const saved = await new MetadataStore(library).list();
 
     expect(result.imported).toHaveLength(0);
@@ -190,7 +190,7 @@ describe("scanTargets reconciliation", () => {
     await fs.ensureDir(skill);
     await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
 
-    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target), enabledTarget(target)] });
+    const result = await scanTargets({ libraryPath: library, targets: [enabledTarget(target), enabledTarget(target)], import: true });
     const saved = await new MetadataStore(library).list();
 
     expect(result.imported.map((metadata) => metadata.id)).toEqual(["example"]);
@@ -997,6 +997,7 @@ describe("scanTargets reconciliation", () => {
     const result = await scanTargets({
       libraryPath: library,
       targets: [enabledTarget(target)],
+      import: true,
       importOnly: true
     });
 

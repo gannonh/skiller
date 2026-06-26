@@ -20,6 +20,8 @@ describe("desktop preload", () => {
     expect(preloadSource).toContain("deleteSkillSet");
     expect(preloadSource).toContain("replaceSkillTags");
     expect(preloadSource).toContain("setSkillSetEnabled");
+    expect(preloadSource).toContain("discoverImportableSkills");
+    expect(preloadSource).toContain("importSkills");
     expect(preloadSource).toContain("registrySkill");
     expect(preloadSource).toContain("registryAudit");
     expect(preloadSource).toContain("getAppUpdateState");

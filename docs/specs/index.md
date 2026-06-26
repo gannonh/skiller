@@ -12,6 +12,7 @@ Product specs and implementation plans for Skiller Desktop and `@skiller/core`.
 | Library source links | [Source links design](/specs/library-source-links-design.md) | [Source links plan](/specs/library-source-links.md) |
 | App auto update | [App auto update design](/specs/app-auto-update-design.md) | [App auto update plan](/specs/app-auto-update.md) |
 | Skill sets M2M | — | [Many-to-many skill sets](/specs/library-skill-sets-many-to-many.md) |
+| One-way sync & import | — | [One-way sync and opt-in import](/specs/one-way-sync-and-import.md) |
 
 ## Active / planned
 

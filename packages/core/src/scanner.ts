@@ -14,11 +14,15 @@ export interface ScanTargetsInput {
   globalTargetInstallMode?: TargetInstallMode;
   projectTargetInstallMode?: TargetInstallMode;
   /**
-   * When true, only run the import/discovery phase (first loop) that detects
-   * new skill directories in targets. Skip the sync/reconcile phase (second
-   * loop) that creates and removes managed symlinks/copies. Used by
-   * watcher-triggered scans to avoid a feedback loop with the filesystem
-   * watcher.
+   * When true, adopt unmanaged skill directories found in targets into the
+   * library (target -> library). This is opt-in: by default scans are
+   * one-way (library -> targets) so the scanner never pulls target folders
+   * back into the catalog. Only an explicit user-triggered import sets this.
+   */
+  import?: boolean;
+  /**
+   * When true, skip the sync/reconcile phase (library -> targets) and only
+   * run the import phase. Has no effect unless `import` is also true.
    */
   importOnly?: boolean;
 }
@@ -26,6 +30,30 @@ export interface ScanTargetsInput {
 export interface TargetSkillChange {
   skillId: string;
   targetPath: string;
+}
+
+export interface ImportableSkill {
+  /** Skill id that would be assigned in the library (deduped against existing ids). */
+  id: string;
+  /** Declared name from SKILL.md frontmatter, or the folder slug. */
+  name: string;
+  /** Absolute path to the skill folder inside the target. */
+  sourcePath: string;
+  /** Absolute path to the target directory that contains the folder. */
+  targetPath: string;
+  valid: boolean;
+}
+
+export interface DiscoverImportableSkillsInput {
+  libraryPath: string;
+  targets: TargetConfig[];
+}
+
+export interface ImportSkillsInput {
+  libraryPath: string;
+  /** Absolute skill folder paths (ImportableSkill.sourcePath) to adopt. */
+  sourcePaths: string[];
+  globalTargetInstallMode?: TargetInstallMode;
 }
 
 export interface ScanTargetsResult {
@@ -435,6 +463,13 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
     markEnabled(metadata, targetDir);
   }
 
+  // Target scan phase. The reconcile of already-known skills found as plain
+  // folders (converting them to the configured install form) is part of the
+  // one-way library -> target sync and always runs. Adopting UNKNOWN folders
+  // into the catalog (target -> library) is opt-in via `input.import`; by
+  // default the scanner never pulls unmanaged target folders back into the
+  // library, which prevents the feedback loop where Skiller's own target
+  // copies get re-adopted as new library skills.
   for (const { path: targetDir, enabled: targetEnabled } of targets) {
     if (!targetEnabled) continue;
     if (await isUnsafeTargetDirectory(targetDir, input.libraryPath)) continue;
@@ -469,6 +504,9 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
           markEnabled(existingMetadata, targetDir);
           continue;
         }
+
+        // Unknown folder: only adopt into the library on an explicit import.
+        if (!input.import) continue;
 
         const id = await uniqueSkillId(input.libraryPath, declaredId);
         const librarySkillPath = await copySkillToLibrary(targetSkillPath, input.libraryPath, id);
@@ -588,4 +626,121 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
   }
 
   return { imported, enabled, disabled, errors };
+}
+
+/**
+ * List skill folders found in the given (global) targets that Skiller does not
+ * already manage, without importing them. A folder is importable when it is a
+ * real directory containing SKILL.md (not a symlink) whose declared skill id is
+ * not already tracked in the library. This is the read-only half of the opt-in
+ * import flow; nothing is written to the library or the targets.
+ */
+export async function discoverImportableSkills(
+  input: DiscoverImportableSkillsInput
+): Promise<ImportableSkill[]> {
+  if (!path.isAbsolute(input.libraryPath)) {
+    throw new Error("Library path must be absolute before discovering importable skills");
+  }
+
+  const store = new MetadataStore(input.libraryPath);
+  const records = await store.list();
+  const trackedIds = new Set(records.map((record) => record.id));
+  const targets = uniqueTargets(input.targets.map(expandTargetConfig));
+  const seenIds = new Set<string>();
+  const importable: ImportableSkill[] = [];
+
+  for (const { path: targetDir, enabled: targetEnabled } of targets) {
+    if (!targetEnabled) continue;
+    if (await isUnsafeTargetDirectory(targetDir, input.libraryPath)) continue;
+
+    let entries: string[];
+    try {
+      entries = await fs.readdir(targetDir);
+    } catch (error) {
+      if (isMissingPathError(error)) continue;
+      throw error;
+    }
+
+    for (const entry of entries) {
+      const targetSkillPath = path.join(targetDir, entry);
+
+      try {
+        const stat = await fs.lstat(targetSkillPath);
+        // Symlinks are Skiller-managed installs; never offer them for import.
+        if (stat.isSymbolicLink()) continue;
+        if (!stat.isDirectory()) continue;
+        if (!(await isSkillDirectory(targetSkillPath))) continue;
+
+        const declaredId = await skillIdFromSkillPath(targetSkillPath);
+        // Already tracked by Skiller (managed copy or known skill): skip.
+        if (trackedIds.has(declaredId)) continue;
+        // Offer each skill id once even if it appears in multiple targets.
+        if (seenIds.has(declaredId)) continue;
+        seenIds.add(declaredId);
+
+        const validation = await validateSkill(targetSkillPath);
+        importable.push({
+          id: declaredId,
+          name: declaredId,
+          sourcePath: targetSkillPath,
+          targetPath: targetDir,
+          valid: validation.valid
+        });
+      } catch (error) {
+        if (isMissingPathError(error)) continue;
+        throw error;
+      }
+    }
+  }
+
+  return importable;
+}
+
+/**
+ * Adopt the given skill folders (by their absolute source paths) into the
+ * library. This is the explicit, user-triggered import: it copies each folder
+ * into the library and records metadata, but does not distribute to targets
+ * (the next sync handles that based on enablement). Returns the imported
+ * metadata records.
+ */
+export async function importSkillsFromTargets(input: ImportSkillsInput): Promise<SkillMetadata[]> {
+  if (!path.isAbsolute(input.libraryPath)) {
+    throw new Error("Library path must be absolute before importing skills");
+  }
+
+  const store = new MetadataStore(input.libraryPath);
+  const imported: SkillMetadata[] = [];
+  const requestedPaths = Array.from(new Set(input.sourcePaths.map((value) => expandHome(value))));
+
+  for (const sourcePath of requestedPaths) {
+    if (!(await isSkillDirectory(sourcePath))) continue;
+
+    const declaredId = await skillIdFromSkillPath(sourcePath);
+    const id = await uniqueSkillId(input.libraryPath, declaredId);
+    const librarySkillPath = await copySkillToLibrary(sourcePath, input.libraryPath, id);
+
+    try {
+      const validation = await validateSkill(librarySkillPath);
+      const metadata: SkillMetadata = {
+        id,
+        name: id,
+        libraryPath: librarySkillPath,
+        source: { type: "unknown", discoveredFrom: sourcePath },
+        installedAt: new Date().toISOString(),
+        contentHash: await hashDirectory(librarySkillPath),
+        keepUpdated: false,
+        enabled: true,
+        tags: [],
+        validation
+      };
+      await store.save(metadata);
+      imported.push(metadata);
+    } catch (error) {
+      // Roll back the partial library copy if validate/save fails.
+      await fs.remove(librarySkillPath);
+      throw error;
+    }
+  }
+
+  return imported;
 }

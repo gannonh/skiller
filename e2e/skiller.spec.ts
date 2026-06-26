@@ -248,6 +248,41 @@ test("validates settings paths in browser preview mode", async ({ page }) => {
   await expect(input).toHaveValue("/tmp/skiller");
 });
 
+test("imports unmanaged skills from the Settings import section", async ({ page }) => {
+  await page.addInitScript(() => {
+    const importable = [
+      { id: "stray-one", name: "stray-one", sourcePath: "/targets/agents/stray-one", targetPath: "/targets/agents", valid: true },
+      { id: "stray-two", name: "stray-two", sourcePath: "/targets/agents/stray-two", targetPath: "/targets/agents", valid: false }
+    ];
+    const imported: string[] = [];
+    window.skiller = {
+      discoverImportableSkills: async () => importable.filter((skill) => !imported.includes(skill.sourcePath)),
+      importSkills: async (sourcePaths: string[]) => {
+        imported.push(...sourcePaths);
+        return sourcePaths.map((sourcePath) => ({ id: sourcePath }));
+      }
+    } as unknown as typeof window.skiller;
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+
+  // The import list is populated by the on-mount scan.
+  await expect(page.getByText("Found 2 unmanaged skills")).toBeVisible();
+  await expect(page.getByText("stray-one")).toBeVisible();
+  await expect(page.getByText("stray-two")).toBeVisible();
+  await expect(page.locator('[data-slot="badge"]').filter({ hasText: /^invalid$/ })).toBeVisible();
+
+  // Import a single skill; it disappears from the list on rescan.
+  await page.getByRole("button", { name: "Import stray-one" }).click();
+  await expect(page.getByText("stray-one")).toHaveCount(0);
+  await expect(page.getByText("Found 1 unmanaged skill")).toBeVisible();
+  await expect(page.getByText("stray-two")).toBeVisible();
+
+  // Import all remaining; the list empties.
+  await page.getByRole("button", { name: "Import all" }).click();
+  await expect(page.getByText("No unmanaged skills found in global targets")).toBeVisible();
+});
+
 test("searches discover results", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();

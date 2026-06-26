@@ -1,5 +1,6 @@
 import type {
   DiscoverGithubSkillsResult,
+  ImportableSkill,
   LibraryState as CoreLibraryState,
   SaveSkillSetInput,
   ScanTargetsResult,
@@ -9,7 +10,7 @@ import type {
   TargetConfig
 } from "@skiller/core";
 
-export type { SaveSkillSetInput, SkillSetMetadata };
+export type { ImportableSkill, SaveSkillSetInput, SkillSetMetadata };
 
 export type LeaderboardType = "all-time" | "trending" | "hot";
 
@@ -99,6 +100,8 @@ export interface SkillerApi {
   replaceSkillTags: (skillId: string, tags: string[]) => Promise<LibraryState>;
   setSkillSetEnabled: (skillSetId: string, enabled: boolean) => Promise<SetSkillSetEnabledResult>;
   scanTargets: () => Promise<ScanTargetsResult>;
+  discoverImportableSkills: () => Promise<ImportableSkill[]>;
+  importSkills: (sourcePaths: string[]) => Promise<SkillMetadata[]>;
   saveTargets: (targets: TargetConfig[]) => Promise<SkillerConfig>;
   chooseTargetDirectory: () => Promise<string | null>;
   getConfig: () => Promise<SkillerConfig>;
@@ -407,6 +410,8 @@ function createBrowserPreviewApi(): SkillerApi {
       return { state: fallbackLibraryState(), scanErrors: [] };
     },
     scanTargets: async () => ({ imported: [], enabled: [], disabled: [], errors: [] }),
+    discoverImportableSkills: async () => [],
+    importSkills: async () => [],
     saveTargets: async (targets) => {
       config = { ...config, targets };
       return config;

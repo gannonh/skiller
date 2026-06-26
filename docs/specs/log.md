@@ -1,5 +1,9 @@
 # Specs Log
 
+## 2026-06-25
+
+- Made `scanTargets` one-way by default and gated target->library adoption behind an opt-in `import` flag, fixing a duplicate-skill feedback loop. Added `discoverImportableSkills` / `importSkillsFromTargets` and a Settings **Import** section (scan on mount + Scan button, import all/selected/individual). New spec: [one-way-sync-and-import.md](/specs/one-way-sync-and-import.md).
+
 ## 2026-06-23
 
 - Reworked skill-set target scoping into an additive model: skill sets only carry project targets (no scope field) and never suppress global distribution. Removed per-skill `targetScope` / `SkillTargetScope` and `TargetScope` on `TargetConfig`. The skill enable toggle now gates global-target sync only; project-target sync is driven by skill-set membership. Updated [library-skill-sets-many-to-many.md](/specs/library-skill-sets-many-to-many.md) and [library-skill-sets-and-tags-design.md](/specs/library-skill-sets-and-tags-design.md).
