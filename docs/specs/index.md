@@ -13,6 +13,7 @@ Product specs and implementation plans for Skiller Desktop and `@skiller/core`.
 | App auto update | [App auto update design](/specs/app-auto-update-design.md) | [App auto update plan](/specs/app-auto-update.md) |
 | Skill sets M2M | — | [Many-to-many skill sets](/specs/library-skill-sets-many-to-many.md) |
 | One-way sync & import | — | [One-way sync and opt-in import](/specs/one-way-sync-and-import.md) |
+| Library health & repair | — | [Library health and self-repair](/specs/library-health-and-repair.md) |
 
 ## Active / planned
 

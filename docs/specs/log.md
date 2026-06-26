@@ -1,5 +1,9 @@
 # Specs Log
 
+## 2026-06-26
+
+- Added a library health check + self-repair: `checkLibraryHealth` / `repairLibrary` detect and re-fetch tracked skills whose copy is missing, empty, invalid, or drifted, run on desktop startup and via a Settings **Repair library** button. Fixed copy-mode sync to repopulate empty target slots instead of leaving them empty. New spec: [library-health-and-repair.md](/specs/library-health-and-repair.md).
+
 ## 2026-06-25
 
 - Made `scanTargets` one-way by default and gated target->library adoption behind an opt-in `import` flag, fixing a duplicate-skill feedback loop. Added `discoverImportableSkills` / `importSkillsFromTargets` and a Settings **Import** section (scan on mount + Scan button, import all/selected/individual). New spec: [one-way-sync-and-import.md](/specs/one-way-sync-and-import.md).

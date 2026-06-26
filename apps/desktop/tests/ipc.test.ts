@@ -51,7 +51,13 @@ const mocks = vi.hoisted(() => {
     discoverImportableSkills: vi.fn(async () => [
       { id: "fresh", name: "fresh", sourcePath: "/home/test/skills/fresh", targetPath: "/home/test/skills", valid: true }
     ]),
-    importSkillsFromTargets: vi.fn(async () => [{ id: "fresh" }])
+    importSkillsFromTargets: vi.fn(async () => [{ id: "fresh" }]),
+    repairLibrary: vi.fn(async () => ({
+      checkedAt: "t",
+      repaired: [{ id: "okf", reason: "empty-folder", status: "repaired" }],
+      skipped: [],
+      errors: []
+    }))
   };
 });
 
@@ -88,6 +94,7 @@ vi.mock("@skiller/core", () => ({
   discoverGithubSkills: vi.fn(),
   discoverImportableSkills: mocks.discoverImportableSkills,
   importSkillsFromTargets: mocks.importSkillsFromTargets,
+  repairLibrary: mocks.repairLibrary,
   expandHome: (value: string) => value.replace("~", "/home/test"),
   installGithubSkill: mocks.installGithubSkill,
   installLocalSkill: mocks.installLocalSkill,
@@ -187,6 +194,29 @@ describe("ipc handlers", () => {
     expect(result).toEqual({
       state: mocks.libraryState,
       scanErrors: [{ path: "/home/test/skills", message: "permission denied" }]
+    });
+  });
+
+  it("repairs the library and re-scans when skills were restored", async () => {
+    const { registerIpcHandlers } = await import("../src/main/ipc.js");
+    registerIpcHandlers();
+
+    const handler = mocks.handlers.get("library:repair");
+    expect(handler).toEqual(expect.any(Function));
+
+    const result = await handler?.({});
+
+    expect(mocks.repairLibrary).toHaveBeenCalledWith({ libraryPath: "/home/test/skiller" });
+    // Restored skills trigger a one-way redistribution scan.
+    expect(mocks.scanTargets).toHaveBeenCalled();
+    expect(result).toEqual({
+      report: {
+        checkedAt: "t",
+        repaired: [{ id: "okf", reason: "empty-folder", status: "repaired" }],
+        skipped: [],
+        errors: []
+      },
+      state: mocks.libraryState
     });
   });
 

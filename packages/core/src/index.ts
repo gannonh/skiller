@@ -3,6 +3,7 @@ export const SKILLER_VERSION = "0.1.0";
 export * from "./config.js";
 export * from "./file-ops.js";
 export * from "./installer.js";
+export * from "./library-health.js";
 export * from "./metadata-store.js";
 export * from "./skill-sets.js";
 export * from "./paths.js";

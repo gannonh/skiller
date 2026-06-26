@@ -8,6 +8,7 @@ import {
   expandHome,
   importSkillsFromTargets,
   installGithubSkill,
+  repairLibrary,
   installLocalSkill,
   installSkillsShSkill,
   loadConfig,
@@ -34,6 +35,10 @@ type InstallRegistryInput =
 export type SetSkillSetEnabledResult = {
   state: Awaited<ReturnType<MetadataStore["libraryState"]>>;
   scanErrors: Awaited<ReturnType<typeof runLibraryScan>>["errors"];
+};
+export type RepairLibraryResult = {
+  report: Awaited<ReturnType<typeof repairLibrary>>;
+  state: Awaited<ReturnType<MetadataStore["libraryState"]>>;
 };
 export interface IpcHandlerDependencies {
   appUpdateService?: Pick<AppUpdateService, "getState" | "checkNow" | "installReadyUpdate">;
@@ -183,6 +188,20 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies = {}): 
       state: await store.libraryState(),
       scanErrors: scanResult.errors
     } satisfies SetSkillSetEnabledResult;
+  });
+
+  ipcMain.handle("library:repair", async () => {
+    const config = await loadConfig();
+    const libraryPath = expandHome(config.libraryPath);
+    const report = await repairLibrary({ libraryPath });
+    // Re-distribute any restored skills to their targets via a one-way scan.
+    if (report.repaired.length > 0) {
+      await scanConfig(config);
+    }
+    return {
+      report,
+      state: await new MetadataStore(libraryPath).libraryState()
+    } satisfies RepairLibraryResult;
   });
 
   ipcMain.handle("import:discover", async () => {

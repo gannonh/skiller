@@ -839,8 +839,45 @@ describe("scanTargets core", () => {
       globalTargetInstallMode: "copy"
     });
 
-    expect(result.enabled).toEqual([]);
-    expect(await fs.pathExists(path.join(targetSkill, "SKILL.md"))).toBe(false);
+    // An empty/invalid directory in Skiller's slot is replaced with a fresh copy.
+    expect(result.enabled).toEqual([{ skillId: "example", targetPath: target }]);
+    expect(await fs.pathExists(path.join(targetSkill, "SKILL.md"))).toBe(true);
+  });
+
+  it("repopulates an empty target folder in copy mode", async () => {
+    // Regression: an empty folder left in a target (e.g. after content loss)
+    // must be refilled from the library rather than left empty forever.
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash: await hashDirectory(librarySkill),
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+    // Pre-existing EMPTY target folder (no SKILL.md).
+    await fs.ensureDir(targetSkill);
+
+    const result = await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect(result.enabled).toEqual([{ skillId: "example", targetPath: target }]);
+    await expect(fs.readFile(path.join(targetSkill, "SKILL.md"), "utf8")).resolves.toContain("description: Example.");
   });
 
   it("reports lstat failures while ensuring managed copies", async () => {

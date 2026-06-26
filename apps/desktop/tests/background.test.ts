@@ -52,6 +52,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
       watchTargetDirectories: vi.fn(() => ({ close }) as never),
       createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
@@ -78,6 +79,9 @@ describe("background jobs", () => {
     };
     const loadConfig = vi
       .fn()
+      // 1) startBackgroundJobs top-level, 2) startup repair, 3) initial scan,
+      // 4) watcher-triggered scan reloads the updated config.
+      .mockResolvedValueOnce(config)
       .mockResolvedValueOnce(config)
       .mockResolvedValueOnce(config)
       .mockResolvedValueOnce(updatedConfig);
@@ -91,6 +95,7 @@ describe("background jobs", () => {
       loadConfig,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets,
       watchTargetDirectories: vi.fn((_config, callback) => {
         onChange = callback;
@@ -140,6 +145,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: vi.fn(() => ({ pruneMissing, libraryState: vi.fn(async () => ({ skills: [], skillSets: [], tags: [] })) })) as never,
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets,
       watchTargetDirectories: vi.fn(() => ({ close }) as never),
       createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
@@ -149,6 +155,158 @@ describe("background jobs", () => {
     await vi.waitFor(() => expect(scanTargets).toHaveBeenCalledTimes(1));
     expect(pruneMissing).toHaveBeenCalledTimes(1);
     expect(pruneMissing.mock.invocationCallOrder[0]).toBeLessThan(scanTargets.mock.invocationCallOrder[0]);
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("repairs the library on startup and notifies the renderer", async () => {
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const repairLibrary = vi.fn(async () => ({
+      checkedAt: "t",
+      repaired: [{ id: "okf", reason: "empty-folder", status: "repaired" }],
+      skipped: [],
+      errors: []
+    }));
+    const close = vi.fn();
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      repairLibrary: repairLibrary as never,
+      scanTargets,
+      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    await vi.waitFor(() => expect(scanTargets).toHaveBeenCalledTimes(1));
+    expect(repairLibrary).toHaveBeenCalledTimes(1);
+    // Repair runs before the initial scan distributes restored skills.
+    expect(repairLibrary.mock.invocationCallOrder[0]).toBeLessThan(scanTargets.mock.invocationCallOrder[0]);
+    expect(window.webContents.send).toHaveBeenCalledWith("background:library-repaired", {
+      repaired: 1,
+      skipped: 0,
+      errors: 0
+    });
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("does not notify when startup repair finds nothing to fix", async () => {
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const repairLibrary = vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] }));
+    const close = vi.fn();
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      repairLibrary: repairLibrary as never,
+      scanTargets,
+      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    // Wait for startup to finish (repair then scan).
+    await vi.waitFor(() => expect(scanTargets).toHaveBeenCalledTimes(1));
+    expect(repairLibrary).toHaveBeenCalledTimes(1);
+    expect(window.webContents.send).not.toHaveBeenCalledWith("background:library-repaired", expect.anything());
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("notifies the renderer when startup repair reports only errors", async () => {
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const repairLibrary = vi.fn(async () => ({
+      checkedAt: "t",
+      repaired: [],
+      skipped: [],
+      errors: [{ id: "okf", reason: "empty-folder", status: "error", message: "boom" }]
+    }));
+    const close = vi.fn();
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      repairLibrary: repairLibrary as never,
+      scanTargets,
+      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    await vi.waitFor(() => {
+      expect(window.webContents.send).toHaveBeenCalledWith("background:library-repaired", {
+        repaired: 0,
+        skipped: 0,
+        errors: 1
+      });
+    });
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("reports startup library repair failures without blocking the scan", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const close = vi.fn();
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => {
+        throw new Error("repair failed");
+      }) as never,
+      scanTargets,
+      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    await vi.waitFor(() => {
+      expect(window.webContents.send).toHaveBeenCalledWith("background:scan-error", { message: "repair failed" });
+    });
+    // The scan still runs even though repair failed.
+    await vi.waitFor(() => expect(scanTargets).toHaveBeenCalledTimes(1));
+
+    jobs.forEach((job) => job.stop());
+  });
+
+  it("stringifies non-Error startup repair failures", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const close = vi.fn();
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => {
+        throw "repair failed";
+      }) as never,
+      scanTargets,
+      watchTargetDirectories: vi.fn(() => ({ close }) as never),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    await vi.waitFor(() => {
+      expect(window.webContents.send).toHaveBeenCalledWith("background:scan-error", { message: "repair failed" });
+    });
 
     jobs.forEach((job) => job.stop());
   });
@@ -164,6 +322,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets: vi.fn(async () => {
         throw new Error("scan failed");
       }),
@@ -203,6 +362,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
       watchTargetDirectories: vi.fn((_config, _onChange, onError) => {
         onWatcherError = onError;
@@ -230,6 +390,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
       watchTargetDirectories: vi.fn((_config, _onChange, onError) => {
         onWatcherError = onError;
@@ -257,6 +418,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
       watchTargetDirectories: vi.fn((_config, _onChange, onError) => {
         onWatcherError = onError;
@@ -284,6 +446,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets: vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] })),
       watchTargetDirectories: vi.fn((_config, _onChange, onError) => {
         onWatcherError = onError;
@@ -313,6 +476,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets,
       watchTargetDirectories: vi.fn((_config, callback) => {
         onChange = callback;
@@ -357,6 +521,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets,
       watchTargetDirectories: vi.fn((_config, callback) => {
         onChange = callback;
@@ -398,6 +563,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets,
       watchTargetDirectories: vi.fn(() => ({ close }) as never),
       createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
@@ -425,6 +591,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets,
       watchTargetDirectories: vi.fn((_config, callback) => {
         onChange = callback;
@@ -455,6 +622,7 @@ describe("background jobs", () => {
       loadConfig: async () => config,
       expandHome: (value) => value.replace("~", "/home/test"),
       metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
       scanTargets: vi.fn(async () => {
         throw "scan failed";
       }),

@@ -3,6 +3,7 @@ import {
   createUpdateInterval,
   expandHome,
   loadConfig,
+  repairLibrary,
   scanTargets,
   watchTargetDirectories
 } from "@skiller/core";
@@ -14,6 +15,7 @@ interface BackgroundJobDependencies {
   loadConfig: typeof loadConfig;
   expandHome: typeof expandHome;
   metadataStore: typeof MetadataStore;
+  repairLibrary: typeof repairLibrary;
   scanTargets: typeof scanTargets;
   watchTargetDirectories: typeof watchTargetDirectories;
   createUpdateInterval: typeof createUpdateInterval;
@@ -24,6 +26,7 @@ const defaultDependencies: BackgroundJobDependencies = {
   loadConfig,
   expandHome,
   metadataStore: MetadataStore,
+  repairLibrary,
   scanTargets,
   watchTargetDirectories,
   createUpdateInterval,
@@ -108,8 +111,31 @@ export async function startBackgroundJobs(
     }, SCAN_DEBOUNCE_MS);
   };
 
-  // Initial scan on startup is a full scan (sync all targets + prune).
-  void executeScan({ fullScan: true });
+  // On startup, self-heal the library (re-fetch empty/invalid/missing skills
+  // from their recorded sources) before the initial full scan distributes
+  // skills to targets. Repair is best-effort and never blocks startup.
+  const startup = async () => {
+    try {
+      const repairConfig = await deps.loadConfig();
+      const libraryPath = deps.expandHome(repairConfig.libraryPath);
+      const report = await deps.repairLibrary({ libraryPath });
+      if (report.repaired.length > 0 || report.errors.length > 0) {
+        window.webContents.send("background:library-repaired", {
+          repaired: report.repaired.length,
+          skipped: report.skipped.length,
+          errors: report.errors.length
+        });
+      }
+    } catch (error: unknown) {
+      console.error("Background library repair failed", error);
+      window.webContents.send("background:scan-error", {
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+    // Initial scan on startup is a full scan (sync all targets + prune).
+    await executeScan({ fullScan: true });
+  };
+  void startup();
 
   // Target directory watchers are created from startup config; each scan reloads current config.
   const watcher = deps.watchTargetDirectories(expandedTargetPaths, runScan, (error) => {

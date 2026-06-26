@@ -53,6 +53,50 @@ function InstallModePicker({
   );
 }
 
+function RepairSection() {
+  const [status, setStatus] = useState("");
+  const [isRepairing, setIsRepairing] = useState(false);
+
+  async function repair() {
+    setIsRepairing(true);
+    setStatus("Checking library health");
+    try {
+      const { report } = await skillerApi.repairLibrary();
+      const parts: string[] = [];
+      parts.push(`${report.repaired.length} repaired`);
+      if (report.skipped.length > 0) parts.push(`${report.skipped.length} skipped`);
+      if (report.errors.length > 0) parts.push(`${report.errors.length} failed`);
+      const summary =
+        report.repaired.length === 0 && report.skipped.length === 0 && report.errors.length === 0
+          ? "Library is healthy"
+          : parts.join(", ");
+      setStatus(summary);
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsRepairing(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-medium">Library health</div>
+          <p className="text-xs text-muted-foreground">
+            Re-fetch any tracked skill whose library copy is missing, empty, invalid, or out of date with its recorded
+            source. Runs automatically on startup.
+          </p>
+        </div>
+        <Button type="button" variant="outline" size="sm" disabled={isRepairing} onClick={() => void repair()}>
+          {isRepairing ? "Repairing" : "Repair library"}
+        </Button>
+      </div>
+      {status ? <span className="text-sm text-muted-foreground">{status}</span> : null}
+    </div>
+  );
+}
+
 function ImportSection() {
   const [skills, setSkills] = useState<ImportableSkill[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -299,6 +343,8 @@ export function SettingsPage() {
           Install mode changes save immediately. Use copies when a coding agent does not follow symlinks. Changing
           install mode takes effect on the next target sync.
         </p>
+        <Separator />
+        <RepairSection />
         <Separator />
         <ImportSection />
       </CardContent>

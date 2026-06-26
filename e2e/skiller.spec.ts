@@ -248,6 +248,28 @@ test("validates settings paths in browser preview mode", async ({ page }) => {
   await expect(input).toHaveValue("/tmp/skiller");
 });
 
+test("repairs the library from the Settings health section", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.skiller = {
+      repairLibrary: async () => ({
+        report: {
+          checkedAt: new Date().toISOString(),
+          repaired: [{ id: "okf", reason: "empty-folder", status: "repaired" }],
+          skipped: [],
+          errors: []
+        },
+        state: { skills: [], skillSets: [], tags: [] }
+      })
+    } as unknown as typeof window.skiller;
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+
+  await expect(page.getByText("Re-fetch any tracked skill whose library copy")).toBeVisible();
+  await page.getByRole("button", { name: "Repair library" }).click();
+  await expect(page.getByText("1 repaired")).toBeVisible();
+});
+
 test("imports unmanaged skills from the Settings import section", async ({ page }) => {
   await page.addInitScript(() => {
     const importable = [

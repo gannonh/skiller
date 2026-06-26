@@ -406,16 +406,18 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
       if (stat.isSymbolicLink()) {
         await fs.remove(targetSkillPath);
       } else if (stat.isDirectory()) {
-        if (!(await isSkillDirectory(targetSkillPath))) return;
+        // An existing directory in Skiller's slot that is empty or missing
+        // SKILL.md is a broken/partial managed install; replace it.
+        if (await isSkillDirectory(targetSkillPath)) {
+          const declaredId = await skillIdFromSkillPath(targetSkillPath);
+          /* v8 ignore next */
+          if (declaredId !== metadata.id) return;
 
-        const declaredId = await skillIdFromSkillPath(targetSkillPath);
-        /* v8 ignore next */
-        if (declaredId !== metadata.id) return;
-
-        const currentHash = await hashDirectory(targetSkillPath);
-        if (currentHash === metadata.contentHash) {
-          markEnabled(metadata, targetDir);
-          return;
+          const currentHash = await hashDirectory(targetSkillPath);
+          if (currentHash === metadata.contentHash) {
+            markEnabled(metadata, targetDir);
+            return;
+          }
         }
 
         await fs.remove(targetSkillPath);

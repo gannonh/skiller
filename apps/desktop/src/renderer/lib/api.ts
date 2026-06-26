@@ -2,6 +2,7 @@ import type {
   DiscoverGithubSkillsResult,
   ImportableSkill,
   LibraryState as CoreLibraryState,
+  RepairLibraryReport,
   SaveSkillSetInput,
   ScanTargetsResult,
   SkillSource,
@@ -10,7 +11,12 @@ import type {
   TargetConfig
 } from "@skiller/core";
 
-export type { ImportableSkill, SaveSkillSetInput, SkillSetMetadata };
+export type { ImportableSkill, RepairLibraryReport, SaveSkillSetInput, SkillSetMetadata };
+
+export interface RepairLibraryResult {
+  report: RepairLibraryReport;
+  state: LibraryState;
+}
 
 export type LeaderboardType = "all-time" | "trending" | "hot";
 
@@ -100,6 +106,7 @@ export interface SkillerApi {
   replaceSkillTags: (skillId: string, tags: string[]) => Promise<LibraryState>;
   setSkillSetEnabled: (skillSetId: string, enabled: boolean) => Promise<SetSkillSetEnabledResult>;
   scanTargets: () => Promise<ScanTargetsResult>;
+  repairLibrary: () => Promise<RepairLibraryResult>;
   discoverImportableSkills: () => Promise<ImportableSkill[]>;
   importSkills: (sourcePaths: string[]) => Promise<SkillMetadata[]>;
   saveTargets: (targets: TargetConfig[]) => Promise<SkillerConfig>;
@@ -410,6 +417,10 @@ function createBrowserPreviewApi(): SkillerApi {
       return { state: fallbackLibraryState(), scanErrors: [] };
     },
     scanTargets: async () => ({ imported: [], enabled: [], disabled: [], errors: [] }),
+    repairLibrary: async () => ({
+      report: { checkedAt: new Date().toISOString(), repaired: [], skipped: [], errors: [] },
+      state: fallbackLibraryState()
+    }),
     discoverImportableSkills: async () => [],
     importSkills: async () => [],
     saveTargets: async (targets) => {
