@@ -502,6 +502,14 @@ export async function scanTargets(input: ScanTargetsInput): Promise<ScanTargetsR
           if (!(await fs.pathExists(existingMetadata.libraryPath))) continue;
           const importAllowedTargets = resolveTargetsForSkill(existingMetadata, skillSets, globalTargets);
           if (!importAllowedTargets.has(targetDir)) continue;
+          // In copy mode, a plain folder whose content already matches the
+          // library is an up-to-date managed copy. Rewriting it (move-to-backup
+          // + full re-copy) on every scan churns the filesystem and re-triggers
+          // the target watcher, so leave identical copies untouched.
+          if (installMode === "copy" && (await isManagedCopy(targetSkillPath, existingMetadata))) {
+            markEnabled(existingMetadata, targetDir);
+            continue;
+          }
           await installToTarget(targetSkillPath, existingMetadata.libraryPath, installMode);
           markEnabled(existingMetadata, targetDir);
           continue;

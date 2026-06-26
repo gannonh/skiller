@@ -57,6 +57,9 @@ export async function startBackgroundJobs(
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let scanInFlight = false;
+  // Set once stop() runs (app quit). Prevents new scans from starting so the
+  // event loop can drain instead of launching fresh filesystem work mid-quit.
+  let stopped = false;
   // Suppress watcher-triggered scans during a scan and for a grace period
   // afterward so the scanner's own filesystem operations don't re-trigger
   // the watcher in a feedback loop.
@@ -64,6 +67,7 @@ export async function startBackgroundJobs(
   let graceTimer: ReturnType<typeof setTimeout> | undefined;
 
   const executeScan = async (options?: { importOnly?: boolean; fullScan?: boolean }) => {
+    if (stopped) return;
     /* v8 ignore next -- safety guard: suppressWatcher prevents concurrent executeScan calls */
     if (scanInFlight) return;
 
@@ -167,6 +171,7 @@ export async function startBackgroundJobs(
   return [
     {
       stop: () => {
+        stopped = true;
         if (debounceTimer) {
           clearTimeout(debounceTimer);
           debounceTimer = undefined;

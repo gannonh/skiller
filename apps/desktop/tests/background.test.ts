@@ -612,6 +612,47 @@ describe("background jobs", () => {
     jobs.forEach((job) => job.stop());
   });
 
+  it("does not start new scans after stop", async () => {
+    vi.useFakeTimers();
+    const scanTargets = vi.fn(async () => ({ imported: [], enabled: [], disabled: [], errors: [] }));
+    const close = vi.fn();
+    let onChange: ((filePath: string) => void) | undefined;
+    const window = { webContents: { send: vi.fn() } } as unknown as BrowserWindow;
+    const { startBackgroundJobs } = await import("../src/main/background.js");
+
+    const jobs = await startBackgroundJobs(window, {
+      loadConfig: async () => config,
+      expandHome: (value) => value.replace("~", "/home/test"),
+      metadataStore: metadataStoreMock(),
+      repairLibrary: vi.fn(async () => ({ checkedAt: "t", repaired: [], skipped: [], errors: [] })),
+      scanTargets,
+      watchTargetDirectories: vi.fn((_config, callback) => {
+        onChange = callback;
+        return { close } as never;
+      }),
+      createUpdateInterval: (schedule, callback) => setInterval(callback, schedule.intervalHours * 60 * 60 * 1000),
+      checkDesktopUpdates: vi.fn()
+    });
+
+    // Let the initial scan complete and the grace period expire.
+    await vi.advanceTimersByTimeAsync(800);
+    expect(scanTargets).toHaveBeenCalledTimes(1);
+
+    // Quit, then deliver a watcher event and let the debounce window pass.
+    jobs.forEach((job) => job.stop());
+    onChange?.("/home/test/skills/some-skill");
+    await vi.advanceTimersByTimeAsync(250);
+    for (let index = 0; index < 5; index += 1) {
+      await Promise.resolve();
+    }
+
+    // No scan runs after stop, so the event loop can drain on quit.
+    expect(scanTargets).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
   it("normalizes alternate scan and update error types", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const close = vi.fn();

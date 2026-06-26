@@ -8,22 +8,28 @@ import { enabledTarget, disabledTarget, setupScannerTest, teardownScannerTest, t
 import { scanTargets } from "./scanner.js";
 
 const fileOpsMock = vi.hoisted(() => ({
-  replaceWithSymlink: vi.fn()
+  replaceWithSymlink: vi.fn(),
+  replaceWithCopy: vi.fn()
 }));
 
 vi.mock("./file-ops.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./file-ops.js")>();
   fileOpsMock.replaceWithSymlink.mockImplementation(actual.replaceWithSymlink);
+  fileOpsMock.replaceWithCopy.mockImplementation(actual.replaceWithCopy);
 
   return {
     ...actual,
-    replaceWithSymlink: fileOpsMock.replaceWithSymlink
+    replaceWithSymlink: fileOpsMock.replaceWithSymlink,
+    replaceWithCopy: fileOpsMock.replaceWithCopy
   };
 });
 
 describe("scanTargets core", () => {
   beforeEach(async () => {
-    await setupScannerTest(() => fileOpsMock.replaceWithSymlink.mockClear());
+    await setupScannerTest(() => {
+      fileOpsMock.replaceWithSymlink.mockClear();
+      fileOpsMock.replaceWithCopy.mockClear();
+    });
   });
 
   afterEach(async () => {
@@ -264,6 +270,49 @@ describe("scanTargets core", () => {
 
     expect(await fs.readFile(path.join(targetSkill, "SKILL.md"), "utf8")).toBe(before);
     expect((await fs.lstat(targetSkill)).isSymbolicLink()).toBe(false);
+  });
+
+  it("does not rewrite an identical managed copy during the reconcile phase", async () => {
+    const target = path.join(tmp, "target");
+    const library = path.join(tmp, "library");
+    const librarySkill = path.join(library, "example");
+    const targetSkill = path.join(target, "example");
+    const store = new MetadataStore(library);
+
+    await fs.ensureDir(librarySkill);
+    await fs.writeFile(path.join(librarySkill, "SKILL.md"), "---\nname: example\ndescription: Example.\n---\n");
+    const contentHash = await hashDirectory(librarySkill);
+    await store.save({
+      id: "example",
+      name: "example",
+      libraryPath: librarySkill,
+      source: { type: "unknown" },
+      installedAt: "2026-05-10T12:00:00.000Z",
+      contentHash,
+      keepUpdated: false,
+      validation: { valid: true, issues: [] },
+      enabled: true,
+      tags: []
+    });
+
+    // First scan deploys the copy.
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+    expect(await fs.pathExists(targetSkill)).toBe(true);
+    fileOpsMock.replaceWithCopy.mockClear();
+
+    // A second scan over an already-identical copy must not rewrite it; doing
+    // so churns the filesystem and re-triggers the target watcher in a loop.
+    await scanTargets({
+      libraryPath: library,
+      targets: [enabledTarget(target)],
+      globalTargetInstallMode: "copy"
+    });
+
+    expect(fileOpsMock.replaceWithCopy).not.toHaveBeenCalled();
   });
 
   it("refreshes stale managed copies during copy-mode scans", async () => {
