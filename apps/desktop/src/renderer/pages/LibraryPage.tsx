@@ -298,6 +298,8 @@ export function LibraryPage({
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [setFilter, setSetFilter] = useState<SetFilter>({ type: "all" });
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [nameFilter, setNameFilter] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [globalTargets, setGlobalTargets] = useState<TargetConfig[]>([]);
   const [skillSetEditorOpen, setSkillSetEditorOpen] = useState(false);
   const [editingSkillSet, setEditingSkillSet] = useState<SkillSetMetadata | null>(null);
@@ -343,11 +345,23 @@ export function LibraryPage({
     if (editingTagSkillId) tagInputRef.current?.focus();
   }, [editingTagSkillId]);
 
+  // The native clear (x) button on <input type="search"> fires a `search` DOM
+  // event that React's onChange does not receive, so sync it explicitly.
+  useEffect(() => {
+    const el = searchRef.current;
+    if (!el) return;
+    const onSearchClear = () => setNameFilter(el.value);
+    el.addEventListener("search", onSearchClear);
+    return () => el.removeEventListener("search", onSearchClear);
+  }, []);
+
   const invalidSkills = useMemo(() => skills.filter((skill) => !skill.validation?.valid), [skills]);
-  const filteredSkills = useMemo(
-    () => filterLibrarySkills(skills, setFilter, selectedTags, libraryState.skillSets),
-    [skills, setFilter, selectedTags, libraryState.skillSets]
-  );
+  const filteredSkills = useMemo(() => {
+    const bySetAndTags = filterLibrarySkills(skills, setFilter, selectedTags, libraryState.skillSets);
+    const query = nameFilter.trim().toLowerCase();
+    if (!query) return bySetAndTags;
+    return bySetAndTags.filter((skill) => (skill.name || skill.id).toLowerCase().includes(query));
+  }, [skills, setFilter, selectedTags, libraryState.skillSets, nameFilter]);
   const sortedSkills = useMemo(
     () => sortSkills(filteredSkills, sortColumn, sortDirection),
     [filteredSkills, sortColumn, sortDirection]
@@ -669,56 +683,6 @@ export function LibraryPage({
         ) : (
           <>
             <div className="flex flex-col gap-3 rounded-md border p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant={setFilter.type === "all" ? "default" : "outline"}
-                  size="sm"
-                  aria-pressed={setFilter.type === "all"}
-                  onClick={() => setSetFilter({ type: "all" })}
-                >
-                  All
-                </Button>
-                <Button
-                  type="button"
-                  variant={setFilter.type === "ungrouped" ? "default" : "outline"}
-                  size="sm"
-                  aria-pressed={setFilter.type === "ungrouped"}
-                  onClick={() => setSetFilter({ type: "ungrouped" })}
-                >
-                  Ungrouped
-                </Button>
-                {libraryState.skillSets.map((skillSet) => (
-                  <Button
-                    key={skillSet.id}
-                    type="button"
-                    variant={isSetFilterActive(skillSet.id) ? "default" : "outline"}
-                    size="sm"
-                    aria-pressed={isSetFilterActive(skillSet.id)}
-                    onClick={() => setSetFilter({ type: "set", skillSetId: skillSet.id })}
-                  >
-                    {skillSet.name}
-                  </Button>
-                ))}
-              </div>
-              {libraryState.tags.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  {libraryState.tags.map((tag) => (
-                    <Button
-                      key={tag}
-                      type="button"
-                      variant={selectedTags.includes(tag) ? "default" : "outline"}
-                      size="sm"
-                      aria-pressed={selectedTags.includes(tag)}
-                      onClick={() => toggleSelectedTag(tag)}
-                    >
-                      {tag}
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <div className="flex flex-col gap-3 rounded-md border p-3">
               <Button type="button" disabled={isOrganizing} onClick={openCreateSkillSet}>
                 Create New Skill Set
               </Button>
@@ -770,6 +734,66 @@ export function LibraryPage({
                       </div>
                     );
                   })}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-3 rounded-md border p-3">
+              <Input
+                ref={searchRef}
+                type="search"
+                placeholder="Filter skills by name"
+                value={nameFilter}
+                onChange={(event) => setNameFilter(event.target.value)}
+                disabled={skills.length === 0}
+                aria-label="Filter skills by name"
+                className="max-w-64"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant={setFilter.type === "all" ? "default" : "outline"}
+                  size="sm"
+                  aria-pressed={setFilter.type === "all"}
+                  onClick={() => setSetFilter({ type: "all" })}
+                >
+                  All
+                </Button>
+                <Button
+                  type="button"
+                  variant={setFilter.type === "ungrouped" ? "default" : "outline"}
+                  size="sm"
+                  aria-pressed={setFilter.type === "ungrouped"}
+                  onClick={() => setSetFilter({ type: "ungrouped" })}
+                >
+                  Ungrouped
+                </Button>
+                {libraryState.skillSets.map((skillSet) => (
+                  <Button
+                    key={skillSet.id}
+                    type="button"
+                    variant={isSetFilterActive(skillSet.id) ? "default" : "outline"}
+                    size="sm"
+                    aria-pressed={isSetFilterActive(skillSet.id)}
+                    onClick={() => setSetFilter({ type: "set", skillSetId: skillSet.id })}
+                  >
+                    {skillSet.name}
+                  </Button>
+                ))}
+              </div>
+              {libraryState.tags.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {libraryState.tags.map((tag) => (
+                    <Button
+                      key={tag}
+                      type="button"
+                      variant={selectedTags.includes(tag) ? "default" : "outline"}
+                      size="sm"
+                      aria-pressed={selectedTags.includes(tag)}
+                      onClick={() => toggleSelectedTag(tag)}
+                    >
+                      {tag}
+                    </Button>
+                  ))}
                 </div>
               ) : null}
             </div>
